@@ -1,0 +1,18 @@
+[package]
+name = "bound_engine"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies.winit_event_helper]
+path = "C:/Users/gebruiker/IdeaProjects/winit_event_helper"
+
+[dependencies]
+vulkano = { version = "0.30.0", git = "https://github.com/vulkano-rs/vulkano" }
+vulkano-shaders = "0.30.0"
+vulkano-win = { version = "0.30.0", git = "https://github.com/vulkano-rs/vulkano" }
+bytemuck = "1.12.1"
+winit = "0.27.2"
+glam = "0.21.3"
+fps_counter = "2.0.0"
