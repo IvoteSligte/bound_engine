@@ -376,9 +376,9 @@ fn main() {
     let materials = [
         shaders::ty::Material {
             color: [0.7, 0.7, 0.9],
-            diffuse: 1.0,
-            specular: 1.0,
-            shine: 1.0,
+            diffuse: 0.3,
+            specular: 0.3,
+            shine: 2.0,
             ambient: 0.05,
             mirror: 0.5,
             transmission: 0.8,
@@ -403,7 +403,7 @@ fn main() {
             shine: 1.0,
             ambient: 0.05,
             mirror: 0.0,
-            transmission: 0.0,
+            transmission: 0.9,
             refIdx: 1.5,
             _dummy0: [0u8; 8],
         },

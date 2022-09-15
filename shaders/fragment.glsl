@@ -75,6 +75,7 @@ vec4 invertQuat(vec4 q) {
     return vec4(-q.xyz, q.w);
 }
 
+// TODO: fix transmission
 void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
     vec2 normCoord = gl_FragCoord.xy * 2 / cs.view - 1.0;
@@ -92,10 +93,8 @@ void main() {
         Ray ray = rays[count - 1];
         count -= 1;
 
-        // quaternion that rotates from vec3(0.0, 0.0, 1.0) towards the ray direction
-        vec4 quat = rotateTowards(ray.dir);
-        // quaternion that rotates *towards* vec3(0.0, 0.0, 1.0)
-        vec4 invQuat = invertQuat(quat);
+        // quaternion that rotates towards vec3(0.0, 0.0, 1.0) from the ray direction
+        vec4 invQuat = invertQuat(rotateTowards(ray.dir));
 
         uint index = MAX_OBJECTS;
         float dist = 1e20;
@@ -107,6 +106,7 @@ void main() {
             // position relative to ray origin rotated by the inverse of the quaternion of the view direction
             vec3 rPos = rotate(invQuat, object.pos - ray.origin);
 
+            // sqrt and if-statement are expensive
             float width = sqrt(object.size * object.size - length(rPos.xy) * length(rPos.xy));
             if (i == ray.index) {
                 rPos.z += width;
@@ -114,7 +114,6 @@ void main() {
                 rPos.z -= width;
             }
 
-            // TODO: check if length(rPos.xy) > object.size causes error due to sqrt()
             if (rPos.z > 0.0 && rPos.z < dist && length(rPos.xy) < object.size) {
                 index = i;
                 dist = rPos.z;
@@ -181,8 +180,7 @@ void main() {
             Light light = buf.lights[l];
 
             vec3 dir = normalize(light.pos - realP); // not sure if normalize() is necessary
-            vec4 quat = rotateTowards(dir);
-            vec4 invQuat = invertQuat(quat);
+            vec4 invQuat = invertQuat(rotateTowards(dir));
 
             float lightDist = distance(realP, light.pos);
 
