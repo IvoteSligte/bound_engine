@@ -195,7 +195,7 @@ void main() {
             }
 
             float diffuse = max(dot(normal, dir), 0.0);
-            float specular = diffuse * max(pow(dot(normalize(ray.origin - realP), reflect(-dir, normal)), buf.mats[index].shine), 0.0);
+            float specular = diffuse * max(pow(dot(ray.dir, reflect(-dir, normal)), buf.mats[index].shine), 0.0);
             diffuse *= buf.mats[index].diffuse;
             specular *= buf.mats[index].specular;
             
