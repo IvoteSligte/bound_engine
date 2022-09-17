@@ -434,20 +434,20 @@ fn main() {
 
     let objects = [
         shaders::ty::Object {
-            pos: [6.0, 5.0, 0.0],
-            size: 3.0,
+            pos: [5.0, 8.0, 2.0],
+            size: 0.8,
         },
         shaders::ty::Object {
-            pos: [5.0, 4.0, 10.0],
+            pos: [10.0, 3.0, 1.0],
             size: 6.0,
         },
         shaders::ty::Object {
-            pos: [-3.0, 3.0, -3.0],
-            size: 1.0,
+            pos: [-3.0, 2.0, -4.0],
+            size: 4.0,
         },
         shaders::ty::Object {
-            pos: [4.0, 1.0, 0.0],
-            size: 2.0,
+            pos: [3.0, 1.0, 0.0],
+            size: 3.0,
         },
     ];
 
