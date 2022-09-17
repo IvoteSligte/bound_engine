@@ -82,6 +82,7 @@ void main() {
         Ray ray = rays[count - 1];
         count -= 1;
 
+        uint index = MAX_OBJECTS;
         float dist = 1e20;
 
         for (uint i = 0; i < buf.objCount; i++) {
@@ -93,10 +94,107 @@ void main() {
             float d = sqrt(object.size * object.size - b * b + c * c); // 0.5 * width at hitpoint
             float e = c - d; // distance to hitpoint
 
-            if (e < dist && a > 0.0) {
-                fragColor.xyz = buf.mats[i].color * d / object.size;
+            if (a > 0.0 && e < dist) {
                 dist = e;
+                index = i;
             }
+        }
+
+        for (uint l = 0; l < buf.lightCount; l++) {
+            Light light = buf.lights[l];
+
+            float a = dot(ray.dir, normalize(light.pos - ray.origin)); // a > 0.0 if hit
+            float b = distance(light.pos, ray.origin);
+            float c = a * b;
+            float d = sqrt(1.0 - b * b + c * c); // 0.5 * width at hitpoint
+            float e = c - d; // distance to hitpoint
+
+            if (a > 0.0 && e < dist) {
+                float lightFallOff = e * UNIT_SIZE * e * UNIT_SIZE + 1.0;
+                float absorbFallOff = buf.mats[ray.index].transmission / (e * UNIT_SIZE + 1.0);
+                fragColor.xyz += ray.color * light.color * d / lightFallOff / absorbFallOff;
+            }
+        }
+        
+        if (index == MAX_OBJECTS) {
+            continue;
+        }
+
+
+        vec3 realP = ray.dir * dist + ray.origin; // world-space point (ray endpoint)
+        vec3 normal = normalize(realP - buf.objs[index].pos);
+
+        ray.color *= buf.mats[ray.index].transmission / (dist * UNIT_SIZE + 1.0);
+        // light scatters because it is not a perfect laser
+        // TODO: add specular and mirror (currently diffuse)
+        ray.color /= dist * UNIT_SIZE * dist * UNIT_SIZE + 1.0;
+
+        // mirror reflection
+        vec3 mirror = ray.color * buf.mats[index].mirror;
+        // MAX function can be replaced with OR operator
+        if (max(max(mirror.r, mirror.g), mirror.b) > BOUNCE_THRESHOLD && count < MAX_BOUNCES && ray.num + 1 < MAX_BOUNCES) {
+            Ray newRay;
+            newRay.color = mirror;
+            newRay.origin = realP;
+            newRay.dir = reflect(ray.dir, normal);
+            newRay.index = buf.matCount - 1; // air
+            newRay.num = ray.num + 1;
+            rays[count] = newRay;
+            count += 1;
+        }
+
+        // ray into object
+        vec3 trans = ray.color;
+        if (max(max(mirror.r, mirror.g), mirror.b) > BOUNCE_THRESHOLD && count < MAX_BOUNCES && ray.num + 1 < MAX_BOUNCES) {
+            Ray newRay;
+            newRay.color = trans;
+            newRay.origin = realP;
+            newRay.dir = refract(ray.dir, normal, buf.mats[ray.index].refIdx / buf.mats[index].refIdx);
+            newRay.index = index;
+            newRay.num = ray.num + 1;
+            rays[count] = newRay;
+            count += 1;
+        }
+
+
+        for (uint l = 0; l < buf.lightCount; l++) {
+            Light light = buf.lights[l];
+
+            vec3 dir = normalize(light.pos - realP); // not sure if normalize() is necessary
+
+            float a = dot(ray.dir, dir); // a > 0.0 if hit
+            float b = distance(light.pos, realP);
+            float c = a * b;
+            float d = sqrt(1.0 - b * b + c * c); // 0.5 * width at hitpoint
+            float e = c - d; // distance to hitpoint
+
+            float near = 1e20;
+
+            for (uint i = 0; i < buf.objCount; i++) {
+                Object object = buf.objs[i];
+
+                float a = dot(dir, normalize(object.pos - realP)); // a > 0.0 if hit
+                float b1 = distance(object.pos, realP);
+                float c = a * b1;
+                float d = sqrt(object.size * object.size - b1 * b1 + c * c); // 0.5 * width at hitpoint
+                float e = c - d; // distance to hitpoint
+                float f = sqrt(b1 * b1 - c * c); // min distance of ray to sphere center
+
+                if (a > 0.0 && e < b) {
+                    near = min(near, f - object.size);
+                }
+            }
+
+            float diffuse = max(dot(normal, dir), 0.0);
+            float specular = diffuse * max(pow(dot(-ray.dir, reflect(-dir, normal)), buf.mats[index].shine), 0.0);
+            diffuse *= buf.mats[index].diffuse;
+            specular *= buf.mats[index].specular;
+            
+            float shadow = clamp(near + 1.0, 0.0, 1.0) * clamp(near + 1.0, 0.0, 1.0); // shadow is non-linear
+
+            float lightFallOff = b * UNIT_SIZE * b * UNIT_SIZE + 1.0;
+
+            fragColor.rgb += ((diffuse + specular) * shadow + buf.mats[index].ambient) * ray.color * buf.mats[index].color * light.color / lightFallOff;
         }
     }
 }

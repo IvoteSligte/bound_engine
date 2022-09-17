@@ -455,13 +455,13 @@ fn main() {
         shaders::ty::Light {
             pos: [-1.0, 0.0, -3.0],
             _dummy0: [0u8; 4],
-            color: [2.0, 2.0, 2.0],
+            color: [0.1, 2.0, 2.0],
             _dummy1: [0u8; 4],
         },
         shaders::ty::Light {
             pos: [8.0, -5.0, 10.0],
             _dummy0: [0u8; 4],
-            color: [2.0, 2.0, 2.0],
+            color: [2.0, 0.9, 2.0],
             _dummy1: [0u8; 4],
         },
     ];
