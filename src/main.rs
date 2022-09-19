@@ -54,7 +54,7 @@ mod shaders {
             },
         },
         types_meta: { #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)] },
-        include: ["shaders/utilities.glsl"],
+        include: ["shaders/random.glsl"],
     }
 }
 
@@ -375,60 +375,65 @@ fn main() {
 
     let materials = [
         shaders::ty::Material {
-            color: [0.7, 0.7, 0.9],
+            reflectance: [0.7, 0.7, 0.9],
             diffuse: 0.3,
             specular: 0.3,
             shine: 2.0,
-            ambient: 0.05,
             mirror: 0.5,
             transmission: 0.8,
             refIdx: 2.5,
-            _dummy0: [0u8; 8],
+            _dummy0: [0u8; 12],
         },
         shaders::ty::Material {
-            color: [0.1, 0.9, 0.5],
+            reflectance: [0.1, 0.9, 0.5],
             diffuse: 1.0,
             specular: 1.0,
             shine: 1.0,
-            ambient: 0.05,
             mirror: 0.1,
             transmission: 0.1,
             refIdx: 1.5,
-            _dummy0: [0u8; 8],
+            _dummy0: [0u8; 12],
         },
         shaders::ty::Material {
-            color: [0.9, 0.9, 0.1],
+            reflectance: [0.9, 0.9, 0.1],
             diffuse: 1.0,
             specular: 1.0,
             shine: 1.0,
-            ambient: 0.05,
             mirror: 0.0,
             transmission: 0.9,
             refIdx: 1.5,
-            _dummy0: [0u8; 8],
+            _dummy0: [0u8; 12],
         },
         shaders::ty::Material {
-            color: [0.9, 0.1, 0.1],
+            reflectance: [0.9, 0.1, 0.1],
             diffuse: 1.0,
             specular: 1.0,
             shine: 1.0,
-            ambient: 0.05,
             mirror: 0.9,
             transmission: 0.0,
             refIdx: 1.5,
-            _dummy0: [0u8; 8],
+            _dummy0: [0u8; 12],
         },
-        // RESERVED FOR AIR
         shaders::ty::Material {
-            color: [1.0, 1.0, 1.0],
+            reflectance: [2.0, 2.0, 2.0],
             diffuse: 0.0,
             specular: 0.0,
             shine: 0.0,
-            ambient: 0.0,
+            mirror: 0.0,
+            transmission: 0.9,
+            refIdx: 1.0,
+            _dummy0: [0u8; 12],
+        },
+        // RESERVED FOR AIR
+        shaders::ty::Material {
+            reflectance: [1.0, 1.0, 1.0],
+            diffuse: 0.0,
+            specular: 0.0,
+            shine: 0.0,
             mirror: 0.0,
             transmission: 0.99,
             refIdx: 1.0,
-            _dummy0: [0u8; 8],
+            _dummy0: [0u8; 12],
         },
     ];
 
@@ -449,22 +454,13 @@ fn main() {
             pos: [3.0, 1.0, 0.0],
             size: 3.0,
         },
+        shaders::ty::Object {
+            pos: [10.0, 10.0, 10.0],
+            size: 1.0,
+        }
     ];
 
-    let lights = [
-        shaders::ty::Light {
-            pos: [-1.0, 0.0, -3.0],
-            _dummy0: [0u8; 4],
-            color: [0.1, 2.0, 2.0],
-            _dummy1: [0u8; 4],
-        },
-        shaders::ty::Light {
-            pos: [8.0, -5.0, 10.0],
-            _dummy0: [0u8; 4],
-            color: [2.0, 0.9, 2.0],
-            _dummy1: [0u8; 4],
-        },
-    ];
+    let lights = [shaders::ty::Index { i: 4, _dummy0: [0u8; 12]}];
 
     let mut mutable_data = shaders::ty::MutableData {
         matCount: materials.len() as u32,
