@@ -1,29 +1,25 @@
 #version 460
 
+#include "random.glsl"
+
+#define PI 3.1415926538
+
 layout(location = 0) out vec4 fragColor;
 
 layout(push_constant) uniform PushConstantData {
     vec4 rot;
     vec3 pos;
+    float time;
 } pc;
 
-const uint MAX_MATERIALS = 9; // default (air) is always included
+const uint MAX_MATERIALS = 8;
 const uint MAX_OBJECTS = 8;
-const uint MAX_LIGHTS = 8;
 
-const uint MAX_BOUNCES = 16;
-const float BOUNCE_THRESHOLD = 0.1;
-
-const float UNIT_SIZE = 0.1;
+const uint MAX_DEPTH = 256;
 
 struct Material {
     vec3 reflectance;
-    float diffuse;
-    float specular;
-    float shine;
-    float mirror;
-    float transmission;
-    float refIdx;
+    vec3 emittance;
 };
 
 struct Object {
@@ -34,9 +30,9 @@ struct Object {
 struct Ray {
     vec3 origin; // origin
     vec3 dir; // direction
-    vec3 color; // color left after previous absorptions
-    uint index; // object/material the ray is currently in
+    vec3 normal; // normal at origin (or vec3(-0.0))
     uint depth;
+    vec3 color; // color left after previous absorptions
 };
 
 struct Index {
@@ -46,10 +42,8 @@ struct Index {
 layout(binding = 0) uniform readonly MutableData {
     uint matCount;
     uint objCount;
-    uint lightCount;
     Material mats[MAX_MATERIALS];
     Object objs[MAX_OBJECTS];
-    Index lights[MAX_LIGHTS];
 } buf;
 
 layout(binding = 1) uniform readonly ConstantBuffer {
@@ -62,9 +56,18 @@ vec3 rotate(vec4 q, vec3 v) {
     return v + 2.0 * cross(q.xyz, t);
 }
 
-// TODO: fix transmission
-// TODO: fix stuff
-// TODO: make intersection function
+vec3 randomUnitVectorOnHemisphere(vec3 n, vec3 seed) {
+    vec3 v = random(seed);
+    return normalize(v) * sign(dot(n, v));
+}
+
+// calculates the distance between a ray (Ray) and a sphere (Object)
+float distanceToObject(Ray ray, Object obj) {
+    vec3 v = obj.pos - ray.origin;
+    float a = dot(ray.dir, v);
+    return a - sqrt(obj.size * obj.size - dot(v, v) + a * a);
+}
+
 void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
     vec2 normCoord = gl_FragCoord.xy * 2 / cs.view - 1.0;
@@ -74,99 +77,49 @@ void main() {
     fragColor.xyz = vec3(0.0);
     vec3 viewDir = normalize(rotate(pc.rot, vec3(normCoord.x, 1.0, normCoord.y)));
 
-    Ray rays[MAX_BOUNCES];
-    rays[0] = Ray(pc.pos, viewDir, vec3(1.0), buf.matCount - 1, 0);
-    uint count = 1;
-    
-    while (count > 0) {
-        Ray ray = rays[count - 1];
-        count -= 1;
+    vec3 seed = vec3(normCoord.xy / normCoord.yx, normCoord.x * normCoord.y);
 
-        if (max(max(ray.color.r, ray.color.g), ray.color.b) <= BOUNCE_THRESHOLD || ray.depth + 1 >= MAX_BOUNCES) {
-            continue;
-        }
+    Ray ray = Ray(pc.pos, viewDir, vec3(-0.0), 0, vec3(1.0));
+
+    for (uint r = 0; r < MAX_DEPTH; r++) {
+        seed += vec3(pc.time * 1.3, pc.time * 2.4, pc.time * 3.1);
 
         uint index = MAX_OBJECTS;
         float dist = 1e20;
 
         for (uint i = 0; i < buf.objCount; i++) {
-            Object object = buf.objs[i];
+            float d = distanceToObject(ray, buf.objs[i]); // TODO: try cone tracing
 
-            float a = dot(ray.dir, normalize(object.pos - ray.origin)); // a > 0.0 if hit
-            float b = distance(object.pos, ray.origin);
-            float c = a * b;
-            float d = sqrt(object.size * object.size - b * b + c * c); // 0.5 * width at hitpoint
-            float e = c - d; // distance to hitpoint
-
-            if (a > 0.0 && e < dist) {
-                dist = e;
+            if (d > 0.0 && d < dist) {
+                dist = d;
                 index = i;
             }
         }
         
         if (index == MAX_OBJECTS) {
-            continue;
+            if (ray.normal.x != -0.0) {
+                ray.dir = randomUnitVectorOnHemisphere(ray.normal, seed);
+                ray.depth += 1;
+                continue;
+            } else {
+                return;
+            }
         }
-
 
         Material material = buf.mats[index];
-        vec3 hitpoint = ray.dir * dist + ray.origin;
-        vec3 normal = normalize(hitpoint - buf.objs[index].pos);
 
-
-        // base
         Ray newRay;
-        newRay.origin = hitpoint;
-
-        // mirror reflection
-        newRay.color = ray.color * material.reflectance;
-        newRay.dir = reflect(ray.dir, normal);
-        newRay.index = buf.matCount - 1; // air
+        newRay.origin = ray.dir * dist + ray.origin;
+        newRay.normal = normalize(newRay.origin - buf.objs[index].pos);
+        newRay.dir = randomUnitVectorOnHemisphere(newRay.normal, seed);
         newRay.depth = ray.depth + 1;
-        rays[count] = newRay;
-        count += 1;
 
-        // ray into object
-        newRay.color = ray.color * material.transmission;
-        newRay.dir = refract(ray.dir, normal, buf.mats[ray.index].refIdx / buf.mats[index].refIdx);
-        newRay.index = index;
-        newRay.depth = ray.depth + 1;
-        rays[count] = newRay;
-        count += 1;
+        float cos_theta = dot(newRay.dir, newRay.normal);
+        vec3 BRDF = material.reflectance;
 
+        fragColor.xyz += ray.color * material.emittance;
+        newRay.color = ray.color * cos_theta * BRDF * 2.0;
 
-        for (uint l = 0; l < buf.lightCount; l++) {
-            uint light = buf.lights[l].i;
-            Object lightObject = buf.objs[light];
-            Material lightMaterial = buf.mats[light];
-
-            vec3 dir = normalize(lightObject.pos - hitpoint);
-            float lightDist = distance(lightObject.pos, hitpoint);
-
-            float near = 1e20;
-
-            for (uint i = 0; i < buf.objCount; i++) {
-                Object object = buf.objs[i];
-
-                float a = dot(dir, normalize(object.pos - hitpoint)); // a > 0.0 if hit
-                float b = distance(object.pos, hitpoint);
-                float c = a * b;
-                float d = sqrt(object.size * object.size - b * b + c * c); // 0.5 * width at hitpoint
-                float e = c - d; // distance to hitpoint
-
-                if (a > 0.0 && e < lightDist && i != light) {
-                    near = min(near, sqrt(b * b - c * c) - object.size);
-                }
-            }
-
-            // float diffuse = max(dot(normal, dir), 0.0);
-            // float specular = diffuse * max(pow(dot(-ray.dir, reflect(-dir, normal)), material.shine), 0.0);
-            // diffuse *= material.diffuse;
-            // specular *= material.specular;
-            
-            float shadow = clamp(near + 1.0, 0.0, 1.0) * clamp(near + 1.0, 0.0, 1.0); // shadow is non-linear
-
-            fragColor.rgb += shadow * ray.color * material.reflectance * lightMaterial.reflectance;
-        }
+        ray = newRay;
     }
 }

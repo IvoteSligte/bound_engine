@@ -14,11 +14,12 @@ use vulkano::{
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo,
     },
     format::Format,
-    image::{view::ImageView, ImageUsage, SwapchainImage},
+    image::{view::ImageView, AttachmentImage, ImageUsage, SwapchainImage},
     instance::{Instance, InstanceCreateInfo},
     pipeline::{
         graphics::{
             input_assembly::InputAssemblyState,
+            multisample::MultisampleState,
             vertex_input::VertexInputState,
             viewport::{Viewport, ViewportState},
         },
@@ -67,10 +68,7 @@ fn select_physical_device<'a, W>(
         .filter(|&p| p.supported_extensions().is_superset_of(device_extensions))
         .filter_map(|p| {
             p.queue_families()
-                .find(|q| {
-                    q.supports_graphics()
-                        && q.supports_surface(surface).unwrap_or(false)
-                })
+                .find(|q| q.supports_graphics() && q.supports_surface(surface).unwrap_or(false))
                 .map(|q| (p, q))
         })
         .min_by_key(|(p, _)| match p.properties().device_type {
@@ -86,7 +84,13 @@ fn select_physical_device<'a, W>(
 fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Arc<RenderPass> {
     vulkano::single_pass_renderpass!(device.clone(),
         attachments: {
-            color: {
+            multisample: {
+                load: DontCare,
+                store: DontCare,
+                format: swapchain.image_format(),
+                samples: SAMPLES,
+            },
+            resolve: {
                 load: DontCare,
                 store: Store,
                 format: swapchain.image_format(),
@@ -94,8 +98,9 @@ fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Ar
             }
         },
         pass: {
-            color: [color],
-            depth_stencil: {}
+            color: [multisample],
+            depth_stencil: {},
+            resolve: [resolve],
         }
     )
     .unwrap()
@@ -103,16 +108,19 @@ fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Ar
 
 fn get_framebuffers(
     images: &[Arc<SwapchainImage<Window>>],
+    ms_images: &[Arc<AttachmentImage>],
     render_pass: Arc<RenderPass>,
 ) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
-        .map(|i| {
-            let image_view = ImageView::new_default(i.clone()).unwrap();
+        .zip(ms_images)
+        .map(|(image, ms_image)| {
+            let ms_image_view = ImageView::new_default(ms_image.clone()).unwrap();
+            let image_view = ImageView::new_default(image.clone()).unwrap();
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![image_view],
+                    attachments: vec![ms_image_view, image_view],
                     ..Default::default()
                 },
             )
@@ -126,6 +134,7 @@ fn get_graphics_pipeline(
     vertex_shader: Arc<ShaderModule>,
     fragment_shader: Arc<ShaderModule>,
     viewport: Viewport,
+    multisample: MultisampleState,
     render_pass: Arc<RenderPass>,
 ) -> Arc<GraphicsPipeline> {
     GraphicsPipeline::start()
@@ -134,6 +143,7 @@ fn get_graphics_pipeline(
         .input_assembly_state(InputAssemblyState::new()) // might be unnecessary
         .fragment_shader(fragment_shader.entry_point("main").unwrap(), ())
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
+        .multisample_state(multisample)
         .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
         .build(device.clone())
         .unwrap()
@@ -175,7 +185,7 @@ where
     builder
         .begin_render_pass(
             RenderPassBeginInfo {
-                clear_values: vec![None],
+                clear_values: vec![None, None],
                 ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
             },
             SubpassContents::Inline,
@@ -215,6 +225,9 @@ mod rotation {
 
 // field of view
 const FOV: f32 = 1.0;
+
+// per-pixel samples
+const SAMPLES: u32 = 2;
 
 struct Data<W> {
     /// the window surface
@@ -321,40 +334,51 @@ fn main() {
         .iter()
         .next()
         .unwrap();
-    let image_format = Some(
-        physical
-            .surface_formats(&surface, Default::default())
-            .unwrap()
-            .iter()
-            .max_by_key(|(format, _)| match format {
-                // any R8G8B8A8_.NORM variant
-                Format::R8G8B8A8_UNORM
-                | Format::R8G8B8A8_SNORM
-                | Format::B8G8R8A8_UNORM
-                | Format::B8G8R8A8_SNORM => 1,
-                _ => 0,
-            })
-            .unwrap()
-            .0,
-    );
+    let image_format = physical
+        .surface_formats(&surface, Default::default())
+        .unwrap()
+        .iter()
+        .max_by_key(|(format, _)| match format {
+            // any R8G8B8A8_.NORM variant
+            Format::R8G8B8A8_UNORM
+            | Format::R8G8B8A8_SNORM
+            | Format::B8G8R8A8_UNORM
+            | Format::B8G8R8A8_SNORM => 1,
+            _ => 0,
+        })
+        .unwrap()
+        .0;
 
     let (mut swapchain, swapchain_images) = Swapchain::new(
         device.clone(),
         surface.clone(),
         SwapchainCreateInfo {
             min_image_count: capabilities.min_image_count + 1,
-            image_format,
+            image_format: Some(image_format),
             image_extent: dimensions.into(),
-            image_usage: ImageUsage::color_attachment(),
+            image_usage: ImageUsage { color_attachment: true, transfer_dst: true, ..ImageUsage::none() },
             composite_alpha,
             ..Default::default()
         },
     )
     .unwrap();
 
+    let multisample_images = swapchain_images
+        .iter()
+        .map(|_| {
+            AttachmentImage::multisampled_input_attachment(
+                device.clone(),
+                dimensions.into(),
+                SAMPLES.try_into().unwrap(),
+                image_format,
+            ).unwrap()
+        })
+        .collect::<Vec<_>>();
+
     let render_pass = get_render_pass(device.clone(), swapchain.clone());
 
-    let mut framebuffers = get_framebuffers(&swapchain_images, render_pass.clone());
+    let mut framebuffers =
+        get_framebuffers(&swapchain_images, &multisample_images, render_pass.clone());
 
     let vertex_shader = shaders::load_Vertex(device.clone()).unwrap();
     let fragment_shader = shaders::load_Fragment(device.clone()).unwrap();
@@ -365,75 +389,50 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
+    let multisample = MultisampleState {
+        rasterization_samples: SAMPLES.try_into().unwrap(),
+        ..MultisampleState::new()
+    };
+
     let mut graphics_pipeline = get_graphics_pipeline(
         device.clone(),
         vertex_shader.clone(),
         fragment_shader.clone(),
         viewport.clone(),
+        multisample.clone(),
         render_pass.clone(),
     );
 
     let materials = [
         shaders::ty::Material {
             reflectance: [0.7, 0.7, 0.9],
-            diffuse: 0.3,
-            specular: 0.3,
-            shine: 2.0,
-            mirror: 0.5,
-            transmission: 0.8,
-            refIdx: 2.5,
-            _dummy0: [0u8; 12],
+            emittance: [0.0, 0.0, 0.0],
+            _dummy0: [0u8; 4],
+            _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
             reflectance: [0.1, 0.9, 0.5],
-            diffuse: 1.0,
-            specular: 1.0,
-            shine: 1.0,
-            mirror: 0.1,
-            transmission: 0.1,
-            refIdx: 1.5,
-            _dummy0: [0u8; 12],
+            emittance: [0.0, 0.0, 0.0],
+            _dummy0: [0u8; 4],
+            _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
             reflectance: [0.9, 0.9, 0.1],
-            diffuse: 1.0,
-            specular: 1.0,
-            shine: 1.0,
-            mirror: 0.0,
-            transmission: 0.9,
-            refIdx: 1.5,
-            _dummy0: [0u8; 12],
+            emittance: [0.0, 0.0, 0.0],
+            _dummy0: [0u8; 4],
+            _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
             reflectance: [0.9, 0.1, 0.1],
-            diffuse: 1.0,
-            specular: 1.0,
-            shine: 1.0,
-            mirror: 0.9,
-            transmission: 0.0,
-            refIdx: 1.5,
-            _dummy0: [0u8; 12],
+            emittance: [0.0, 0.0, 0.0],
+            _dummy0: [0u8; 4],
+            _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
-            reflectance: [2.0, 2.0, 2.0],
-            diffuse: 0.0,
-            specular: 0.0,
-            shine: 0.0,
-            mirror: 0.0,
-            transmission: 0.9,
-            refIdx: 1.0,
-            _dummy0: [0u8; 12],
-        },
-        // RESERVED FOR AIR
-        shaders::ty::Material {
-            reflectance: [1.0, 1.0, 1.0],
-            diffuse: 0.0,
-            specular: 0.0,
-            shine: 0.0,
-            mirror: 0.0,
-            transmission: 0.99,
-            refIdx: 1.0,
-            _dummy0: [0u8; 12],
+            reflectance: [0.9, 0.9, 0.8],
+            emittance: [1.0, 1.0, 1.0],
+            _dummy0: [0u8; 4],
+            _dummy1: [0u8; 4],
         },
     ];
 
@@ -457,20 +456,16 @@ fn main() {
         shaders::ty::Object {
             pos: [10.0, 10.0, 10.0],
             size: 1.0,
-        }
+        },
     ];
-
-    let lights = [shaders::ty::Index { i: 4, _dummy0: [0u8; 12]}];
 
     let mut mutable_data = shaders::ty::MutableData {
         matCount: materials.len() as u32,
         objCount: objects.len() as u32,
-        lightCount: lights.len() as u32,
         ..Default::default()
     };
     mutable_data.mats[..materials.len()].copy_from_slice(&materials);
     mutable_data.objs[..objects.len()].copy_from_slice(&objects);
-    mutable_data.lights[..lights.len()].copy_from_slice(&lights);
 
     let (mutable_buffer, mutable_future) =
         DeviceLocalBuffer::from_data(mutable_data, BufferUsage::uniform_buffer(), queue.clone())
@@ -496,6 +491,7 @@ fn main() {
     let mut push_constants = shaders::ty::PushConstantData {
         rot: [0.0, 0.0, 0.0, 0.0],
         pos: [0.0, 0.0, 0.0],
+        time: 0.0,
     };
 
     let mut graphics_descriptor_set = get_graphics_descriptor_set(
@@ -615,6 +611,7 @@ fn main() {
         push_constants.pos = (Vec3::from(push_constants.pos) + eh.position()).to_array();
         eh.position = Vec3::ZERO;
 
+        push_constants.time = eh.last_update.elapsed().as_secs_f32();
         eh.last_update = Instant::now();
 
         // rendering
@@ -623,7 +620,7 @@ fn main() {
 
             let dimensions = eh.window().inner_size();
 
-            let (new_swapchain, images) = match swapchain.recreate(SwapchainCreateInfo {
+            let (new_swapchain, new_swapchain_images) = match swapchain.recreate(SwapchainCreateInfo {
                 image_extent: dimensions.into(),
                 ..swapchain.create_info()
             }) {
@@ -633,7 +630,19 @@ fn main() {
             };
             swapchain = new_swapchain;
 
-            framebuffers = get_framebuffers(&images, render_pass.clone());
+            let new_multisample_images = swapchain_images
+                .iter()
+                .map(|_| {
+                    AttachmentImage::multisampled_input_attachment(
+                        device.clone(),
+                        dimensions.into(),
+                        SAMPLES.try_into().unwrap(),
+                        image_format,
+                    ).unwrap()
+                })
+                .collect::<Vec<_>>();
+
+            framebuffers = get_framebuffers(&new_swapchain_images, &new_multisample_images, render_pass.clone());
 
             if eh.window_resized {
                 eh.window_resized = false;
@@ -681,6 +690,7 @@ fn main() {
                     vertex_shader.clone(),
                     fragment_shader.clone(),
                     viewport.clone(),
+                    multisample.clone(),
                     render_pass.clone(),
                 );
 
