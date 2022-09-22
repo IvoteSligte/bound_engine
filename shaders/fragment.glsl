@@ -64,13 +64,26 @@ vec3 randomUnitVectorOnHemisphere(vec3 n, vec3 seed) {
 // calculates the distance between a ray (Ray) and a sphere (Object)
 float distanceToObject(Ray ray, Object obj) {
     vec3 v = obj.pos - ray.origin;
-    float a = dot(ray.dir, v);
+    float a = dot(ray.dir, v); // distance to plane through obj.pos perpendicular to ray.dir
     return a - sqrt(obj.size * obj.size - dot(v, v) + a * a);
+}
+
+// cone tracing
+void distanceCombined(Ray ray, Object obj, out vec3 point, out float dist, out float perpDist) {
+    vec3 v = obj.pos - ray.origin;
+    float a = dot(ray.dir, v); // distance to plane through obj.pos perpendicular to ray.dir
+    float b = dot(v, v) - a * a;
+    float c = sqrt(b);
+    perpDist = c - obj.size; // perpendicular distance
+    dist = a - sqrt(obj.size * obj.size - min(b, obj.size * obj.size)); // distance to point on sphere
+
+    vec3 d = obj.pos + normalize(ray.dir * a - v) * min(c, obj.size);
+    point = ray.origin + normalize(d - ray.origin) * dist;
 }
 
 void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
-    vec2 normCoord = gl_FragCoord.xy * 2 / cs.view - 1.0;
+    vec2 normCoord = gl_FragCoord.xy * 2.0 / cs.view - 1.0;
     // maps normCoord to a different range (e.g. for FOV and non-square windows)
     normCoord *= cs.ratio;
 
@@ -82,13 +95,13 @@ void main() {
     Ray ray = Ray(pc.pos, viewDir, vec3(-0.0), 0, vec3(1.0));
 
     for (uint r = 0; r < MAX_DEPTH; r++) {
-        seed += vec3(pc.time * 1.3, pc.time * 2.4, pc.time * 3.1);
+        seed += vec3(1.3, 2.4, 3.1);
 
         uint index = MAX_OBJECTS;
         float dist = 1e20;
 
         for (uint i = 0; i < buf.objCount; i++) {
-            float d = distanceToObject(ray, buf.objs[i]); // TODO: try cone tracing
+            float d = distanceToObject(ray, buf.objs[i]);
 
             if (d > 0.0 && d < dist) {
                 dist = d;
@@ -109,7 +122,7 @@ void main() {
         Material material = buf.mats[index];
 
         Ray newRay;
-        newRay.origin = ray.dir * dist + ray.origin;
+        newRay.origin = ray.origin + ray.dir * dist;
         newRay.normal = normalize(newRay.origin - buf.objs[index].pos);
         newRay.dir = randomUnitVectorOnHemisphere(newRay.normal, seed);
         newRay.depth = ray.depth + 1;
@@ -117,7 +130,7 @@ void main() {
         float cos_theta = dot(newRay.dir, newRay.normal);
         vec3 BRDF = material.reflectance;
 
-        fragColor.xyz += ray.color * material.emittance;
+        fragColor.xyz += ray.color * material.emittance / (r + 1);
         newRay.color = ray.color * cos_theta * BRDF * 2.0;
 
         ray = newRay;

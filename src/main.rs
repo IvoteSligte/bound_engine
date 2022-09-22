@@ -227,7 +227,7 @@ mod rotation {
 const FOV: f32 = 1.0;
 
 // per-pixel samples
-const SAMPLES: u32 = 2;
+const SAMPLES: u32 = 8;
 
 struct Data<W> {
     /// the window surface
@@ -454,8 +454,8 @@ fn main() {
             size: 3.0,
         },
         shaders::ty::Object {
-            pos: [10.0, 10.0, 10.0],
-            size: 1.0,
+            pos: [20.0, 20.0, 20.0],
+            size: 10.0,
         },
     ];
 
