@@ -14,12 +14,11 @@ use vulkano::{
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo,
     },
     format::Format,
-    image::{view::ImageView, AttachmentImage, ImageUsage, SwapchainImage},
+    image::{view::ImageView, ImageUsage, SwapchainImage},
     instance::{Instance, InstanceCreateInfo},
     pipeline::{
         graphics::{
             input_assembly::InputAssemblyState,
-            multisample::MultisampleState,
             vertex_input::VertexInputState,
             viewport::{Viewport, ViewportState},
         },
@@ -84,13 +83,7 @@ fn select_physical_device<'a, W>(
 fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Arc<RenderPass> {
     vulkano::single_pass_renderpass!(device.clone(),
         attachments: {
-            multisample: {
-                load: DontCare,
-                store: DontCare,
-                format: swapchain.image_format(),
-                samples: SAMPLES,
-            },
-            resolve: {
+            color: {
                 load: DontCare,
                 store: Store,
                 format: swapchain.image_format(),
@@ -98,9 +91,8 @@ fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Ar
             }
         },
         pass: {
-            color: [multisample],
-            depth_stencil: {},
-            resolve: [resolve],
+            color: [color],
+            depth_stencil: {}
         }
     )
     .unwrap()
@@ -108,19 +100,16 @@ fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Ar
 
 fn get_framebuffers(
     images: &[Arc<SwapchainImage<Window>>],
-    ms_images: &[Arc<AttachmentImage>],
     render_pass: Arc<RenderPass>,
 ) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
-        .zip(ms_images)
-        .map(|(image, ms_image)| {
-            let ms_image_view = ImageView::new_default(ms_image.clone()).unwrap();
+        .map(|image| {
             let image_view = ImageView::new_default(image.clone()).unwrap();
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![ms_image_view, image_view],
+                    attachments: vec![image_view],
                     ..Default::default()
                 },
             )
@@ -134,7 +123,6 @@ fn get_graphics_pipeline(
     vertex_shader: Arc<ShaderModule>,
     fragment_shader: Arc<ShaderModule>,
     viewport: Viewport,
-    multisample: MultisampleState,
     render_pass: Arc<RenderPass>,
 ) -> Arc<GraphicsPipeline> {
     GraphicsPipeline::start()
@@ -143,7 +131,6 @@ fn get_graphics_pipeline(
         .input_assembly_state(InputAssemblyState::new()) // might be unnecessary
         .fragment_shader(fragment_shader.entry_point("main").unwrap(), ())
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
-        .multisample_state(multisample)
         .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
         .build(device.clone())
         .unwrap()
@@ -225,9 +212,6 @@ mod rotation {
 
 // field of view
 const FOV: f32 = 1.0;
-
-// per-pixel samples
-const SAMPLES: u32 = 8;
 
 struct Data<W> {
     /// the window surface
@@ -363,22 +347,10 @@ fn main() {
     )
     .unwrap();
 
-    let multisample_images = swapchain_images
-        .iter()
-        .map(|_| {
-            AttachmentImage::multisampled_input_attachment(
-                device.clone(),
-                dimensions.into(),
-                SAMPLES.try_into().unwrap(),
-                image_format,
-            ).unwrap()
-        })
-        .collect::<Vec<_>>();
-
     let render_pass = get_render_pass(device.clone(), swapchain.clone());
 
     let mut framebuffers =
-        get_framebuffers(&swapchain_images, &multisample_images, render_pass.clone());
+        get_framebuffers(&swapchain_images, render_pass.clone());
 
     let vertex_shader = shaders::load_Vertex(device.clone()).unwrap();
     let fragment_shader = shaders::load_Fragment(device.clone()).unwrap();
@@ -389,17 +361,11 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
-    let multisample = MultisampleState {
-        rasterization_samples: SAMPLES.try_into().unwrap(),
-        ..MultisampleState::new()
-    };
-
     let mut graphics_pipeline = get_graphics_pipeline(
         device.clone(),
         vertex_shader.clone(),
         fragment_shader.clone(),
         viewport.clone(),
-        multisample.clone(),
         render_pass.clone(),
     );
 
@@ -630,19 +596,7 @@ fn main() {
             };
             swapchain = new_swapchain;
 
-            let new_multisample_images = swapchain_images
-                .iter()
-                .map(|_| {
-                    AttachmentImage::multisampled_input_attachment(
-                        device.clone(),
-                        dimensions.into(),
-                        SAMPLES.try_into().unwrap(),
-                        image_format,
-                    ).unwrap()
-                })
-                .collect::<Vec<_>>();
-
-            framebuffers = get_framebuffers(&new_swapchain_images, &new_multisample_images, render_pass.clone());
+            framebuffers = get_framebuffers(&new_swapchain_images, render_pass.clone());
 
             if eh.window_resized {
                 eh.window_resized = false;
@@ -690,7 +644,6 @@ fn main() {
                     vertex_shader.clone(),
                     fragment_shader.clone(),
                     viewport.clone(),
-                    multisample.clone(),
                     render_pass.clone(),
                 );
 
