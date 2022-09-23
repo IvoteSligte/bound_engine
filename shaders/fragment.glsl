@@ -90,12 +90,9 @@ void main() {
     fragColor.xyz = vec3(0.0);
     vec3 viewDir = normalize(rotate(pc.rot, vec3(normCoord.x, 1.0, normCoord.y)));
 
-    vec3 seed = vec3(normCoord.xy / normCoord.yx, normCoord.x * normCoord.y);
-
     Ray ray = Ray(pc.pos, viewDir, vec3(-0.0), 0, vec3(1.0));
 
     for (uint r = 0; r < MAX_DEPTH; r++) {
-        seed += vec3(1.3, 2.4, 3.1);
 
         uint index = MAX_OBJECTS;
         float dist = 1e20;
@@ -111,7 +108,7 @@ void main() {
         
         if (index == MAX_OBJECTS) {
             if (ray.normal.x != -0.0) {
-                ray.dir = randomUnitVectorOnHemisphere(ray.normal, seed);
+                ray.dir = randomUnitVectorOnHemisphere(ray.normal, ray.origin + r);
                 ray.depth += 1;
                 continue;
             } else {
@@ -124,7 +121,7 @@ void main() {
         Ray newRay;
         newRay.origin = ray.origin + ray.dir * dist;
         newRay.normal = normalize(newRay.origin - buf.objs[index].pos);
-        newRay.dir = randomUnitVectorOnHemisphere(newRay.normal, seed);
+        newRay.dir = randomUnitVectorOnHemisphere(newRay.normal, newRay.origin + r);
         newRay.depth = ray.depth + 1;
 
         float cos_theta = dot(newRay.dir, newRay.normal);

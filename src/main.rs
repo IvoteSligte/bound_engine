@@ -154,7 +154,7 @@ fn get_graphics_descriptor_set(
 fn get_command_buffer<S>(
     device: Arc<Device>,
     queue: Arc<Queue>,
-    graphics_pipeline: Arc<GraphicsPipeline>,
+    pipeline: Arc<GraphicsPipeline>,
     framebuffer: Arc<Framebuffer>,
     push_constants: shaders::ty::PushConstantData,
     graphics_descriptor_set: S,
@@ -178,11 +178,11 @@ where
             SubpassContents::Inline,
         )
         .unwrap()
-        .bind_pipeline_graphics(graphics_pipeline.clone())
-        .push_constants(graphics_pipeline.layout().clone(), 0, push_constants)
+        .bind_pipeline_graphics(pipeline.clone())
+        .push_constants(pipeline.layout().clone(), 0, push_constants)
         .bind_descriptor_sets(
             PipelineBindPoint::Graphics,
-            graphics_pipeline.layout().clone(),
+            pipeline.layout().clone(),
             0,
             graphics_descriptor_set.clone(),
         )
@@ -340,7 +340,7 @@ fn main() {
             min_image_count: capabilities.min_image_count + 1,
             image_format: Some(image_format),
             image_extent: dimensions.into(),
-            image_usage: ImageUsage { color_attachment: true, transfer_dst: true, ..ImageUsage::none() },
+            image_usage: ImageUsage { color_attachment: true, ..ImageUsage::none() },
             composite_alpha,
             ..Default::default()
         },
