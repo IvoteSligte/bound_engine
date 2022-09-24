@@ -323,11 +323,8 @@ fn main() {
         .unwrap()
         .iter()
         .max_by_key(|(format, _)| match format {
-            // any R8G8B8A8_.NORM variant
             Format::R8G8B8A8_UNORM
-            | Format::R8G8B8A8_SNORM
-            | Format::B8G8R8A8_UNORM
-            | Format::B8G8R8A8_SNORM => 1,
+            | Format::B8G8R8A8_UNORM => 1,
             _ => 0,
         })
         .unwrap()
