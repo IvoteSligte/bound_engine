@@ -40,7 +40,6 @@ use winit::{
 };
 use winit_event_helper::EventHelper;
 
-// TODO: increase first direct image resolution
 mod shaders {
     vulkano_shaders::shader! {
         shaders: {
@@ -501,7 +500,6 @@ fn main() {
         data.window_frozen = size.width == 0 || size.height == 0;
         data.window_resized = true;
 
-        // the shaders are based on the assumption that width is less than height
         if size.width < size.height {
             size.height = size.width;
             data.window().set_inner_size(size);

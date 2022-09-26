@@ -11,7 +11,7 @@ layout(push_constant) uniform PushConstantData {
 } pc;
 
 const uint MAX_OBJECTS = 8;
-const uint MAX_DEPTH = 256;
+const uint MAX_SAMPLES = 256;
 
 struct Material {
     vec3 reflectance;
@@ -51,11 +51,11 @@ vec3 rotate(vec4 q, vec3 v) {
 
 // quasi random number generator
 vec3 randomUnitVectorOnHemisphere(vec3 n, vec3 seed) {
-    const float m = 130432217.3249 / MAX_DEPTH;
+    const float m = 1432324.329543;
 
     vec3 v = mod(seed * m, 2.0) - 1.0;
 
-    return normalize(v) * sign(dot(n, v));
+    return -normalize(faceforward(v, v, n));
 }
 
 // calculates the distance between a ray (Ray) and a sphere (Object)
@@ -116,7 +116,7 @@ void main() {
     updateRay(ray);
     shade(ray);
 
-    for (uint r = 0; r < MAX_DEPTH; r++) {
+    for (uint r = 0; r < MAX_SAMPLES; r++) {
         initRay(ray);
         traceRay(ray);
         if (ray.objectHit == MAX_OBJECTS) {
