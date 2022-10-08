@@ -9,9 +9,9 @@ edition = "2021"
 path = "C:/Users/gebruiker/IdeaProjects/winit_event_helper"
 
 [dependencies]
-vulkano = { version = "0.30.0", git = "https://github.com/vulkano-rs/vulkano" }
-vulkano-shaders = "0.30.0"
-vulkano-win = { version = "0.30.0", git = "https://github.com/vulkano-rs/vulkano" }
+vulkano = "0.31.0"
+vulkano-shaders = "0.31.0"
+vulkano-win = "0.31.0"
 bytemuck = "1.12.1"
 winit = "0.27.2"
 glam = "0.21.3"

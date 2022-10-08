@@ -81,7 +81,7 @@ dependencies = [
  "bytemuck",
  "fps_counter",
  "glam",
- "vulkano 0.30.0 (git+https://github.com/vulkano-rs/vulkano)",
+ "vulkano",
  "vulkano-shaders",
  "vulkano-win",
  "winit",
@@ -285,6 +285,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crunchy"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
+
+[[package]]
 name = "cty"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -474,9 +480,12 @@ checksum = "518faa5064866338b013ff9b2350dc318e14cc4fcd6cb8206d7e7c9886c98815"
 
 [[package]]
 name = "half"
-version = "1.8.2"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
+checksum = "ad6a9459c9c30b177b925162351f97e7d967c7ea8bab3b8352805327daf45554"
+dependencies = [
+ "crunchy",
+]
 
 [[package]]
 name = "hashbrown"
@@ -755,9 +764,6 @@ name = "once_cell"
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f7254b99e31cad77da24b08ebf628882739a608578bb1bcdfc1f9c21260d7c0"
-dependencies = [
- "parking_lot_core",
-]
 
 [[package]]
 name = "parking_lot"
@@ -1001,16 +1007,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "shared_library"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a9e7e0f2bfae24d8a5b5a66c5b257a83c7412304311512a0c054cd5e619da11"
-dependencies = [
- "lazy_static",
- "libc",
-]
-
-[[package]]
 name = "slotmap"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1135,41 +1131,18 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "vk-parse"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29f3bfdc05ca5a9f385f50daa1d714b60324b68814b3bae99d797f0952e13e84"
+checksum = "4c6a0bda9bbe6b9e50e6456c80aa8fe4cca3b21e4311a1130c41e4915ec2e32a"
 dependencies = [
  "xml-rs",
 ]
 
 [[package]]
 name = "vulkano"
-version = "0.30.0"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0163f8682a801d6eb1dcb0a4235f82e24646e3f2786a415af4eb9b214e130bec"
-dependencies = [
- "ash",
- "bytemuck",
- "crossbeam-queue",
- "half",
- "heck",
- "indexmap",
- "lazy_static",
- "parking_lot",
- "proc-macro2",
- "quote",
- "regex",
- "serde",
- "serde_json",
- "shared_library",
- "smallvec",
- "vk-parse",
-]
-
-[[package]]
-name = "vulkano"
-version = "0.30.0"
-source = "git+https://github.com/vulkano-rs/vulkano#2e570f8c3fe5bcf50e7c54895b9caac8158b1226"
+checksum = "617cd0984a92f4839e58e1ae7c94e6f7e0b79695ec8f2c516cfbcdaaa4a9f921"
 dependencies = [
  "ash",
  "bytemuck",
@@ -1181,7 +1154,6 @@ dependencies = [
  "lazy_static",
  "libloading",
  "objc",
- "once_cell",
  "parking_lot",
  "proc-macro2",
  "quote",
@@ -1194,27 +1166,28 @@ dependencies = [
 
 [[package]]
 name = "vulkano-shaders"
-version = "0.30.0"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3104d81c059a37a188d5cd30f45268e57dbe782008043648d85a7e831f3f5a13"
+checksum = "bbf704c3a109eeec3deed8ed058888c4321da200ef8d23d664f40b3b0a39b5b4"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
  "shaderc",
  "syn",
- "vulkano 0.30.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "vulkano",
 ]
 
 [[package]]
 name = "vulkano-win"
-version = "0.30.0"
-source = "git+https://github.com/vulkano-rs/vulkano#2e570f8c3fe5bcf50e7c54895b9caac8158b1226"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaebf8b56eccf018695c0252a5c8ddda3d49e5484d25c337e167ef06a7f5d737"
 dependencies = [
  "core-graphics-types",
  "objc",
  "raw-window-handle 0.5.0",
- "vulkano 0.30.0 (git+https://github.com/vulkano-rs/vulkano)",
+ "vulkano",
  "winit",
 ]
 
@@ -1461,9 +1434,10 @@ dependencies = [
 
 [[package]]
 name = "winit_event_helper"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "ahash",
+ "bitflags",
  "winit",
 ]
 

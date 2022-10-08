@@ -1,7 +1,5 @@
 #version 460
 
-#include "random.glsl"
-
 layout(location = 0) out vec4 fragColor;
 
 layout(push_constant) uniform PushConstantData {
@@ -11,7 +9,8 @@ layout(push_constant) uniform PushConstantData {
 } pc;
 
 const uint MAX_OBJECTS = 8;
-const uint MAX_SAMPLES = 256;
+const uint SAMPLES_PER_PIXEL = 16;
+const uint RAYS_PER_SAMPLE = 8;
 
 struct Material {
     vec3 reflectance;
@@ -20,7 +19,7 @@ struct Material {
 
 struct Object {
     vec3 pos;
-    float size;
+    float sizeSquared;
 };
 
 struct Ray {
@@ -40,7 +39,7 @@ layout(binding = 0) uniform readonly MutableData {
 } buf;
 
 layout(binding = 1) uniform readonly ConstantBuffer {
-    vec2 view; // window size
+    vec2 view; // window sizeSquared
     vec2 ratio; // window height / width
 } cs;
 
@@ -49,7 +48,7 @@ vec3 rotate(vec4 q, vec3 v) {
     return v + 2.0 * cross(q.xyz, t);
 }
 
-// quasi random number generator
+// pseudo random number generator
 vec3 randomUnitVectorOnHemisphere(vec3 n, vec3 seed) {
     const float m = 1432324.329543;
 
@@ -62,7 +61,7 @@ vec3 randomUnitVectorOnHemisphere(vec3 n, vec3 seed) {
 float distanceToObject(Ray ray, Object obj) {
     vec3 v = obj.pos - ray.origin;
     float a = dot(ray.direction, v); // distance to plane through obj.pos perpendicular to ray.direction
-    return a - sqrt(obj.size * obj.size - dot(v, v) + a * a);
+    return a - sqrt(obj.sizeSquared - dot(v, v) + a * a);
 }
 
 void initRay(inout Ray ray) {
@@ -81,10 +80,10 @@ void traceRay(inout Ray ray) {
     }
 }
 
-void updateRay(inout Ray ray) {
+void updateRay(inout Ray ray, vec3 seed) {
     ray.origin += ray.direction * ray.distanceToObject;
     ray.normalOfObject = normalize(ray.origin - buf.objs[ray.objectHit].pos);
-    ray.direction = randomUnitVectorOnHemisphere(ray.normalOfObject, ray.origin);
+    ray.direction = randomUnitVectorOnHemisphere(ray.normalOfObject, seed);
 }
 
 void shade(inout Ray ray) {
@@ -108,22 +107,33 @@ void main() {
 
     Ray ray = Ray(pc.pos, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
+    vec3 seed = viewDir + pc.time * 57.3421;
+
     initRay(ray);
     traceRay(ray);
     if (ray.objectHit == MAX_OBJECTS) {
         return;
     }
-    updateRay(ray);
+    updateRay(ray, seed);
     shade(ray);
 
-    for (uint r = 0; r < MAX_SAMPLES; r++) {
-        initRay(ray);
-        traceRay(ray);
-        if (ray.objectHit == MAX_OBJECTS) {
-            ray.direction = randomUnitVectorOnHemisphere(ray.normalOfObject, ray.origin + r);
-            continue;
+    float misses = 0.0;
+
+    Ray baseRay = ray;
+    for (uint s = 0; s < SAMPLES_PER_PIXEL; s++) {
+        ray = baseRay;
+
+        for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
+            seed += 1.0;
+            initRay(ray);
+            traceRay(ray);
+            if (ray.objectHit == MAX_OBJECTS) {
+                ray.direction = randomUnitVectorOnHemisphere(ray.normalOfObject, seed);
+                misses += 1;
+                continue;
+            }
+            updateRay(ray, seed);
+            shade(ray);
         }
-        updateRay(ray);
-        shade(ray);
     }
 }
