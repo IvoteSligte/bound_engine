@@ -1,12 +1,12 @@
 use std::{f32::consts::PI, sync::Arc};
 
 use fps_counter::FPSCounter;
-use glam::{DVec2, Quat, UVec2, Vec2, Vec3};
+use glam::{DVec2, Quat, UVec2, Vec2, Vec3, UVec3};
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, CopyImageInfo, PrimaryAutoCommandBuffer,
-        RenderPassBeginInfo, SubpassContents,
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyImageInfo,
+        PrimaryAutoCommandBuffer, ClearColorImageInfo,
     },
     descriptor_set::{DescriptorSetsCollection, PersistentDescriptorSet, WriteDescriptorSet},
     device::{
@@ -19,15 +19,7 @@ use vulkano::{
         SwapchainImage,
     },
     instance::{Instance, InstanceCreateInfo},
-    pipeline::{
-        graphics::{
-            input_assembly::InputAssemblyState,
-            vertex_input::VertexInputState,
-            viewport::{Viewport, ViewportState},
-        },
-        ComputePipeline, GraphicsPipeline, Pipeline, PipelineBindPoint,
-    },
-    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
+    pipeline::{graphics::viewport::Viewport, ComputePipeline, Pipeline, PipelineBindPoint},
     shader::ShaderModule,
     swapchain::{
         self, AcquireError, PresentInfo, Surface, Swapchain, SwapchainCreateInfo,
@@ -38,27 +30,20 @@ use vulkano::{
 };
 use vulkano_win::VkSurfaceBuild;
 use winit::{
-    event::{ElementState, VirtualKeyCode},
+    dpi::PhysicalSize,
+    event::VirtualKeyCode,
     event_loop::{ControlFlow, EventLoop},
-    window::{CursorGrabMode, Fullscreen, Window, WindowBuilder}, dpi::PhysicalSize,
+    window::{CursorGrabMode, Fullscreen, Window, WindowBuilder},
 };
-use winit_event_helper::EventHelper;
+use winit_event_helper::{EventHelper, ElementState2};
 
 mod shaders {
     vulkano_shaders::shader! {
         shaders: {
-            Vertex: {
-                ty: "vertex",
-                path: "shaders/vertex.glsl",
-            },
-            Fragment: {
-                ty: "fragment",
-                path: "shaders/fragment.glsl",
-            },
             Compute: {
                 ty: "compute",
                 path: "shaders/compute.glsl",
-            },
+            }
         },
         types_meta: { #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)] },
         include: ["shaders/random.glsl"],
@@ -94,64 +79,8 @@ fn select_physical_device<'a, W>(
         .unwrap()
 }
 
-fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Arc<RenderPass> {
-    vulkano::single_pass_renderpass!(device.clone(),
-        attachments: {
-            color: {
-                load: DontCare,
-                store: Store,
-                format: swapchain.image_format(),
-                samples: 1,
-            }
-        },
-        pass: {
-            color: [color],
-            depth_stencil: {}
-        }
-    )
-    .unwrap()
-}
-
-fn get_framebuffers(
-    images: &[Arc<SwapchainImage<Window>>],
-    render_pass: Arc<RenderPass>,
-) -> Vec<Arc<Framebuffer>> {
-    images
-        .iter()
-        .map(|image| {
-            let image_view = ImageView::new_default(image.clone()).unwrap();
-            Framebuffer::new(
-                render_pass.clone(),
-                FramebufferCreateInfo {
-                    attachments: vec![image_view],
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-        })
-        .collect()
-}
-
-fn get_graphics_pipeline(
-    device: Arc<Device>,
-    vertex_shader: Arc<ShaderModule>,
-    fragment_shader: Arc<ShaderModule>,
-    viewport: Viewport,
-    render_pass: Arc<RenderPass>,
-) -> Arc<GraphicsPipeline> {
-    GraphicsPipeline::start()
-        .vertex_input_state(VertexInputState::new())
-        .vertex_shader(vertex_shader.entry_point("main").unwrap(), ())
-        .input_assembly_state(InputAssemblyState::new()) // might be unnecessary
-        .fragment_shader(fragment_shader.entry_point("main").unwrap(), ())
-        .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
-        .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-        .build(device.clone())
-        .unwrap()
-}
-
 fn get_compute_pipeline(
-    device: &Arc<Device>,
+    device: Arc<Device>,
     compute_shader: Arc<ShaderModule>,
 ) -> Arc<ComputePipeline> {
     ComputePipeline::new(
@@ -164,93 +93,104 @@ fn get_compute_pipeline(
     .unwrap()
 }
 
-fn get_graphics_descriptor_set(
-    pipeline: Arc<GraphicsPipeline>,
-    mutable_buffer: Arc<dyn BufferAccess>,
-    constant_buffer: Arc<dyn BufferAccess>,
-) -> Arc<PersistentDescriptorSet> {
-    PersistentDescriptorSet::new(
-        pipeline.layout().set_layouts()[0].clone(),
-        [
-            WriteDescriptorSet::buffer(0, mutable_buffer),
-            WriteDescriptorSet::buffer(1, constant_buffer),
-        ],
+fn get_intermediate_image(
+    device: Arc<Device>,
+    dimensions: [u32; 2],
+    queue_family_index: u32,
+) -> Arc<StorageImage> {
+    StorageImage::with_usage(
+        device.clone(),
+        ImageDimensions::Dim2d {
+            width: dimensions[0],
+            height: dimensions[1],
+            array_layers: 1,
+        },
+        Format::R8G8B8A8_UNORM,
+        ImageUsage {
+            storage: true,
+            transfer_src: true,
+            transfer_dst: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
     )
     .unwrap()
 }
 
-fn get_compute_descriptor_set(
+fn get_temporal_images(
     device: Arc<Device>,
-    queue: Arc<Queue>,
-    pipeline: Arc<ComputePipeline>,
     dimensions: PhysicalSize<u32>,
-    image_format: Format,
-) -> (Arc<PersistentDescriptorSet>, Arc<StorageImage>, Arc<StorageImage>) {
-    // accumulator image
-    let acc_image = StorageImage::with_usage(
+    queue_family_index: u32,
+) -> (Arc<StorageImage>, Arc<StorageImage>) {
+    let accumulator_image_read = StorageImage::with_usage(
         device.clone(),
         ImageDimensions::Dim2d {
             width: dimensions.width,
             height: dimensions.height,
             array_layers: 1,
         },
-        image_format,
-        ImageUsage {
-            storage: true,
-            transfer_src: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue.queue_family_index()],
-    )
-    .unwrap();
-
-    // current image (fragment shader writes indirectly to this one)
-    let curr_image = StorageImage::with_usage(
-        device.clone(),
-        ImageDimensions::Dim2d {
-            width: dimensions.width,
-            height: dimensions.height,
-            array_layers: 1,
-        },
-        image_format,
+        Format::R16G16B16A16_SFLOAT, // TODO: loosely match format with swapchain image format
         ImageUsage {
             storage: true,
             transfer_dst: true,
             ..ImageUsage::empty()
         },
         ImageCreateFlags::empty(),
-        [queue.queue_family_index()],
+        [queue_family_index],
     )
     .unwrap();
 
-    let acc_image_view = ImageView::new_default(acc_image.clone()).unwrap();
-    let curr_image_view = ImageView::new_default(curr_image.clone()).unwrap();
+    let accumulator_image_write = StorageImage::with_usage(
+        device.clone(),
+        accumulator_image_read.dimensions(),
+        accumulator_image_read.format(), // TODO: loosely match format with swapchain image format
+        ImageUsage {
+            storage: true,
+            transfer_src: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+    
+    (accumulator_image_read, accumulator_image_write)
+}
 
-    let descriptor_set = PersistentDescriptorSet::new(
+fn get_compute_descriptor_set(
+    pipeline: Arc<ComputePipeline>,
+    mutable_buffer: Arc<dyn BufferAccess>,
+    constant_buffer: Arc<dyn BufferAccess>,
+    render_image: Arc<dyn ImageAccess>,
+    accumulator_images: (Arc<StorageImage>, Arc<StorageImage>),
+) -> Arc<PersistentDescriptorSet> {
+    let render_image_view = ImageView::new_default(render_image.clone()).unwrap();
+    let accumulator_image_view_read = ImageView::new_default(accumulator_images.0).unwrap();
+    let accumulator_image_view_write = ImageView::new_default(accumulator_images.1).unwrap();
+
+    PersistentDescriptorSet::new(
         pipeline.layout().set_layouts()[0].clone(),
         [
-            WriteDescriptorSet::image_view(0, acc_image_view),
-            WriteDescriptorSet::image_view(1, curr_image_view),
+            WriteDescriptorSet::buffer(0, mutable_buffer),
+            WriteDescriptorSet::buffer(1, constant_buffer),
+            WriteDescriptorSet::image_view(2, render_image_view),
+            WriteDescriptorSet::image_view(3, accumulator_image_view_read),
+            WriteDescriptorSet::image_view(4, accumulator_image_view_write),
         ],
     )
-    .unwrap();
-
-    (descriptor_set, acc_image, curr_image)
+    .unwrap()
 }
 
 fn get_command_buffer<S>(
     device: Arc<Device>,
     queue: Arc<Queue>,
-    graphics_pipeline: Arc<GraphicsPipeline>,
     compute_pipeline: Arc<ComputePipeline>,
-    framebuffer: Arc<Framebuffer>,
     push_constants: shaders::ty::PushConstantData,
-    graphics_descriptor_set: S,
     compute_descriptor_set: S,
+    intermediate_image: Arc<dyn ImageAccess>,
     swapchain_image: Arc<SwapchainImage<Window>>,
-    compute_acc_image: Arc<dyn ImageAccess>,
-    compute_curr_image: Arc<dyn ImageAccess>,
+    accumulator_images: (Arc<StorageImage>, Arc<StorageImage>),
 ) -> Arc<PrimaryAutoCommandBuffer>
 where
     S: DescriptorSetsCollection + Clone,
@@ -263,54 +203,27 @@ where
     .unwrap();
 
     builder
-        .begin_render_pass(
-            RenderPassBeginInfo {
-                clear_values: vec![None, None],
-                ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-            },
-            SubpassContents::Inline,
-        )
-        .unwrap()
-        .bind_pipeline_graphics(graphics_pipeline.clone())
-        .push_constants(graphics_pipeline.layout().clone(), 0, push_constants)
-        .bind_descriptor_sets(
-            PipelineBindPoint::Graphics,
-            graphics_pipeline.layout().clone(),
-            0,
-            graphics_descriptor_set.clone(),
-        )
-        .draw(3, 1, 0, 0)
-        .unwrap()
-        .end_render_pass()
+        .clear_color_image(ClearColorImageInfo::image(intermediate_image.clone()))
         .unwrap()
         .bind_pipeline_compute(compute_pipeline.clone())
+        .push_constants(compute_pipeline.layout().clone(), 0, push_constants)
         .bind_descriptor_sets(
             PipelineBindPoint::Compute,
             compute_pipeline.layout().clone(),
             0,
             compute_descriptor_set.clone(),
         )
-        .copy_image(CopyImageInfo::images(
-            swapchain_image.clone(),
-            compute_curr_image.clone(),
-        ))
-        .unwrap()
-        .dispatch(swapchain_image.dimensions().width_height_depth())
+        .dispatch((UVec3::from_array(swapchain_image.dimensions().width_height_depth()).as_vec3() / 8.0).ceil().as_uvec3().to_array())
         .unwrap()
         .copy_image(CopyImageInfo::images(
-            compute_acc_image.clone(),
+            intermediate_image.clone(),
             swapchain_image.clone(),
         ))
+        .unwrap()
+        .copy_image(CopyImageInfo::images(accumulator_images.1, accumulator_images.0))
         .unwrap();
 
     Arc::new(builder.build().unwrap())
-}
-
-#[allow(dead_code)]
-mod speed {
-    pub const MOVEMENT: f32 = 25.0;
-    pub const ROTATION: f32 = 1.0;
-    pub const MOUSE: f32 = 1.0;
 }
 
 #[allow(dead_code)]
@@ -336,10 +249,12 @@ struct Data<W> {
     /// change in cursor position
     cursor_delta: Vec2,
     /// change in position relative to the rotation axes
-    position: Vec3,
+    delta_position: Vec3,
     /// absolute rotation around the x and z axes
     rotation: Vec2,
     quit: bool,
+    speed_multiplier: f32,
+    rotation_multiplier: f32,
 }
 
 impl<W> Data<W> {
@@ -358,7 +273,7 @@ impl<W> Data<W> {
         let forward = rotation.mul_vec3(rotation::FORWARD);
         let up = rotation.mul_vec3(rotation::UP);
 
-        self.position.x * right + self.position.y * forward + self.position.z * up
+        self.delta_position.x * right + self.delta_position.y * forward + self.delta_position.z * up
     }
 }
 
@@ -424,7 +339,10 @@ fn main() {
         .unwrap()
         .iter()
         .max_by_key(|(format, _)| match format {
-            Format::R8G8B8A8_UNORM | Format::B8G8R8A8_UNORM => 1,
+            Format::R8G8B8_UNORM
+            | Format::B8G8R8_UNORM
+            | Format::R8G8B8A8_UNORM
+            | Format::B8G8R8A8_UNORM => 1,
             _ => 0,
         })
         .unwrap()
@@ -438,8 +356,7 @@ fn main() {
             image_format: Some(image_format),
             image_extent: dimensions.into(),
             image_usage: ImageUsage {
-                color_attachment: true,
-                transfer_src: true,
+                storage: true,
                 transfer_dst: true,
                 ..ImageUsage::empty()
             },
@@ -449,12 +366,6 @@ fn main() {
     )
     .unwrap();
 
-    let render_pass = get_render_pass(device.clone(), swapchain.clone());
-
-    let mut framebuffers = get_framebuffers(&swapchain_images, render_pass.clone());
-
-    let vertex_shader = shaders::load_Vertex(device.clone()).unwrap();
-    let fragment_shader = shaders::load_Fragment(device.clone()).unwrap();
     let compute_shader = shaders::load_Compute(device.clone()).unwrap();
 
     let mut viewport = Viewport {
@@ -463,15 +374,7 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
-    let mut graphics_pipeline = get_graphics_pipeline(
-        device.clone(),
-        vertex_shader.clone(),
-        fragment_shader.clone(),
-        viewport.clone(),
-        render_pass.clone(),
-    );
-
-    let compute_pipeline = get_compute_pipeline(&device, compute_shader);
+    let mut compute_pipeline = get_compute_pipeline(device.clone(), compute_shader.clone());
 
     let materials = [
         shaders::ty::Material {
@@ -499,8 +402,8 @@ fn main() {
             _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
-            reflectance: [0.9, 0.9, 0.8],
-            emittance: [1.0, 1.0, 1.0],
+            reflectance: [0.0, 0.0, 0.0],
+            emittance: [10.0, 10.0, 10.0],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
@@ -525,7 +428,7 @@ fn main() {
         },
         shaders::ty::Object {
             pos: [20.0, 20.0, 20.0],
-            sizeSquared: 10.0 * 10.0,
+            sizeSquared: 5.0 * 5.0,
         },
     ];
 
@@ -571,26 +474,31 @@ fn main() {
         .unwrap();
 
     let mut push_constants = shaders::ty::PushConstantData {
-        rot: [0.0, 0.0, 0.0, 0.0],
-        pos: [0.0, 0.0, 0.0],
+        rot: [0.0; 4],
+        pos: [0.0; 3],
         time: 0.0,
+        ipRot: [0.0; 4],
+        pPos: [0.0; 3],
     };
 
-    let mut graphics_descriptor_set = get_graphics_descriptor_set(
-        graphics_pipeline.clone(),
+    let mut intermediate_image = get_intermediate_image(
+        device.clone(),
+        swapchain_images[0].dimensions().width_height(),
+        queue_family_index,
+    );
+
+    let mut accumulator_images =
+        get_temporal_images(device.clone(), dimensions, queue_family_index);
+
+    let mut compute_descriptor_set = get_compute_descriptor_set(
+        compute_pipeline.clone(),
         mutable_buffer.clone(),
         constant_buffer.clone(),
+        intermediate_image.clone(),
+        accumulator_images.clone(),
     );
 
-    let (mut compute_descriptor_set, mut compute_acc_image, mut compute_curr_image) = get_compute_descriptor_set(
-        device.clone(),
-        queue.clone(),
-        compute_pipeline.clone(),
-        dimensions,
-        Format::R8G8B8A8_UNORM,
-    );
-
-    let mut command_buffers = vec![None; framebuffers.len()];
+    let mut command_buffers = vec![None; swapchain_images.len()];
 
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
     let mut previous_fence_index = 0;
@@ -602,14 +510,16 @@ fn main() {
         recreate_swapchain: false,
         dimensions: Vec2::from_array(viewport.dimensions),
         cursor_delta: Vec2::ZERO,
-        position: Vec3::ZERO,
+        delta_position: Vec3::ZERO,
         rotation: Vec2::ZERO,
         quit: false,
+        speed_multiplier: 25.0,
+        rotation_multiplier: 1.0,
     });
 
     let exit = |data: &mut EventHelper<Data<_>>| data.quit = true;
     eh.window_close_requested(exit);
-    eh.window_keyboard_input(VirtualKeyCode::Escape, ElementState::Pressed, exit);
+    eh.window_keyboard_input(VirtualKeyCode::Escape, ElementState2::Pressed, exit);
 
     eh.device_mouse_motion(|data, (dx, dy)| data.cursor_delta += DVec2::new(dx, dy).as_vec2());
 
@@ -635,7 +545,7 @@ fn main() {
         data.dimensions = UVec2::new(size.width, size.height).as_vec2();
     });
 
-    eh.window_keyboard_input(VirtualKeyCode::F11, ElementState::Pressed, |data| {
+    eh.window_keyboard_input(VirtualKeyCode::F11, ElementState2::Pressed, |data| {
         let window = data.window();
         match window.fullscreen() {
             Some(_) => window.set_fullscreen(None),
@@ -643,7 +553,28 @@ fn main() {
         }
     });
 
+    // DEBUG
+    eh.window_keyboard_input(VirtualKeyCode::Equals, ElementState2::Held, |data| {
+        if data.key_held(VirtualKeyCode::RAlt).is_some() {
+            data.rotation_multiplier *= 2.0;
+        } else {
+            data.speed_multiplier *= 2.0;
+        }
+        println!("{}", data.speed_multiplier);
+    });
+    // DEBUG
+    eh.window_keyboard_input(VirtualKeyCode::Minus, ElementState2::Held, |data| {
+        if data.key_held(VirtualKeyCode::RAlt).is_some() {
+            data.rotation_multiplier /= 2.0;
+        } else {
+            data.speed_multiplier /= 2.0;
+        }
+        println!("{}", data.speed_multiplier);
+    });
+
     let mut fps_counter = FPSCounter::new();
+
+    // TODO: remove image data on swapchain recreation
 
     event_loop.run(move |event, _, control_flow| {
         if eh.quit {
@@ -656,7 +587,7 @@ fn main() {
 
         println!("{}", fps_counter.tick());
 
-        let cursor_mov = eh.cursor_delta / eh.dimensions.x * speed::ROTATION * speed::MOUSE;
+        let cursor_mov = eh.cursor_delta / eh.dimensions.x * eh.rotation_multiplier;
         eh.rotation += cursor_mov * Vec2::new(1.0, -1.0);
 
         eh.cursor_delta = Vec2::ZERO;
@@ -664,41 +595,43 @@ fn main() {
         // TODO: make movement independent of framerate
 
         if eh.key_held(VirtualKeyCode::Left).is_some() {
-            eh.rotation.x -= eh.secs_since_last_update() as f32 * speed::ROTATION;
+            eh.rotation.x -= eh.secs_since_last_update() as f32 * eh.rotation_multiplier;
         }
         if eh.key_held(VirtualKeyCode::Right).is_some() {
-            eh.rotation.x += eh.secs_since_last_update() as f32 * speed::ROTATION;
+            eh.rotation.x += eh.secs_since_last_update() as f32 * eh.rotation_multiplier;
         }
         if eh.key_held(VirtualKeyCode::Up).is_some() {
-            eh.rotation.y += eh.secs_since_last_update() as f32 * speed::ROTATION;
+            eh.rotation.y += eh.secs_since_last_update() as f32 * eh.rotation_multiplier;
         }
         if eh.key_held(VirtualKeyCode::Down).is_some() {
-            eh.rotation.y -= eh.secs_since_last_update() as f32 * speed::ROTATION;
+            eh.rotation.y -= eh.secs_since_last_update() as f32 * eh.rotation_multiplier;
         }
 
         if eh.key_held(VirtualKeyCode::A).is_some() {
-            eh.position.x -= eh.secs_since_last_update() as f32 * speed::MOVEMENT;
+            eh.delta_position.x -= eh.secs_since_last_update() as f32 * eh.speed_multiplier;
         }
         if eh.key_held(VirtualKeyCode::D).is_some() {
-            eh.position.x += eh.secs_since_last_update() as f32 * speed::MOVEMENT;
+            eh.delta_position.x += eh.secs_since_last_update() as f32 * eh.speed_multiplier;
         }
         if eh.key_held(VirtualKeyCode::W).is_some() {
-            eh.position.y += eh.secs_since_last_update() as f32 * speed::MOVEMENT;
+            eh.delta_position.y += eh.secs_since_last_update() as f32 * eh.speed_multiplier;
         }
         if eh.key_held(VirtualKeyCode::S).is_some() {
-            eh.position.y -= eh.secs_since_last_update() as f32 * speed::MOVEMENT;
+            eh.delta_position.y -= eh.secs_since_last_update() as f32 * eh.speed_multiplier;
         }
         if eh.key_held(VirtualKeyCode::Q).is_some() {
-            eh.position.z -= eh.secs_since_last_update() as f32 * speed::MOVEMENT;
+            eh.delta_position.z -= eh.secs_since_last_update() as f32 * eh.speed_multiplier;
         }
         if eh.key_held(VirtualKeyCode::E).is_some() {
-            eh.position.z += eh.secs_since_last_update() as f32 * speed::MOVEMENT;
+            eh.delta_position.z += eh.secs_since_last_update() as f32 * eh.speed_multiplier;
         }
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
+        push_constants.ipRot = Quat::from_array(push_constants.rot).conjugate().to_array();
+        push_constants.pPos = push_constants.pos;
         push_constants.rot = eh.rotation().to_array();
         push_constants.pos = (Vec3::from(push_constants.pos) + eh.position()).to_array();
-        eh.position = Vec3::ZERO;
+        eh.delta_position = Vec3::ZERO;
 
         push_constants.time = eh.secs_since_start() as f32;
 
@@ -719,8 +652,6 @@ fn main() {
                 };
             swapchain = new_swapchain;
             swapchain_images = new_swapchain_images.clone();
-
-            framebuffers = get_framebuffers(&new_swapchain_images, render_pass.clone());
 
             if eh.window_resized {
                 eh.window_resized = false;
@@ -745,44 +676,38 @@ fn main() {
                     .unwrap();
                 let command_buffer = builder.build().unwrap();
 
-                match fences[previous_fence_index].clone() {
-                    Some(future) => {
-                        future
-                            .then_signal_fence_and_flush()
-                            .unwrap()
-                            .wait(None)
-                            .unwrap();
-                        sync::now(device.clone())
-                            .then_execute(queue.clone(), command_buffer)
-                            .unwrap()
-                            .then_signal_fence_and_flush()
-                            .unwrap()
-                            .wait(None)
-                            .unwrap();
-                    }
-                    None => (),
+                if let Some(future) = fences[previous_fence_index].clone() {
+                    future
+                        .then_signal_fence_and_flush()
+                        .unwrap()
+                        .wait(None)
+                        .unwrap();
                 }
+                sync::now(device.clone())
+                    .then_execute(queue.clone(), command_buffer)
+                    .unwrap()
+                    .then_signal_fence_and_flush()
+                    .unwrap()
+                    .wait(None)
+                    .unwrap();
 
-                graphics_pipeline = get_graphics_pipeline(
+                compute_pipeline = get_compute_pipeline(device.clone(), compute_shader.clone());
+
+                intermediate_image = get_intermediate_image(
                     device.clone(),
-                    vertex_shader.clone(),
-                    fragment_shader.clone(),
-                    viewport.clone(),
-                    render_pass.clone(),
+                    swapchain_images[0].dimensions().width_height(),
+                    queue_family_index,
                 );
 
-                graphics_descriptor_set = get_graphics_descriptor_set(
-                    graphics_pipeline.clone(),
+                accumulator_images =
+                    get_temporal_images(device.clone(), dimensions, queue_family_index);
+
+                compute_descriptor_set = get_compute_descriptor_set(
+                    compute_pipeline.clone(),
                     mutable_buffer.clone(),
                     constant_buffer.clone(),
-                );
-
-                (compute_descriptor_set, compute_acc_image, compute_curr_image) = get_compute_descriptor_set(
-                    device.clone(),
-                    queue.clone(),
-                    compute_pipeline.clone(),
-                    dimensions,
-                    Format::R8G8B8A8_UNORM,
+                    intermediate_image.clone(),
+                    accumulator_images.clone(),
                 );
             }
         }
@@ -804,15 +729,12 @@ fn main() {
         command_buffers[image_index] = Some(get_command_buffer(
             device.clone(),
             queue.clone(),
-            graphics_pipeline.clone(),
             compute_pipeline.clone(),
-            framebuffers[image_index].clone(),
             push_constants.clone(),
-            graphics_descriptor_set.clone(),
             compute_descriptor_set.clone(),
+            intermediate_image.clone(),
             swapchain_images[image_index].clone(),
-            compute_acc_image.clone(),
-            compute_curr_image.clone(),
+            accumulator_images.clone(),
         ));
 
         let previous_future = match fences[previous_fence_index].clone() {
