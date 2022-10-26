@@ -1,6 +1,6 @@
 #version 460
 
- layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(push_constant) uniform PushConstantData {
     vec4 rot;
@@ -113,40 +113,40 @@ void shade(inout Ray ray, inout vec3 fragColor) {
     ray.color *= cos_theta * BRDF * 2.0;
 }
 
-// TODO: move to a more suitable location
+// // TODO: move to a more suitable location
 shared vec3 fragColorsShared[gl_WorkGroupSize.x][gl_WorkGroupSize.y];
 
-vec3 sample3x3(vec3 color, float factor) {
-    const ivec2 ce = ivec2(gl_LocalInvocationID.xy); // center
-    const ivec2 tl = max(ce - 1, ivec2(0)); // top left
-    const ivec2 br = min(ce + 1, ivec2(gl_WorkGroupSize.xy) - 1); // bottom right
+// vec3 sample3x3(vec3 color, float factor) {
+//     const ivec2 ce = ivec2(gl_LocalInvocationID.xy); // center
+//     const ivec2 tl = max(ce - 1, ivec2(0)); // top left
+//     const ivec2 br = min(ce + 1, ivec2(gl_WorkGroupSize.xy) - 1); // bottom right
 
-    vec3 colors[8];
+//     vec3 colors[8];
 
-    vec3 average = vec3(0.0);
+//     vec3 average = vec3(0.0);
 
-    colors[0] = fragColorsShared[tl.x][tl.y]; // TODO: fix sample not set sampling
-    average += colors[0];
-    colors[1] = fragColorsShared[ce.x][tl.y];
-    average += colors[1];
-    colors[2] = fragColorsShared[br.x][tl.y];
-    average += colors[2];
-    colors[3] = fragColorsShared[tl.x][ce.y];
-    average += colors[3];
-    // center of 3x3 square is already in `color`
-    colors[4] = fragColorsShared[br.x][ce.y];
-    average += colors[4];
-    colors[5] = fragColorsShared[tl.x][br.y];
-    average += colors[5];
-    colors[6] = fragColorsShared[ce.x][br.y];
-    average += colors[6];
-    colors[7] = fragColorsShared[br.x][br.y];
-    average += colors[7];
+//     colors[0] = fragColorsShared[tl.x][tl.y]; // TODO: fix sample not set sampling
+//     average += colors[0];
+//     colors[1] = fragColorsShared[ce.x][tl.y];
+//     average += colors[1];
+//     colors[2] = fragColorsShared[br.x][tl.y];
+//     average += colors[2];
+//     colors[3] = fragColorsShared[tl.x][ce.y];
+//     average += colors[3];
+//     // center of 3x3 square is already in `color`
+//     colors[4] = fragColorsShared[br.x][ce.y];
+//     average += colors[4];
+//     colors[5] = fragColorsShared[tl.x][br.y];
+//     average += colors[5];
+//     colors[6] = fragColorsShared[ce.x][br.y];
+//     average += colors[6];
+//     colors[7] = fragColorsShared[br.x][br.y];
+//     average += colors[7];
 
-    average /= 8.0;
+//     average /= 8.0;
 
-    return mix(color, average, factor * 8.0 / 9.0);
-}
+//     return mix(color, average, factor * 8.0 / 9.0);
+// }
 
 vec4 bilinearAccumulatorLoad(vec2 i) {
     ivec2 tl = ivec2(i);
@@ -234,8 +234,11 @@ void main() {
     // barrier();
     // fragColor = sample3x3(fragColor, 1.0 - accData.w / 255.0);
 
-    imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragColor.bgr * (255.0 / accData.w), 1.0)); // TODO: REMOVE COMMENT
+
+
     imageStore(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy), vec4(fragColor, accData.w)); // accData.w = sample count
+    imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragColor.bgr * (255.0 / accData.w), 1.0));
 }
 
 // TODO: add another compute shader with a sampler for the raw fragColor output from this shader
+// TODO: add parallel sampling
