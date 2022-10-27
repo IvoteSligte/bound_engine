@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
 layout(push_constant) uniform PushConstantData {
     vec4 rot;
@@ -11,7 +11,6 @@ layout(push_constant) uniform PushConstantData {
 } pc;
 
 const uint MAX_OBJECTS = 8;
-const uint SAMPLES_PER_PIXEL = 1;
 const uint RAYS_PER_SAMPLE = 4;
 
 struct Material {
@@ -46,7 +45,7 @@ layout(binding = 1) uniform readonly ConstantBuffer {
 } cs;
 
 layout(binding = 2, rgba8) uniform restrict writeonly image2D renderImage;
-layout(binding = 3, rgba16f) uniform readonly image2D accumulatorImageRead;
+layout(binding = 3, rgba16f) uniform readonly image2D accumulatorImageRead; // TODO: sampler for this one
 layout(binding = 4, rgba16f) uniform writeonly image2D accumulatorImageWrite;
 
 vec3 rotate(vec4 q, vec3 v) {
@@ -78,14 +77,11 @@ float distanceToObject(Ray ray, Object obj) {
     return a - sqrt(obj.sizeSquared - dot(v, v) + a * a);
 }
 
-void initRay(inout Ray ray) {
-    ray.distanceToObject = 1e20;
-    ray.objectHit = MAX_OBJECTS;
-}
-
 void traceRay(inout Ray ray) {
+    ray.distanceToObject = 1e20;
+
     // TODO: hardcode the number of intersection tests (3x speedup)
-    for (uint i = 0; i < buf.objCount; i++) {
+    for (uint i = 0; i < MAX_OBJECTS; i++) {
         float d = distanceToObject(ray, buf.objs[i]);
 
         if (d > 0.0 && d < ray.distanceToObject) {
@@ -101,7 +97,7 @@ void updateRay(inout Ray ray, vec3 seed) {
     ray.direction = randomUnitVectorOnHemisphere(ray.normalOfObject, seed);
 }
 
-void shade(inout Ray ray, inout vec3 fragColor) {
+void shade(inout Ray ray, inout vec4 fragData) {
     Material material = buf.mats[ray.objectHit];
     
     // max() makes sure the image does not gradually get darker
@@ -109,48 +105,16 @@ void shade(inout Ray ray, inout vec3 fragColor) {
 
     vec3 BRDF = material.reflectance;
 
-    fragColor += ray.color * material.emittance;
+    fragData.rgb += ray.color * material.emittance;
     ray.color *= cos_theta * BRDF * 2.0;
 }
 
 // // TODO: move to a more suitable location
-shared vec3 fragColorsShared[gl_WorkGroupSize.x][gl_WorkGroupSize.y];
-
-// vec3 sample3x3(vec3 color, float factor) {
-//     const ivec2 ce = ivec2(gl_LocalInvocationID.xy); // center
-//     const ivec2 tl = max(ce - 1, ivec2(0)); // top left
-//     const ivec2 br = min(ce + 1, ivec2(gl_WorkGroupSize.xy) - 1); // bottom right
-
-//     vec3 colors[8];
-
-//     vec3 average = vec3(0.0);
-
-//     colors[0] = fragColorsShared[tl.x][tl.y]; // TODO: fix sample not set sampling
-//     average += colors[0];
-//     colors[1] = fragColorsShared[ce.x][tl.y];
-//     average += colors[1];
-//     colors[2] = fragColorsShared[br.x][tl.y];
-//     average += colors[2];
-//     colors[3] = fragColorsShared[tl.x][ce.y];
-//     average += colors[3];
-//     // center of 3x3 square is already in `color`
-//     colors[4] = fragColorsShared[br.x][ce.y];
-//     average += colors[4];
-//     colors[5] = fragColorsShared[tl.x][br.y];
-//     average += colors[5];
-//     colors[6] = fragColorsShared[ce.x][br.y];
-//     average += colors[6];
-//     colors[7] = fragColorsShared[br.x][br.y];
-//     average += colors[7];
-
-//     average /= 8.0;
-
-//     return mix(color, average, factor * 8.0 / 9.0);
-// }
+shared vec4 fragDataShared[gl_WorkGroupSize.x][gl_WorkGroupSize.y][gl_WorkGroupSize.z];
 
 vec4 bilinearAccumulatorLoad(vec2 i) {
     ivec2 tl = ivec2(i);
-    ivec2 br = min(tl + ivec2(1), ivec2(cs.view) - 1);
+    ivec2 br = tl + ivec2(1);
     vec2 f = i - tl;
 
     vec4 x0 = imageLoad(accumulatorImageRead, tl);
@@ -162,83 +126,67 @@ vec4 bilinearAccumulatorLoad(vec2 i) {
     return mix(mix(x0, x1, f.x), mix(y0, y1, f.x), f.y);
 }
 
-// TODO: blurring last render image based on sample count
-// vec4 blur3x3AccumulatorLoad(vec2 i) {
-//     ivec2 tl = ivec2(i - 1.5);
-//     ivec2 br = ivec2(i + 1.5);
-//     vec2 f = i - tl - 1.0;
-
-    
-// }
-
 void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
     vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / cs.view - 1.0;
     // maps normCoord to a different range (e.g. for FOV and non-square windows)
     normCoord *= cs.ratio;
 
-    vec3 fragColor = vec3(0.0);
-    vec4 accData = vec4(0.0);
+    vec2 s = normCoord.xy * 7.9 + gl_LocalInvocationID.z + pc.time + pc.pos.xy + pc.rot.yz;
+    normCoord += (vec2(rand(s), rand(-s)) - 0.5) / cs.view;
+
+    vec4 fragData = vec4(0.0);
     vec3 viewDir = rotate(pc.rot, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
 
     Ray ray = Ray(pc.pos, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
     vec3 seed = pc.time + viewDir;
 
-    initRay(ray);
     traceRay(ray);
-    if (ray.objectHit != MAX_OBJECTS) {
+    updateRay(ray, seed);
+    shade(ray, fragData);
+
+    Ray baseRay = ray;
+    for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
+        seed += 1.0;
+        traceRay(ray);
         updateRay(ray, seed);
-        shade(ray, fragColor);
+        shade(ray, fragData);
+    }
 
-        Ray baseRay = ray;
-        for (uint s = 0; s < SAMPLES_PER_PIXEL; s++) { // TODO: set a good offset for the rays
-            ray = baseRay;
+    // TODO: move blurring to different shader
+    // TODO: figure out a way to blur based on variance
 
-            for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
-                seed += 1.0;
-                initRay(ray);
-                traceRay(ray);
-                if (ray.objectHit == MAX_OBJECTS) {
-                    ray.direction = randomUnitVectorOnHemisphere(ray.normalOfObject, seed);
-                    continue;
-                }
-                updateRay(ray, seed);
-                shade(ray, fragColor);
-            }
+    fragDataShared[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = fragData;
+    memoryBarrierShared();
+    barrier();
+
+    if (gl_LocalInvocationID.z == 0) {
+        for (uint z = 1; z < gl_WorkGroupSize.z; z++) {
+            fragData += fragDataShared[gl_LocalInvocationID.x][gl_LocalInvocationID.y][z];
         }
-
-        fragColor /= SAMPLES_PER_PIXEL;
-        fragColor /= 255.0;
+        fragData.rgb /= 255.0; // number of samples
+        fragData /= gl_WorkGroupSize.z;
 
         vec3 p = normalize(baseRay.origin - pc.pPos);
         vec3 r = rotate(pc.ipRot, p);
         vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
         i = (i + 1.0) * cs.view / 2.0; // [0, cs.view]
 
-        Ray pRay = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 1e20, MAX_OBJECTS);
+        Ray pRay = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
         traceRay(pRay);
 
-        if (pRay.objectHit == baseRay.objectHit) { // TODO: fix yellow appearing on red object when sample is invalid
-            accData = bilinearAccumulatorLoad(i) * float(clamp(i, vec2(0.0), cs.view - 1) == i); // i < 0.0 gives undefined values
-            fragColor *= uint(accData.w != 255.0);
-            fragColor += accData.rgb; // TODO: fix formats (rgb/bgr)
+        if (pRay.objectHit == baseRay.objectHit && clamp(i, vec2(0.0), cs.view - 1) == i) { // TODO: fix yellow appearing on red object when sample is invalid
+            vec4 accData = bilinearAccumulatorLoad(i);
+            fragData.rgb *= uint(accData.w < 255.0);
+            fragData += accData; // TODO: fix formats (rgb/bgr)
         }
+        fragData.w = min(fragData.w + 1.0, 255.0);
+
+        imageStore(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy), fragData); // accData.w = sample count
+        imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.bgr * (255.0 / fragData.w), 1.0));
     }
-    accData.w = min(accData.w + 1.0, 255.0);
-
-    // TODO: move to different shader
-    // // TODO: figure out a way to blur based on variance
-    // fragColorsShared[gl_LocalInvocationID.x][gl_LocalInvocationID.y] = fragColor;
-    // memoryBarrierShared();
-    // barrier();
-    // fragColor = sample3x3(fragColor, 1.0 - accData.w / 255.0);
-
-
-
-    imageStore(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy), vec4(fragColor, accData.w)); // accData.w = sample count
-    imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragColor.bgr * (255.0 / accData.w), 1.0));
 }
 
-// TODO: add another compute shader with a sampler for the raw fragColor output from this shader
+// TODO: add another compute shader with a sampler for the raw fragData output from this shader
 // TODO: add parallel sampling

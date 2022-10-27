@@ -379,31 +379,31 @@ fn main() {
     let materials = [
         shaders::ty::Material {
             reflectance: [0.7, 0.7, 0.9],
-            emittance: [0.0, 0.0, 0.0],
+            emittance: [0.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
             reflectance: [0.1, 0.9, 0.5],
-            emittance: [0.0, 0.0, 0.0],
+            emittance: [0.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
             reflectance: [0.9, 0.9, 0.1],
-            emittance: [0.0, 0.0, 0.0],
+            emittance: [0.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
             reflectance: [0.9, 0.1, 0.1],
-            emittance: [0.0, 0.0, 0.0],
+            emittance: [0.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
-            reflectance: [0.0, 0.0, 0.0],
-            emittance: [10.0, 10.0, 10.0],
+            reflectance: [0.0; 3],
+            emittance: [10.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
