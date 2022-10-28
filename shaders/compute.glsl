@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 16) in;
 
 layout(push_constant) uniform PushConstantData {
     vec4 rot;
@@ -12,6 +12,7 @@ layout(push_constant) uniform PushConstantData {
 
 const uint MAX_OBJECTS = 8;
 const uint RAYS_PER_SAMPLE = 4;
+const uint TEMPORAL_SAMPLES = 255;
 
 struct Material {
     vec3 reflectance;
@@ -47,6 +48,7 @@ layout(binding = 1) uniform readonly ConstantBuffer {
 layout(binding = 2, rgba8) uniform restrict writeonly image2D renderImage;
 layout(binding = 3, rgba16f) uniform readonly image2D accumulatorImageRead; // TODO: sampler for this one
 layout(binding = 4, rgba16f) uniform writeonly image2D accumulatorImageWrite;
+layout(binding = 5) uniform sampler2D blueNoiseSampler;
 
 vec3 rotate(vec4 q, vec3 v) {
     vec3 t = cross(q.xyz, v) + q.w * v;
@@ -58,15 +60,13 @@ vec3 rotate(vec4 q, vec3 v) {
 float rand(vec2 co) {
     return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
 }
-vec3 rand(vec3 s) {
-    return vec3(rand(s.xy), rand(s.yz), rand(s.zx)) * 2.0 - 1.0;
-}
 
-// TODO: try precomputed blue noise
-vec3 randomUnitVectorOnHemisphere(vec3 n, vec3 seed) {
-    vec3 v = rand(seed);
-    v = sqrt(-2.0 * log(abs(v))) * sign(v); // maps to normal distribution
-    return faceforward(normalize(v), -v, n);
+vec3 randomUnitVectorOnHemisphere(vec3 n, float seed) {
+    const float imageS = textureSize(blueNoiseSampler, 0).x;
+    // samples from a normalized, normal distribution, blue noise texture
+    // TODO: make it a one-dimensional texture/buffer
+    vec3 v = texture(blueNoiseSampler, mod(vec2(seed, seed / imageS), imageS)).rgb;
+    return faceforward(v, -v, n);
 }
 
 // calculates the distance from a ray (Ray) to a sphere (Object)
@@ -91,7 +91,7 @@ void traceRay(inout Ray ray) {
     }
 }
 
-void updateRay(inout Ray ray, vec3 seed) {
+void updateRay(inout Ray ray, float seed) {
     ray.origin += ray.direction * ray.distanceToObject;
     ray.normalOfObject = normalize(ray.origin - buf.objs[ray.objectHit].pos);
     ray.direction = randomUnitVectorOnHemisphere(ray.normalOfObject, seed);
@@ -130,17 +130,16 @@ void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
     vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / cs.view - 1.0;
     // maps normCoord to a different range (e.g. for FOV and non-square windows)
-    normCoord *= cs.ratio;
 
-    vec2 s = normCoord.xy * 7.9 + gl_LocalInvocationID.z + pc.time + pc.pos.xy + pc.rot.yz;
-    normCoord += (vec2(rand(s), rand(-s)) - 0.5) / cs.view;
+    const vec2 offset = mod(vec2(gl_LocalInvocationID.z, floor(gl_LocalInvocationID.z / gl_WorkGroupSize.z)) / floor(sqrt(gl_WorkGroupSize.z)), 1.0) / cs.view;
+    normCoord = (normCoord + offset) * cs.ratio;
 
     vec4 fragData = vec4(0.0);
     vec3 viewDir = rotate(pc.rot, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
 
     Ray ray = Ray(pc.pos, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
-    vec3 seed = pc.time + viewDir;
+    float seed = (pc.time + viewDir.x * viewDir.y * viewDir.z * 1000.0 + gl_LocalInvocationID.z) * 1000.0;
 
     traceRay(ray);
     updateRay(ray, seed);
@@ -165,26 +164,27 @@ void main() {
         for (uint z = 1; z < gl_WorkGroupSize.z; z++) {
             fragData += fragDataShared[gl_LocalInvocationID.x][gl_LocalInvocationID.y][z];
         }
-        fragData.rgb /= 255.0; // number of samples
+        fragData.rgb /= TEMPORAL_SAMPLES; // number of samples
         fragData /= gl_WorkGroupSize.z;
 
+        // screen space coordinate from global point
         vec3 p = normalize(baseRay.origin - pc.pPos);
         vec3 r = rotate(pc.ipRot, p);
         vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
-        i = (i + 1.0) * cs.view / 2.0; // [0, cs.view]
+        i = (i + 1.0) * cs.view * 0.5; // [0, cs.view]
 
         Ray pRay = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
         traceRay(pRay);
 
         if (pRay.objectHit == baseRay.objectHit && clamp(i, vec2(0.0), cs.view - 1) == i) { // TODO: fix yellow appearing on red object when sample is invalid
             vec4 accData = bilinearAccumulatorLoad(i);
-            fragData.rgb *= uint(accData.w < 255.0);
+            fragData.rgb *= uint(accData.w < TEMPORAL_SAMPLES);
             fragData += accData; // TODO: fix formats (rgb/bgr)
         }
-        fragData.w = min(fragData.w + 1.0, 255.0);
+        fragData.w = min(fragData.w + 1.0, TEMPORAL_SAMPLES);
 
         imageStore(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy), fragData); // accData.w = sample count
-        imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.bgr * (255.0 / fragData.w), 1.0));
+        imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.bgr * (TEMPORAL_SAMPLES / fragData.w), 1.0));
     }
 }
 

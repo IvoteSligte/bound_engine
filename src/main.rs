@@ -1,12 +1,13 @@
 use std::{f32::consts::PI, sync::Arc};
 
 use fps_counter::FPSCounter;
-use glam::{DVec2, Quat, UVec2, Vec2, Vec3, UVec3};
+use glam::{DVec2, Quat, UVec2, UVec3, Vec2, Vec3};
+use image::{io::Reader as ImageReader, EncodableLayout};
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, CopyImageInfo,
-        PrimaryAutoCommandBuffer, ClearColorImageInfo,
+        AutoCommandBufferBuilder, ClearColorImageInfo, CommandBufferUsage, CopyImageInfo,
+        PrimaryAutoCommandBuffer,
     },
     descriptor_set::{DescriptorSetsCollection, PersistentDescriptorSet, WriteDescriptorSet},
     device::{
@@ -15,11 +16,12 @@ use vulkano::{
     },
     format::Format,
     image::{
-        view::ImageView, ImageAccess, ImageCreateFlags, ImageDimensions, ImageUsage, StorageImage,
-        SwapchainImage,
+        view::ImageView, ImageAccess, ImageCreateFlags, ImageDimensions, ImageUsage,
+        ImmutableImage, MipmapsCount, StorageImage, SwapchainImage,
     },
     instance::{Instance, InstanceCreateInfo},
     pipeline::{graphics::viewport::Viewport, ComputePipeline, Pipeline, PipelineBindPoint},
+    sampler::{Sampler, SamplerCreateInfo},
     shader::ShaderModule,
     swapchain::{
         self, AcquireError, PresentInfo, Surface, Swapchain, SwapchainCreateInfo,
@@ -35,7 +37,7 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{CursorGrabMode, Fullscreen, Window, WindowBuilder},
 };
-use winit_event_helper::{EventHelper, ElementState2};
+use winit_event_helper::{ElementState2, EventHelper};
 
 mod shaders {
     vulkano_shaders::shader! {
@@ -154,7 +156,7 @@ fn get_temporal_images(
         [queue_family_index],
     )
     .unwrap();
-    
+
     (accumulator_image_read, accumulator_image_write)
 }
 
@@ -164,10 +166,13 @@ fn get_compute_descriptor_set(
     constant_buffer: Arc<dyn BufferAccess>,
     render_image: Arc<dyn ImageAccess>,
     accumulator_images: (Arc<StorageImage>, Arc<StorageImage>),
+    blue_noise_image: Arc<dyn ImageAccess>,
+    sampler: Arc<Sampler>,
 ) -> Arc<PersistentDescriptorSet> {
     let render_image_view = ImageView::new_default(render_image.clone()).unwrap();
     let accumulator_image_view_read = ImageView::new_default(accumulator_images.0).unwrap();
     let accumulator_image_view_write = ImageView::new_default(accumulator_images.1).unwrap();
+    let blue_noise_image_view = ImageView::new_default(blue_noise_image).unwrap();
 
     PersistentDescriptorSet::new(
         pipeline.layout().set_layouts()[0].clone(),
@@ -177,6 +182,7 @@ fn get_compute_descriptor_set(
             WriteDescriptorSet::image_view(2, render_image_view),
             WriteDescriptorSet::image_view(3, accumulator_image_view_read),
             WriteDescriptorSet::image_view(4, accumulator_image_view_write),
+            WriteDescriptorSet::image_view_sampler(5, blue_noise_image_view, sampler),
         ],
     )
     .unwrap()
@@ -213,14 +219,22 @@ where
             0,
             compute_descriptor_set.clone(),
         )
-        .dispatch((UVec3::from_array(swapchain_image.dimensions().width_height_depth()).as_vec3() / 8.0).ceil().as_uvec3().to_array())
+        .dispatch(
+            (UVec3::from_array(swapchain_image.dimensions().width_height_depth()).as_vec3() / 8.0)
+                .ceil()
+                .as_uvec3()
+                .to_array(),
+        )
         .unwrap()
         .copy_image(CopyImageInfo::images(
             intermediate_image.clone(),
             swapchain_image.clone(),
         ))
         .unwrap()
-        .copy_image(CopyImageInfo::images(accumulator_images.1, accumulator_images.0))
+        .copy_image(CopyImageInfo::images(
+            accumulator_images.1,
+            accumulator_images.0,
+        ))
         .unwrap();
 
     Arc::new(builder.build().unwrap())
@@ -466,8 +480,54 @@ fn main() {
     )
     .unwrap();
 
+    let blue_noise_raw_image = ImageReader::open("blue_noise\\HDR_RGB_0_32x32.png")
+        .unwrap()
+        .decode()
+        .unwrap();
+
+    let blue_noise_iter = blue_noise_raw_image
+        .to_rgba8()
+        .as_bytes()
+        .chunks_exact(4)
+        .flat_map(|s| {
+            let to_gaussian = |a| {
+                let b = (a as f32) / 255.0 * 2.0 - 1.0;
+                (b.abs().log(std::f32::consts::E) * -2.0).sqrt() * b.signum()
+            };
+
+            if let [x, y, z] = s[..3] {
+                let v =
+                    (Vec3::new(to_gaussian(x), to_gaussian(y), to_gaussian(z)).normalize() / 2.0 + 0.5) * 127.0;
+                println!("{}", v);
+                [v.x as i8, v.y as i8, v.z as i8, 0i8].into_iter()
+            } else {
+                [0i8; 4].into_iter()
+            }
+        })
+        .collect::<Vec<i8>>();
+
+    let (blue_noise_image, blue_noise_future) = ImmutableImage::from_iter(
+        blue_noise_iter,
+        ImageDimensions::Dim2d {
+            width: blue_noise_raw_image.width(),
+            height: blue_noise_raw_image.height(),
+            array_layers: 1,
+        },
+        MipmapsCount::One,
+        Format::R8G8B8A8_SNORM,
+        queue.clone(),
+    )
+    .unwrap();
+
+    let sampler = Sampler::new(
+        device.clone(),
+        SamplerCreateInfo::simple_repeat_linear_no_mipmap(),
+    )
+    .unwrap();
+
     mutable_future
         .join(constant_future)
+        .join(blue_noise_future)
         .then_signal_fence_and_flush()
         .unwrap()
         .wait(None)
@@ -496,6 +556,8 @@ fn main() {
         constant_buffer.clone(),
         intermediate_image.clone(),
         accumulator_images.clone(),
+        blue_noise_image.clone(),
+        sampler.clone(),
     );
 
     let mut command_buffers = vec![None; swapchain_images.len()];
@@ -708,6 +770,8 @@ fn main() {
                     constant_buffer.clone(),
                     intermediate_image.clone(),
                     accumulator_images.clone(),
+                    blue_noise_image.clone(),
+                    sampler.clone(),
                 );
             }
         }
