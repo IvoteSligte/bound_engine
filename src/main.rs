@@ -42,9 +42,9 @@ use winit_event_helper::{ElementState2, EventHelper};
 mod shaders {
     vulkano_shaders::shader! {
         shaders: {
-            Compute: {
+            PathtraceCompute: {
                 ty: "compute",
-                path: "shaders/compute.glsl",
+                path: "shaders/pathtrace_compute.glsl",
             }
         },
         types_meta: { #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)] },
@@ -134,7 +134,7 @@ fn get_temporal_images(
         },
         Format::R16G16B16A16_SFLOAT, // TODO: loosely match format with swapchain image format
         ImageUsage {
-            storage: true,
+            sampled: true,
             transfer_dst: true,
             ..ImageUsage::empty()
         },
@@ -180,7 +180,7 @@ fn get_compute_descriptor_set(
             WriteDescriptorSet::buffer(0, mutable_buffer),
             WriteDescriptorSet::buffer(1, constant_buffer),
             WriteDescriptorSet::image_view(2, render_image_view),
-            WriteDescriptorSet::image_view(3, accumulator_image_view_read),
+            WriteDescriptorSet::image_view_sampler(3, accumulator_image_view_read, sampler.clone()),
             WriteDescriptorSet::image_view(4, accumulator_image_view_write),
             WriteDescriptorSet::image_view_sampler(5, blue_noise_image_view, sampler),
         ],
@@ -380,7 +380,7 @@ fn main() {
     )
     .unwrap();
 
-    let compute_shader = shaders::load_Compute(device.clone()).unwrap();
+    let pathtrace_compute_shader = shaders::load_PathtraceCompute(device.clone()).unwrap();
 
     let mut viewport = Viewport {
         origin: [0.0, 0.0],
@@ -388,36 +388,30 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
-    let mut compute_pipeline = get_compute_pipeline(device.clone(), compute_shader.clone());
+    let mut compute_pipeline = get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
 
     let materials = [
         shaders::ty::Material {
-            reflectance: [0.7, 0.7, 0.9],
+            reflectance: [0.95, 0.1, 0.1],
             emittance: [0.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
-            reflectance: [0.1, 0.9, 0.5],
+            reflectance: [0.1, 0.95, 0.1],
             emittance: [0.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
-            reflectance: [0.9, 0.9, 0.1],
-            emittance: [0.0; 3],
-            _dummy0: [0u8; 4],
-            _dummy1: [0u8; 4],
-        },
-        shaders::ty::Material {
-            reflectance: [0.9, 0.1, 0.1],
+            reflectance: [0.95; 3],
             emittance: [0.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
         shaders::ty::Material {
             reflectance: [0.0; 3],
-            emittance: [10.0; 3],
+            emittance: [5.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
@@ -425,30 +419,56 @@ fn main() {
 
     let objects = [
         shaders::ty::Object {
-            pos: [5.0, 8.0, 2.0],
-            sizeSquared: 0.8 * 0.8,
+            pos: [-110.0, 0.0, 0.0],
+            radiusSquared: 100.0 * 100.0,
+            mat: 0,
+            _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [10.0, 3.0, 1.0],
-            sizeSquared: 6.0 * 6.0,
+            pos: [110.0, 0.0, 0.0],
+            radiusSquared: 100.0 * 100.0,
+            mat: 1,
+            _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [-3.0, 2.0, -4.0],
-            sizeSquared: 4.0 * 4.0,
+            pos: [0.0, 110.0, 0.0],
+            radiusSquared: 100.0 * 100.0,
+            mat: 2,
+            _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [3.0, 1.0, 0.0],
-            sizeSquared: 3.0 * 3.0,
+            pos: [0.0, -110.0, 0.0],
+            radiusSquared: 100.0 * 100.0,
+            mat: 2,
+            _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [20.0, 20.0, 20.0],
-            sizeSquared: 5.0 * 5.0,
+            pos: [0.0, 110.0, 0.0],
+            radiusSquared: 100.0 * 100.0,
+            mat: 2,
+            _dummy0: [0u8; 12],
+        },
+        shaders::ty::Object {
+            pos: [0.0, 0.0, -110.0],
+            radiusSquared: 100.0 * 100.0,
+            mat: 2,
+            _dummy0: [0u8; 12],
+        },
+        shaders::ty::Object {
+            pos: [0.0, 0.0, 110.0],
+            radiusSquared: 100.0 * 100.0,
+            mat: 2,
+            _dummy0: [0u8; 12],
+        },
+        shaders::ty::Object {
+            pos: [0.0, 0.0, 59.9],
+            radiusSquared: 50.0 * 50.0,
+            mat: 3,
+            _dummy0: [0u8; 12],
         },
     ];
 
     let mut mutable_data = shaders::ty::MutableData {
-        matCount: materials.len() as u32,
-        objCount: objects.len() as u32,
         ..Default::default()
     };
     mutable_data.mats[..materials.len()].copy_from_slice(&materials);
@@ -485,29 +505,14 @@ fn main() {
         .decode()
         .unwrap();
 
-    let blue_noise_iter = blue_noise_raw_image
+    let blue_noise_data = blue_noise_raw_image
         .to_rgba8()
         .as_bytes()
-        .chunks_exact(4)
-        .flat_map(|s| {
-            let to_gaussian = |a| {
-                let b = (a as f32) / 255.0 * 2.0 - 1.0;
-                (b.abs().log(std::f32::consts::E) * -2.0).sqrt() * b.signum()
-            };
-
-            if let [x, y, z] = s[..3] {
-                let v =
-                    (Vec3::new(to_gaussian(x), to_gaussian(y), to_gaussian(z)).normalize() / 2.0 + 0.5) * 127.0;
-                println!("{}", v);
-                [v.x as i8, v.y as i8, v.z as i8, 0i8].into_iter()
-            } else {
-                [0i8; 4].into_iter()
-            }
-        })
-        .collect::<Vec<i8>>();
+        .to_vec()
+        .into_iter();
 
     let (blue_noise_image, blue_noise_future) = ImmutableImage::from_iter(
-        blue_noise_iter,
+        blue_noise_data,
         ImageDimensions::Dim2d {
             width: blue_noise_raw_image.width(),
             height: blue_noise_raw_image.height(),
@@ -753,7 +758,7 @@ fn main() {
                     .wait(None)
                     .unwrap();
 
-                compute_pipeline = get_compute_pipeline(device.clone(), compute_shader.clone());
+                compute_pipeline = get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
 
                 intermediate_image = get_intermediate_image(
                     device.clone(),

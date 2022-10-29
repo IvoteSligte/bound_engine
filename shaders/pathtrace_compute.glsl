@@ -11,6 +11,7 @@ layout(push_constant) uniform PushConstantData {
 } pc;
 
 const uint MAX_OBJECTS = 8;
+const uint MAX_MATERIALS = 4;
 const uint RAYS_PER_SAMPLE = 4;
 const uint TEMPORAL_SAMPLES = 255;
 
@@ -21,7 +22,8 @@ struct Material {
 
 struct Object {
     vec3 pos;
-    float sizeSquared;
+    float radiusSquared;
+    uint mat;
 };
 
 struct Ray {
@@ -34,20 +36,18 @@ struct Ray {
 };
 
 layout(binding = 0) uniform readonly MutableData {
-    uint matCount;
-    uint objCount;
-    Material mats[MAX_OBJECTS];
+    Material mats[MAX_MATERIALS];
     Object objs[MAX_OBJECTS];
 } buf;
 
 layout(binding = 1) uniform readonly ConstantBuffer {
-    vec2 view; // window sizeSquared
+    vec2 view; // window size
     vec2 ratio; // window height / width
 } cs;
 
 layout(binding = 2, rgba8) uniform restrict writeonly image2D renderImage;
-layout(binding = 3, rgba16f) uniform readonly image2D accumulatorImageRead; // TODO: sampler for this one
-layout(binding = 4, rgba16f) uniform writeonly image2D accumulatorImageWrite;
+layout(binding = 3) uniform sampler2D accumulatorImageRead;
+layout(binding = 4, rgba16f) uniform restrict writeonly image2D accumulatorImageWrite;
 layout(binding = 5) uniform sampler2D blueNoiseSampler;
 
 vec3 rotate(vec4 q, vec3 v) {
@@ -62,10 +62,10 @@ float rand(vec2 co) {
 }
 
 vec3 randomUnitVectorOnHemisphere(vec3 n, float seed) {
-    const float imageS = textureSize(blueNoiseSampler, 0).x;
+    const float imageW = textureSize(blueNoiseSampler, 0).x;
     // samples from a normalized, normal distribution, blue noise texture
     // TODO: make it a one-dimensional texture/buffer
-    vec3 v = texture(blueNoiseSampler, mod(vec2(seed, seed / imageS), imageS)).rgb;
+    vec3 v = normalize(texture(blueNoiseSampler, vec2(seed, seed / imageW)).rgb);
     return faceforward(v, -v, n);
 }
 
@@ -74,7 +74,7 @@ vec3 randomUnitVectorOnHemisphere(vec3 n, float seed) {
 float distanceToObject(Ray ray, Object obj) {
     vec3 v = obj.pos - ray.origin;
     float a = dot(ray.direction, v); // distance to plane through obj.pos perpendicular to ray.direction
-    return a - sqrt(obj.sizeSquared - dot(v, v) + a * a);
+    return a - sqrt(obj.radiusSquared - dot(v, v) + a * a);
 }
 
 void traceRay(inout Ray ray) {
@@ -98,33 +98,33 @@ void updateRay(inout Ray ray, float seed) {
 }
 
 void shade(inout Ray ray, inout vec4 fragData) {
-    Material material = buf.mats[ray.objectHit];
+    Material material = buf.mats[buf.objs[ray.objectHit].mat];
     
     // max() makes sure the image does not gradually get darker
     float cos_theta = max(dot(ray.direction, ray.normalOfObject), 0.0);
 
-    vec3 BRDF = material.reflectance;
+    vec3 BRDF = material.reflectance * cos_theta * 2.0;
 
     fragData.rgb += ray.color * material.emittance;
-    ray.color *= cos_theta * BRDF * 2.0;
+    ray.color *= BRDF;
 }
 
 // // TODO: move to a more suitable location
 shared vec4 fragDataShared[gl_WorkGroupSize.x][gl_WorkGroupSize.y][gl_WorkGroupSize.z];
 
-vec4 bilinearAccumulatorLoad(vec2 i) {
-    ivec2 tl = ivec2(i);
-    ivec2 br = tl + ivec2(1);
-    vec2 f = i - tl;
+// vec4 bilinearAccumulatorLoad(vec2 i) {
+//     ivec2 tl = ivec2(i);
+//     ivec2 br = tl + ivec2(1);
+//     vec2 f = i - tl;
 
-    vec4 x0 = imageLoad(accumulatorImageRead, tl);
-    vec4 x1 = imageLoad(accumulatorImageRead, ivec2(br.x, tl.y));
+//     vec4 x0 = imageLoad(accumulatorImageRead, tl);
+//     vec4 x1 = imageLoad(accumulatorImageRead, ivec2(br.x, tl.y));
 
-    vec4 y0 = imageLoad(accumulatorImageRead, ivec2(tl.x, br.y));
-    vec4 y1 = imageLoad(accumulatorImageRead, br);
+//     vec4 y0 = imageLoad(accumulatorImageRead, ivec2(tl.x, br.y));
+//     vec4 y1 = imageLoad(accumulatorImageRead, br);
 
-    return mix(mix(x0, x1, f.x), mix(y0, y1, f.x), f.y);
-}
+//     return mix(mix(x0, x1, f.x), mix(y0, y1, f.x), f.y);
+// }
 
 void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
@@ -153,9 +153,6 @@ void main() {
         shade(ray, fragData);
     }
 
-    // TODO: move blurring to different shader
-    // TODO: figure out a way to blur based on variance
-
     fragDataShared[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = fragData;
     memoryBarrierShared();
     barrier();
@@ -176,15 +173,15 @@ void main() {
         Ray pRay = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
         traceRay(pRay);
 
-        if (pRay.objectHit == baseRay.objectHit && clamp(i, vec2(0.0), cs.view - 1) == i) { // TODO: fix yellow appearing on red object when sample is invalid
-            vec4 accData = bilinearAccumulatorLoad(i);
+        if (pRay.objectHit == baseRay.objectHit && clamp(i, vec2(-1e-4), cs.view - 0.99) == i) {
+            vec4 accData = texture(accumulatorImageRead, (i + 0.5) / cs.view);
             fragData.rgb *= uint(accData.w < TEMPORAL_SAMPLES);
-            fragData += accData; // TODO: fix formats (rgb/bgr)
+            fragData += accData;
         }
         fragData.w = min(fragData.w + 1.0, TEMPORAL_SAMPLES);
 
         imageStore(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy), fragData); // accData.w = sample count
-        imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.bgr * (TEMPORAL_SAMPLES / fragData.w), 1.0));
+        imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.bgr * (TEMPORAL_SAMPLES / fragData.w), 1.0)); // TODO: fix formats (rgb/bgr)
     }
 }
 
