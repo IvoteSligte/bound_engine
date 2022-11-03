@@ -2,14 +2,21 @@ use std::{f32::consts::PI, sync::Arc};
 
 use fps_counter::FPSCounter;
 use glam::{DVec2, Quat, UVec2, UVec3, Vec2, Vec3};
-use image::{io::Reader as ImageReader, EncodableLayout};
+use image::io::Reader as ImageReader;
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, ClearColorImageInfo, CommandBufferUsage, CopyImageInfo,
-        PrimaryAutoCommandBuffer,
+        allocator::{
+            CommandBufferAllocator, StandardCommandBufferAllocator,
+            StandardCommandBufferAllocatorCreateInfo,
+        },
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyImageInfo, PrimaryAutoCommandBuffer,
+        PrimaryCommandBufferAbstract,
     },
-    descriptor_set::{DescriptorSetsCollection, PersistentDescriptorSet, WriteDescriptorSet},
+    descriptor_set::{
+        allocator::{DescriptorSetAllocator, StandardDescriptorSetAllocator},
+        DescriptorSetsCollection, PersistentDescriptorSet, WriteDescriptorSet,
+    },
     device::{
         physical::{PhysicalDevice, PhysicalDeviceType},
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo,
@@ -20,17 +27,17 @@ use vulkano::{
         ImmutableImage, MipmapsCount, StorageImage, SwapchainImage,
     },
     instance::{Instance, InstanceCreateInfo},
+    memory::allocator::{MemoryAllocator, StandardMemoryAllocator},
     pipeline::{graphics::viewport::Viewport, ComputePipeline, Pipeline, PipelineBindPoint},
     sampler::{Sampler, SamplerCreateInfo},
     shader::ShaderModule,
     swapchain::{
-        self, AcquireError, PresentInfo, Surface, Swapchain, SwapchainCreateInfo,
-        SwapchainCreationError,
+        self, AcquireError, Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
+        SwapchainPresentInfo,
     },
     sync::{self, FenceSignalFuture, FlushError, GpuFuture, PipelineStage},
     Version, VulkanLibrary,
 };
-use vulkano_win::VkSurfaceBuild;
 use winit::{
     dpi::PhysicalSize,
     event::VirtualKeyCode,
@@ -45,16 +52,24 @@ mod shaders {
             PathtraceCompute: {
                 ty: "compute",
                 path: "shaders/pathtrace_compute.glsl",
+            },
+            DenoiseCompute: {
+                ty: "compute",
+                path: "shaders/denoise_compute.glsl",
+            },
+            TransferCompute: {
+                ty: "compute",
+                path: "shaders/transfer_compute.glsl",
             }
         },
         types_meta: { #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)] },
-        include: ["shaders/random.glsl"],
+        include: ["compute_includes.glsl"]
     }
 }
 
-fn select_physical_device<'a, W>(
+fn select_physical_device<'a>(
     instance: &'a Arc<Instance>,
-    surface: &'a Surface<W>,
+    surface: &'a Surface,
     device_extensions: &'a DeviceExtensions,
 ) -> (Arc<PhysicalDevice>, u32) {
     instance
@@ -81,27 +96,49 @@ fn select_physical_device<'a, W>(
         .unwrap()
 }
 
-fn get_compute_pipeline(
+fn get_compute_pipelines(
     device: Arc<Device>,
-    compute_shader: Arc<ShaderModule>,
-) -> Arc<ComputePipeline> {
-    ComputePipeline::new(
+    pathtrace_shader: Arc<ShaderModule>,
+    denoise_shader: Arc<ShaderModule>,
+    transfer_shader: Arc<ShaderModule>,
+) -> [Arc<ComputePipeline>; 3] {
+    let pathtrace_pipeline = ComputePipeline::new(
         device.clone(),
-        compute_shader.entry_point("main").unwrap(),
+        pathtrace_shader.entry_point("main").unwrap(),
+        &(),
+        None, // TODO: look into cache
+        |_| {},
+    )
+    .unwrap();
+
+    let denoise_pipeline = ComputePipeline::new(
+        device.clone(),
+        denoise_shader.entry_point("main").unwrap(),
         &(),
         None,
         |_| {},
     )
-    .unwrap()
+    .unwrap();
+
+    let transfer_pipeline = ComputePipeline::new(
+        device.clone(),
+        transfer_shader.entry_point("main").unwrap(),
+        &(),
+        None,
+        |_| {},
+    )
+    .unwrap();
+
+    [pathtrace_pipeline, denoise_pipeline, transfer_pipeline]
 }
 
 fn get_intermediate_image(
-    device: Arc<Device>,
+    allocator: &(impl MemoryAllocator + ?Sized),
     dimensions: [u32; 2],
     queue_family_index: u32,
 ) -> Arc<StorageImage> {
     StorageImage::with_usage(
-        device.clone(),
+        allocator,
         ImageDimensions::Dim2d {
             width: dimensions[0],
             height: dimensions[1],
@@ -121,12 +158,12 @@ fn get_intermediate_image(
 }
 
 fn get_temporal_images(
-    device: Arc<Device>,
+    allocator: &(impl MemoryAllocator + ?Sized),
     dimensions: PhysicalSize<u32>,
     queue_family_index: u32,
-) -> (Arc<StorageImage>, Arc<StorageImage>) {
-    let accumulator_image_read = StorageImage::with_usage(
-        device.clone(),
+) -> [Arc<StorageImage>; 2] {
+    let accumulator_read_image = StorageImage::with_usage(
+        allocator,
         ImageDimensions::Dim2d {
             width: dimensions.width,
             height: dimensions.height,
@@ -134,21 +171,8 @@ fn get_temporal_images(
         },
         Format::R16G16B16A16_SFLOAT, // TODO: loosely match format with swapchain image format
         ImageUsage {
-            sampled: true,
-            transfer_dst: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue_family_index],
-    )
-    .unwrap();
-
-    let accumulator_image_write = StorageImage::with_usage(
-        device.clone(),
-        accumulator_image_read.dimensions(),
-        accumulator_image_read.format(), // TODO: loosely match format with swapchain image format
-        ImageUsage {
             storage: true,
+            sampled: true,
             transfer_src: true,
             ..ImageUsage::empty()
         },
@@ -157,90 +181,331 @@ fn get_temporal_images(
     )
     .unwrap();
 
-    (accumulator_image_read, accumulator_image_write)
+    let accumulator_write_image = StorageImage::with_usage(
+        allocator,
+        accumulator_read_image.dimensions(),
+        accumulator_read_image.format(), // TODO: loosely match format with swapchain image format
+        ImageUsage {
+            storage: true,
+            transfer_dst: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    [accumulator_read_image, accumulator_write_image]
 }
 
-fn get_compute_descriptor_set(
-    pipeline: Arc<ComputePipeline>,
+fn get_direct_images(
+    allocator: &(impl MemoryAllocator + ?Sized),
+    dimensions: PhysicalSize<u32>,
+    queue_family_index: u32,
+) -> [Arc<StorageImage>; 2] {
+    let normals_depth_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R32G32B32A32_SFLOAT,
+        ImageUsage {
+            storage: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    let material_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R8_UINT,
+        ImageUsage {
+            storage: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    [normals_depth_image, material_image]
+}
+
+fn get_moment_images(
+    allocator: &(impl MemoryAllocator + ?Sized),
+    dimensions: PhysicalSize<u32>,
+    queue_family_index: u32,
+) -> [Arc<StorageImage>; 2] {
+    let prev_moment_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R16_SFLOAT,
+        ImageUsage {
+            sampled: true,
+            storage: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    let cur_moment_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R16_SFLOAT,
+        ImageUsage {
+            storage: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    [prev_moment_image, cur_moment_image]
+}
+
+fn get_variance_images(
+    allocator: &(impl MemoryAllocator + ?Sized),
+    dimensions: PhysicalSize<u32>,
+    queue_family_index: u32,
+) -> [Arc<StorageImage>; 2] {
+    let prev_variance_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R16_SFLOAT,
+        ImageUsage {
+            storage: true,
+            sampled: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    let cur_variance_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R16_SFLOAT,
+        ImageUsage {
+            storage: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    [prev_variance_image, cur_variance_image]
+}
+
+fn get_compute_descriptor_sets<A>(
+    allocator: &A,
+    pipelines: [Arc<ComputePipeline>; 3],
     mutable_buffer: Arc<dyn BufferAccess>,
     constant_buffer: Arc<dyn BufferAccess>,
     render_image: Arc<dyn ImageAccess>,
-    accumulator_images: (Arc<StorageImage>, Arc<StorageImage>),
+    accumulator_images: [Arc<StorageImage>; 2],
     blue_noise_image: Arc<dyn ImageAccess>,
     sampler: Arc<Sampler>,
-) -> Arc<PersistentDescriptorSet> {
-    let render_image_view = ImageView::new_default(render_image.clone()).unwrap();
-    let accumulator_image_view_read = ImageView::new_default(accumulator_images.0).unwrap();
-    let accumulator_image_view_write = ImageView::new_default(accumulator_images.1).unwrap();
+    direct_images: [Arc<StorageImage>; 2],
+    moment_images: [Arc<StorageImage>; 2],
+    variance_images: [Arc<StorageImage>; 2],
+) -> [Arc<PersistentDescriptorSet<A::Alloc>>; 3]
+where
+    A: DescriptorSetAllocator + ?Sized,
+{
+    let accumulator_read_image_view = ImageView::new_default(accumulator_images[0].clone()).unwrap();
+    let accumulator_write_image_view = ImageView::new_default(accumulator_images[1].clone()).unwrap();
+    let normals_image_view = ImageView::new_default(direct_images[0].clone()).unwrap();
+    let material_image_view = ImageView::new_default(direct_images[1].clone()).unwrap();
+    let prev_moment_image_view = ImageView::new_default(moment_images[0].clone()).unwrap();
+    let cur_moment_image_view = ImageView::new_default(moment_images[1].clone()).unwrap();
+    let prev_variance_image_view = ImageView::new_default(variance_images[0].clone()).unwrap();
+    let cur_variance_image_view = ImageView::new_default(variance_images[1].clone()).unwrap();
+
     let blue_noise_image_view = ImageView::new_default(blue_noise_image).unwrap();
 
-    PersistentDescriptorSet::new(
-        pipeline.layout().set_layouts()[0].clone(),
+    let pathtrace_descriptor_set = PersistentDescriptorSet::new(
+        allocator,
+        pipelines[0].layout().set_layouts()[0].clone(),
         [
-            WriteDescriptorSet::buffer(0, mutable_buffer),
-            WriteDescriptorSet::buffer(1, constant_buffer),
-            WriteDescriptorSet::image_view(2, render_image_view),
-            WriteDescriptorSet::image_view_sampler(3, accumulator_image_view_read, sampler.clone()),
-            WriteDescriptorSet::image_view(4, accumulator_image_view_write),
-            WriteDescriptorSet::image_view_sampler(5, blue_noise_image_view, sampler),
+            WriteDescriptorSet::buffer(0, mutable_buffer.clone()),
+            WriteDescriptorSet::buffer(1, constant_buffer.clone()),
+            WriteDescriptorSet::image_view_sampler(
+                2,
+                accumulator_read_image_view.clone(),
+                sampler.clone(),
+            ),
+            WriteDescriptorSet::image_view(3, accumulator_write_image_view.clone()),
+            WriteDescriptorSet::image_view(4, normals_image_view.clone()),
+            WriteDescriptorSet::image_view(5, material_image_view.clone()),
+            WriteDescriptorSet::image_view_sampler(
+                6,
+                prev_moment_image_view.clone(),
+                sampler.clone(),
+            ),
+            WriteDescriptorSet::image_view(7, cur_moment_image_view.clone()),
+            WriteDescriptorSet::image_view_sampler(
+                8,
+                prev_variance_image_view.clone(),
+                sampler.clone(),
+            ),
+            WriteDescriptorSet::image_view(9, cur_variance_image_view.clone()),
+            WriteDescriptorSet::image_view_sampler(10, blue_noise_image_view, sampler.clone()),
         ],
     )
-    .unwrap()
+    .unwrap();
+
+    let denoise_descriptor_set = PersistentDescriptorSet::new(
+        allocator,
+        pipelines[1].layout().set_layouts()[0].clone(),
+        [
+            WriteDescriptorSet::image_view(0, accumulator_read_image_view.clone()),
+            WriteDescriptorSet::image_view(1, accumulator_write_image_view),
+            WriteDescriptorSet::image_view(2, normals_image_view),
+            WriteDescriptorSet::image_view(3, material_image_view),
+            WriteDescriptorSet::image_view(4, prev_moment_image_view),
+            WriteDescriptorSet::image_view(5, cur_moment_image_view),
+            WriteDescriptorSet::image_view(6, prev_variance_image_view),
+            WriteDescriptorSet::image_view(7, cur_variance_image_view),
+        ],
+    )
+    .unwrap();
+
+    let render_image_view = ImageView::new_default(render_image).unwrap();
+
+    let transfer_descriptor_set = PersistentDescriptorSet::new(
+        allocator,
+        pipelines[2].layout().set_layouts()[0].clone(),
+        [
+            WriteDescriptorSet::image_view(0, accumulator_read_image_view),
+            WriteDescriptorSet::image_view(1, render_image_view),
+        ],
+    )
+    .unwrap();
+
+    [
+        pathtrace_descriptor_set,
+        denoise_descriptor_set,
+        transfer_descriptor_set,
+    ]
 }
 
-fn get_command_buffer<S>(
-    device: Arc<Device>,
+fn get_command_buffer<A, S>(
+    allocator: &A,
     queue: Arc<Queue>,
-    compute_pipeline: Arc<ComputePipeline>,
-    push_constants: shaders::ty::PushConstantData,
-    compute_descriptor_set: S,
+    pipelines: [Arc<ComputePipeline>; 3],
+    pathtrace_push_constants: shaders::ty::PathtracePushConstants,
+    descriptor_sets: [S; 3],
     intermediate_image: Arc<dyn ImageAccess>,
-    swapchain_image: Arc<SwapchainImage<Window>>,
-    accumulator_images: (Arc<StorageImage>, Arc<StorageImage>),
-) -> Arc<PrimaryAutoCommandBuffer>
+    swapchain_image: Arc<SwapchainImage>,
+    accumulator_images: [Arc<StorageImage>; 2],
+) -> Arc<PrimaryAutoCommandBuffer<A::Alloc>>
 where
+    A: CommandBufferAllocator,
     S: DescriptorSetsCollection + Clone,
 {
     let mut builder = AutoCommandBufferBuilder::primary(
-        device.clone(),
+        allocator,
         queue.queue_family_index(),
         CommandBufferUsage::OneTimeSubmit,
     )
     .unwrap();
 
+    let [pathtrace_pipeline, denoise_pipeline, transfer_pipeline] = pipelines;
+    let [pathtrace_descriptor_set, denoise_descriptor_set, transfer_descriptor_set] =
+        descriptor_sets;
+
+    let dispatch_groups =
+        (UVec3::from_array(swapchain_image.dimensions().width_height_depth()).as_vec3() / 8.0)
+            .ceil()
+            .as_uvec3()
+            .to_array();
+
     builder
-        .clear_color_image(ClearColorImageInfo::image(intermediate_image.clone()))
-        .unwrap()
-        .bind_pipeline_compute(compute_pipeline.clone())
-        .push_constants(compute_pipeline.layout().clone(), 0, push_constants)
+        .bind_pipeline_compute(pathtrace_pipeline.clone())
+        .push_constants(
+            pathtrace_pipeline.layout().clone(),
+            0,
+            pathtrace_push_constants,
+        )
         .bind_descriptor_sets(
             PipelineBindPoint::Compute,
-            compute_pipeline.layout().clone(),
+            pathtrace_pipeline.layout().clone(),
             0,
-            compute_descriptor_set.clone(),
+            pathtrace_descriptor_set.clone(),
         )
-        .dispatch(
-            (UVec3::from_array(swapchain_image.dimensions().width_height_depth()).as_vec3() / 8.0)
-                .ceil()
-                .as_uvec3()
-                .to_array(),
+        .dispatch(dispatch_groups)
+        .unwrap()
+        .bind_pipeline_compute(denoise_pipeline.clone())
+        .bind_descriptor_sets(
+            PipelineBindPoint::Compute,
+            denoise_pipeline.layout().clone(),
+            0,
+            denoise_descriptor_set.clone(),
+        );
+
+    const MAX_STAGE: u32 = 5;
+    let mut denoise_push_constants = shaders::ty::DenoisePushConstants { stage: 0 };
+
+    for i in 0..MAX_STAGE {
+        denoise_push_constants.stage = i;
+
+        builder
+            .push_constants(denoise_pipeline.layout().clone(), 0, denoise_push_constants)
+            .dispatch(dispatch_groups)
+            .unwrap()
+            .copy_image(CopyImageInfo::images(accumulator_images[0].clone(), accumulator_images[1].clone()))
+            .unwrap();
+    }
+
+    builder
+        .bind_pipeline_compute(transfer_pipeline.clone())
+        .bind_descriptor_sets(
+            PipelineBindPoint::Compute,
+            transfer_pipeline.layout().clone(),
+            0,
+            transfer_descriptor_set,
         )
+        .dispatch(dispatch_groups)
         .unwrap()
         .copy_image(CopyImageInfo::images(
             intermediate_image.clone(),
             swapchain_image.clone(),
-        ))
-        .unwrap()
-        .copy_image(CopyImageInfo::images(
-            accumulator_images.1,
-            accumulator_images.0,
         ))
         .unwrap();
 
     Arc::new(builder.build().unwrap())
 }
 
-#[allow(dead_code)]
 mod rotation {
     use glam::Vec3;
 
@@ -252,9 +517,8 @@ mod rotation {
 // field of view
 const FOV: f32 = 1.0;
 
-struct Data<W> {
-    /// the window surface
-    surface: Arc<Surface<W>>,
+struct Data {
+    window: Arc<Window>,
     window_frozen: bool,
     window_resized: bool,
     recreate_swapchain: bool,
@@ -271,11 +535,7 @@ struct Data<W> {
     rotation_multiplier: f32,
 }
 
-impl<W> Data<W> {
-    fn window(&self) -> &W {
-        self.surface.window()
-    }
-
+impl Data {
     fn rotation(&self) -> Quat {
         Quat::from_rotation_z(-self.rotation.x) * Quat::from_rotation_x(self.rotation.y)
     }
@@ -305,17 +565,12 @@ fn main() {
     .unwrap();
 
     let event_loop = EventLoop::new();
-    let surface = WindowBuilder::new()
-        .build_vk_surface(&event_loop, instance.clone())
-        .unwrap();
+    let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
+    let surface = vulkano_win::create_surface_from_winit(window.clone(), instance.clone()).unwrap();
     // BUG: spamming any key on application startup will make the window invisible
-    surface.window().set_cursor_visible(false);
-    surface
-        .window()
-        // WARNING: not supported on Mac, web and mobile platforms
-        .set_cursor_grab(CursorGrabMode::Confined)
-        .unwrap();
-    surface.window().set_resizable(false);
+    window.set_cursor_visible(false);
+    window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
+    window.set_resizable(false);
 
     let device_extensions = DeviceExtensions {
         khr_swapchain: true,
@@ -339,10 +594,13 @@ fn main() {
     .unwrap();
     let queue = queues.next().unwrap();
 
+    // TODO: improve
+    let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
+
     let capabilities = physical
         .surface_capabilities(&surface, Default::default())
         .unwrap();
-    let dimensions = surface.window().inner_size();
+    let dimensions = window.inner_size();
     let composite_alpha = capabilities
         .supported_composite_alpha
         .iter()
@@ -381,14 +639,21 @@ fn main() {
     .unwrap();
 
     let pathtrace_compute_shader = shaders::load_PathtraceCompute(device.clone()).unwrap();
+    let denoise_compute_shader = shaders::load_DenoiseCompute(device.clone()).unwrap();
+    let transfer_compute_shader = shaders::load_TransferCompute(device.clone()).unwrap();
 
     let mut viewport = Viewport {
         origin: [0.0, 0.0],
-        dimensions: surface.window().inner_size().into(),
+        dimensions: window.inner_size().into(),
         depth_range: 0.0..1.0,
     };
 
-    let mut compute_pipeline = get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
+    let mut compute_pipelines = get_compute_pipelines(
+        device.clone(),
+        pathtrace_compute_shader.clone(),
+        denoise_compute_shader.clone(),
+        transfer_compute_shader.clone(),
+    );
 
     let materials = [
         shaders::ty::Material {
@@ -411,7 +676,7 @@ fn main() {
         },
         shaders::ty::Material {
             reflectance: [0.0; 3],
-            emittance: [5.0; 3],
+            emittance: [1.0; 3],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
@@ -419,54 +684,69 @@ fn main() {
 
     let objects = [
         shaders::ty::Object {
-            pos: [-110.0, 0.0, 0.0],
-            radiusSquared: 100.0 * 100.0,
+            pos: [-1010.0, 0.0, 0.0],
+            radiusSquared: 1000.0 * 1000.0,
             mat: 0,
             _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [110.0, 0.0, 0.0],
-            radiusSquared: 100.0 * 100.0,
+            pos: [1010.0, 0.0, 0.0],
+            radiusSquared: 1000.0 * 1000.0,
             mat: 1,
             _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [0.0, 110.0, 0.0],
-            radiusSquared: 100.0 * 100.0,
+            pos: [0.0, 1010.0, 0.0],
+            radiusSquared: 1000.0 * 1000.0,
             mat: 2,
             _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [0.0, -110.0, 0.0],
-            radiusSquared: 100.0 * 100.0,
+            pos: [0.0, -1010.0, 0.0],
+            radiusSquared: 1000.0 * 1000.0,
             mat: 2,
             _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [0.0, 110.0, 0.0],
-            radiusSquared: 100.0 * 100.0,
+            pos: [0.0, 1010.0, 0.0],
+            radiusSquared: 1000.0 * 1000.0,
             mat: 2,
             _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [0.0, 0.0, -110.0],
-            radiusSquared: 100.0 * 100.0,
+            pos: [0.0, 0.0, -1010.0],
+            radiusSquared: 1000.0 * 1000.0,
             mat: 2,
             _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [0.0, 0.0, 110.0],
-            radiusSquared: 100.0 * 100.0,
+            pos: [0.0, 0.0, 1010.0],
+            radiusSquared: 1000.0 * 1000.0,
             mat: 2,
             _dummy0: [0u8; 12],
         },
         shaders::ty::Object {
-            pos: [0.0, 0.0, 59.9],
-            radiusSquared: 50.0 * 50.0,
+            pos: [0.0, 0.0, 109.95],
+            radiusSquared: 100.0 * 100.0,
             mat: 3,
             _dummy0: [0u8; 12],
         },
     ];
+
+    let command_buffer_allocator = StandardCommandBufferAllocator::new(
+        device.clone(),
+        StandardCommandBufferAllocatorCreateInfo {
+            primary_buffer_count: 2,
+            secondary_buffer_count: 0,
+            ..StandardCommandBufferAllocatorCreateInfo::default()
+        },
+    );
+    let mut alloc_command_buffer_builder = AutoCommandBufferBuilder::primary(
+        &command_buffer_allocator,
+        queue_family_index,
+        CommandBufferUsage::OneTimeSubmit,
+    )
+    .unwrap();
 
     let mut mutable_data = shaders::ty::MutableData {
         ..Default::default()
@@ -474,44 +754,51 @@ fn main() {
     mutable_data.mats[..materials.len()].copy_from_slice(&materials);
     mutable_data.objs[..objects.len()].copy_from_slice(&objects);
 
-    let (mutable_buffer, mutable_future) = DeviceLocalBuffer::from_data(
+    let mutable_buffer = DeviceLocalBuffer::from_data(
+        &memory_allocator,
         mutable_data,
         BufferUsage {
             uniform_buffer: true,
             ..BufferUsage::empty()
         },
-        queue.clone(),
+        &mut alloc_command_buffer_builder,
     )
     .unwrap();
 
     // near constant data
     let constant_data = shaders::ty::ConstantBuffer {
-        view: viewport.dimensions,
+        view: [viewport.dimensions[0] as i32, viewport.dimensions[1] as i32],
         ratio: [FOV, -FOV * viewport.dimensions[1] / viewport.dimensions[0]],
     };
 
-    let (constant_buffer, constant_future) = DeviceLocalBuffer::from_data(
+    let constant_buffer = DeviceLocalBuffer::from_data(
+        &memory_allocator,
         constant_data,
         BufferUsage {
             uniform_buffer: true,
             ..BufferUsage::empty()
         },
-        queue.clone(),
+        &mut alloc_command_buffer_builder,
     )
     .unwrap();
 
-    let blue_noise_raw_image = ImageReader::open("blue_noise\\HDR_RGB_0_32x32.png")
+    let blue_noise_raw_image = ImageReader::open("blue_noise\\HDR_RGBA_0_256x256.png")
         .unwrap()
         .decode()
         .unwrap();
 
     let blue_noise_data = blue_noise_raw_image
-        .to_rgba8()
-        .as_bytes()
-        .to_vec()
+        .to_rgba16()
+        .chunks(4)
+        .map(|v| {
+            const M: f32 = u16::MAX as f32;
+            [v[0], ((v[1] as f32 / M).acos() * M) as u16] // maps v[1] to cosine distribution
+        })
+        .collect::<Vec<_>>()
         .into_iter();
 
-    let (blue_noise_image, blue_noise_future) = ImmutableImage::from_iter(
+    let blue_noise_image = ImmutableImage::from_iter(
+        &memory_allocator,
         blue_noise_data,
         ImageDimensions::Dim2d {
             width: blue_noise_raw_image.width(),
@@ -519,8 +806,8 @@ fn main() {
             array_layers: 1,
         },
         MipmapsCount::One,
-        Format::R8G8B8A8_SNORM,
-        queue.clone(),
+        Format::R16G16_SNORM,
+        &mut alloc_command_buffer_builder,
     )
     .unwrap();
 
@@ -530,48 +817,59 @@ fn main() {
     )
     .unwrap();
 
-    mutable_future
-        .join(constant_future)
-        .join(blue_noise_future)
+    alloc_command_buffer_builder
+        .build()
+        .unwrap()
+        .execute(queue.clone())
+        .unwrap()
         .then_signal_fence_and_flush()
         .unwrap()
         .wait(None)
         .unwrap();
 
-    let mut push_constants = shaders::ty::PushConstantData {
+    let mut pathtrace_push_constants = shaders::ty::PathtracePushConstants {
         rot: [0.0; 4],
         pos: [0.0; 3],
         time: 0.0,
+        pRot: [0.0; 4],
         ipRot: [0.0; 4],
         pPos: [0.0; 3],
     };
 
     let mut intermediate_image = get_intermediate_image(
-        device.clone(),
+        &memory_allocator,
         swapchain_images[0].dimensions().width_height(),
         queue_family_index,
     );
 
-    let mut accumulator_images =
-        get_temporal_images(device.clone(), dimensions, queue_family_index);
+    let mut accumulator_images = get_temporal_images(&memory_allocator, dimensions, queue_family_index);
 
-    let mut compute_descriptor_set = get_compute_descriptor_set(
-        compute_pipeline.clone(),
+    let moment_images = get_moment_images(&memory_allocator, dimensions, queue_family_index);
+
+    let variance_images = get_variance_images(&memory_allocator, dimensions, queue_family_index);
+
+    let direct_images = get_direct_images(&memory_allocator, dimensions, queue_family_index);
+
+    let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
+    let mut descriptor_sets = get_compute_descriptor_sets(
+        &descriptor_set_allocator,
+        compute_pipelines.clone(),
         mutable_buffer.clone(),
         constant_buffer.clone(),
         intermediate_image.clone(),
         accumulator_images.clone(),
         blue_noise_image.clone(),
         sampler.clone(),
+        direct_images.clone(),
+        moment_images.clone(),
+        variance_images.clone(),
     );
-
-    let mut command_buffers = vec![None; swapchain_images.len()];
 
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
     let mut previous_fence_index = 0;
 
     let mut eh = EventHelper::new(Data {
-        surface,
+        window: window,
         window_frozen: false,
         window_resized: false,
         recreate_swapchain: false,
@@ -584,7 +882,7 @@ fn main() {
         rotation_multiplier: 1.0,
     });
 
-    let exit = |data: &mut EventHelper<Data<_>>| data.quit = true;
+    let exit = |data: &mut EventHelper<Data>| data.quit = true;
     eh.window_close_requested(exit);
     eh.window_keyboard_input(VirtualKeyCode::Escape, ElementState2::Pressed, exit);
 
@@ -592,11 +890,12 @@ fn main() {
 
     eh.window_focused(|data, focused| {
         data.window_frozen = !focused;
-        let window = data.window();
         if focused {
-            window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
+            data.window
+                .set_cursor_grab(CursorGrabMode::Confined)
+                .unwrap();
         } else {
-            window.set_cursor_grab(CursorGrabMode::None).unwrap();
+            data.window.set_cursor_grab(CursorGrabMode::None).unwrap();
         }
     });
 
@@ -606,19 +905,22 @@ fn main() {
 
         if size.width < size.height {
             size.height = size.width;
-            data.window().set_inner_size(size);
+            data.window.set_inner_size(size);
         }
 
         data.dimensions = UVec2::new(size.width, size.height).as_vec2();
     });
 
-    eh.window_keyboard_input(VirtualKeyCode::F11, ElementState2::Pressed, |data| {
-        let window = data.window();
-        match window.fullscreen() {
-            Some(_) => window.set_fullscreen(None),
-            None => window.set_fullscreen(Some(Fullscreen::Borderless(None))),
-        }
-    });
+    eh.window_keyboard_input(
+        VirtualKeyCode::F11,
+        ElementState2::Pressed,
+        |data| match data.window.fullscreen() {
+            Some(_) => data.window.set_fullscreen(None),
+            None => data
+                .window
+                .set_fullscreen(Some(Fullscreen::Borderless(None))),
+        },
+    );
 
     // DEBUG
     eh.window_keyboard_input(VirtualKeyCode::Equals, ElementState2::Held, |data| {
@@ -694,19 +996,23 @@ fn main() {
         }
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
-        push_constants.ipRot = Quat::from_array(push_constants.rot).conjugate().to_array();
-        push_constants.pPos = push_constants.pos;
-        push_constants.rot = eh.rotation().to_array();
-        push_constants.pos = (Vec3::from(push_constants.pos) + eh.position()).to_array();
+        pathtrace_push_constants.pRot = pathtrace_push_constants.rot;
+        pathtrace_push_constants.ipRot = Quat::from_array(pathtrace_push_constants.rot)
+            .conjugate()
+            .to_array();
+        pathtrace_push_constants.pPos = pathtrace_push_constants.pos;
+        pathtrace_push_constants.rot = eh.rotation().to_array();
+        pathtrace_push_constants.pos =
+            (Vec3::from(pathtrace_push_constants.pos) + eh.position()).to_array();
         eh.delta_position = Vec3::ZERO;
 
-        push_constants.time = eh.secs_since_start() as f32;
+        pathtrace_push_constants.time = eh.secs_since_start() as f32;
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {
             eh.recreate_swapchain = false;
 
-            let dimensions = eh.window().inner_size();
+            let dimensions = eh.window.inner_size();
 
             let (new_swapchain, new_swapchain_images) =
                 match swapchain.recreate(SwapchainCreateInfo {
@@ -726,13 +1032,13 @@ fn main() {
                 viewport.dimensions = eh.dimensions.to_array();
 
                 let constant_data = shaders::ty::ConstantBuffer {
-                    view: viewport.dimensions,
+                    view: [viewport.dimensions[0] as i32, viewport.dimensions[1] as i32],
                     ratio: [FOV, -FOV * viewport.dimensions[1] / viewport.dimensions[0]],
                 };
 
                 // TODO: make this a lot cleaner
                 let mut builder = AutoCommandBufferBuilder::primary(
-                    device.clone(),
+                    &command_buffer_allocator,
                     queue.queue_family_index(),
                     CommandBufferUsage::OneTimeSubmit,
                 )
@@ -758,25 +1064,37 @@ fn main() {
                     .wait(None)
                     .unwrap();
 
-                compute_pipeline = get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
+                compute_pipelines = get_compute_pipelines(
+                    device.clone(),
+                    pathtrace_compute_shader.clone(),
+                    denoise_compute_shader.clone(),
+                    transfer_compute_shader.clone(),
+                );
 
                 intermediate_image = get_intermediate_image(
-                    device.clone(),
+                    &memory_allocator,
                     swapchain_images[0].dimensions().width_height(),
                     queue_family_index,
                 );
 
                 accumulator_images =
-                    get_temporal_images(device.clone(), dimensions, queue_family_index);
+                    get_temporal_images(&memory_allocator, dimensions, queue_family_index);
 
-                compute_descriptor_set = get_compute_descriptor_set(
-                    compute_pipeline.clone(),
+                let direct_images =
+                    get_direct_images(&memory_allocator, dimensions, queue_family_index);
+
+                descriptor_sets = get_compute_descriptor_sets(
+                    &descriptor_set_allocator,
+                    compute_pipelines.clone(),
                     mutable_buffer.clone(),
                     constant_buffer.clone(),
                     intermediate_image.clone(),
                     accumulator_images.clone(),
                     blue_noise_image.clone(),
                     sampler.clone(),
+                    direct_images.clone(),
+                    moment_images.clone(),
+                    variance_images.clone(),
                 );
             }
         }
@@ -791,20 +1109,20 @@ fn main() {
             };
         eh.recreate_swapchain |= suboptimal;
 
-        if let Some(image_fence) = &fences[image_index] {
+        let command_buffer = get_command_buffer(
+            &command_buffer_allocator,
+            queue.clone(),
+            compute_pipelines.clone(),
+            pathtrace_push_constants.clone(),
+            descriptor_sets.clone(),
+            intermediate_image.clone(),
+            swapchain_images[image_index as usize].clone(),
+            accumulator_images.clone(),
+        );
+
+        if let Some(image_fence) = &fences[image_index as usize] {
             image_fence.wait(None).unwrap();
         }
-
-        command_buffers[image_index] = Some(get_command_buffer(
-            device.clone(),
-            queue.clone(),
-            compute_pipeline.clone(),
-            push_constants.clone(),
-            compute_descriptor_set.clone(),
-            intermediate_image.clone(),
-            swapchain_images[image_index].clone(),
-            accumulator_images.clone(),
-        ));
 
         let previous_future = match fences[previous_fence_index].clone() {
             Some(future) => future.boxed(),
@@ -817,18 +1135,15 @@ fn main() {
 
         let future = previous_future
             .join(image_future)
-            .then_execute(queue.clone(), command_buffers[image_index].clone().unwrap())
+            .then_execute(queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
                 queue.clone(),
-                PresentInfo {
-                    index: image_index,
-                    ..PresentInfo::swapchain(swapchain.clone())
-                },
+                SwapchainPresentInfo::swapchain_image_index(swapchain.clone(), image_index),
             )
             .then_signal_fence_and_flush();
 
-        fences[image_index] = match future {
+        fences[image_index as usize] = match future {
             Ok(ok) => Some(Arc::new(ok)),
             Err(FlushError::OutOfDate) => {
                 eh.recreate_swapchain = true;
@@ -839,6 +1154,6 @@ fn main() {
                 None
             }
         };
-        previous_fence_index = image_index;
+        previous_fence_index = image_index as usize;
     })
 }

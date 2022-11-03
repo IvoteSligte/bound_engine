@@ -1,30 +1,19 @@
 #version 460
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 16) in;
+#include "compute_includes.glsl"
 
-layout(push_constant) uniform PushConstantData {
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(push_constant) uniform PathtracePushConstants {
     vec4 rot;
     vec3 pos;
     float time;
+    vec4 pRot;
     vec4 ipRot; // inverse previous rotation
     vec3 pPos; // previous position
 } pc;
 
-const uint MAX_OBJECTS = 8;
-const uint MAX_MATERIALS = 4;
 const uint RAYS_PER_SAMPLE = 4;
-const uint TEMPORAL_SAMPLES = 255;
-
-struct Material {
-    vec3 reflectance;
-    vec3 emittance;
-};
-
-struct Object {
-    vec3 pos;
-    float radiusSquared;
-    uint mat;
-};
 
 struct Ray {
     vec3 origin; // origin
@@ -35,38 +24,57 @@ struct Ray {
     uint objectHit;
 };
 
-layout(binding = 0) uniform readonly MutableData {
+// TODO: specialization constants?
+layout(binding = 0) uniform restrict readonly MutableData {
     Material mats[MAX_MATERIALS];
     Object objs[MAX_OBJECTS];
 } buf;
 
-layout(binding = 1) uniform readonly ConstantBuffer {
-    vec2 view; // window size
-    vec2 ratio; // window height / width
+// TODO: specialization constants?
+layout(binding = 1) uniform restrict readonly ConstantBuffer {
+    ivec2 view; // window size
+    vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 2, rgba8) uniform restrict writeonly image2D renderImage;
-layout(binding = 3) uniform sampler2D accumulatorImageRead;
-layout(binding = 4, rgba16f) uniform restrict writeonly image2D accumulatorImageWrite;
-layout(binding = 5) uniform sampler2D blueNoiseSampler;
+layout(binding = 2) uniform sampler2D accumulatorImageRead;
+layout(binding = 3, rgba16f) uniform restrict writeonly image2D accumulatorImageWrite;
+layout(binding = 4, rgba32f) uniform restrict writeonly image2D normalsDepthImage;
+layout(binding = 5, r8ui) uniform restrict writeonly uimage2D materialImage;
+layout(binding = 6) uniform sampler2D prevMomentImage; // TODO: momentImage output
+layout(binding = 7, r16f) uniform restrict writeonly image2D curMomentImage;
+layout(binding = 8) uniform sampler2D prevVarianceImage;
+layout(binding = 9, r16f) uniform restrict writeonly image2D curVarianceImage;
+
+layout(binding = 10) uniform sampler2D blueNoiseSampler;
+
+// pseudo random number generator
+// https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+float rand(vec2 co){
+    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+}
 
 vec3 rotate(vec4 q, vec3 v) {
     vec3 t = cross(q.xyz, v) + q.w * v;
     return v + 2.0 * cross(q.xyz, t);
 }
 
-// pseudo random number generator
-// https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
-float rand(vec2 co) {
-    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
-}
+vec3 randomDirection(vec3 normal, float index) {
+    const float PI = 3.14159265;
+    const float PI_2 = PI * 0.5;
 
-vec3 randomUnitVectorOnHemisphere(vec3 n, float seed) {
     const float imageW = textureSize(blueNoiseSampler, 0).x;
-    // samples from a normalized, normal distribution, blue noise texture
-    // TODO: make it a one-dimensional texture/buffer
-    vec3 v = normalize(texture(blueNoiseSampler, vec2(seed, seed / imageW)).rgb);
-    return faceforward(v, -v, n);
+
+    vec2 offset = texture(blueNoiseSampler, vec2(index, index / imageW)).xy;
+    offset *= vec2(PI_2, PI);
+
+    // atan(a / b) gives a different, incorrent number than atan(a, b)
+    // vec2(longitude, latitude) or vec2(phi, theta)
+    vec2 t = vec2(atan(normal.y, normal.x), atan(normal.z, length(normal.xy))) + offset;
+
+    vec2 s = sin(t);
+    vec2 c = cos(t);
+
+    return vec3(c.x*c.y, s.x*c.y, s.y);
 }
 
 // calculates the distance from a ray (Ray) to a sphere (Object)
@@ -91,99 +99,77 @@ void traceRay(inout Ray ray) {
     }
 }
 
-void updateRay(inout Ray ray, float seed) {
+void updateRay(inout Ray ray, float dirIdx) {
     ray.origin += ray.direction * ray.distanceToObject;
-    ray.normalOfObject = normalize(ray.origin - buf.objs[ray.objectHit].pos);
-    ray.direction = randomUnitVectorOnHemisphere(ray.normalOfObject, seed);
+    ray.normalOfObject = ray.origin - buf.objs[ray.objectHit].pos;
+    ray.direction = randomDirection(ray.normalOfObject, dirIdx);
 }
 
 void shade(inout Ray ray, inout vec4 fragData) {
     Material material = buf.mats[buf.objs[ray.objectHit].mat];
-    
-    // max() makes sure the image does not gradually get darker
-    float cos_theta = max(dot(ray.direction, ray.normalOfObject), 0.0);
 
-    vec3 BRDF = material.reflectance * cos_theta * 2.0;
+    // rays are fired to account for diffuse falloff
+    vec3 BRDF = material.reflectance * 2.0;
 
     fragData.rgb += ray.color * material.emittance;
     ray.color *= BRDF;
 }
 
-// // TODO: move to a more suitable location
-shared vec4 fragDataShared[gl_WorkGroupSize.x][gl_WorkGroupSize.y][gl_WorkGroupSize.z];
-
-// vec4 bilinearAccumulatorLoad(vec2 i) {
-//     ivec2 tl = ivec2(i);
-//     ivec2 br = tl + ivec2(1);
-//     vec2 f = i - tl;
-
-//     vec4 x0 = imageLoad(accumulatorImageRead, tl);
-//     vec4 x1 = imageLoad(accumulatorImageRead, ivec2(br.x, tl.y));
-
-//     vec4 y0 = imageLoad(accumulatorImageRead, ivec2(tl.x, br.y));
-//     vec4 y1 = imageLoad(accumulatorImageRead, br);
-
-//     return mix(mix(x0, x1, f.x), mix(y0, y1, f.x), f.y);
-// }
-
+// TODO: fix samples per pixel
 void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
     vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / cs.view - 1.0;
     // maps normCoord to a different range (e.g. for FOV and non-square windows)
-
-    const vec2 offset = mod(vec2(gl_LocalInvocationID.z, floor(gl_LocalInvocationID.z / gl_WorkGroupSize.z)) / floor(sqrt(gl_WorkGroupSize.z)), 1.0) / cs.view;
-    normCoord = (normCoord + offset) * cs.ratio;
+    normCoord *= cs.ratio;
 
     vec4 fragData = vec4(0.0);
     vec3 viewDir = rotate(pc.rot, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
 
     Ray ray = Ray(pc.pos, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
-    float seed = (pc.time + viewDir.x * viewDir.y * viewDir.z * 1000.0 + gl_LocalInvocationID.z) * 1000.0;
+    // TODO: fix
+    float dirIdx = pc.time + rand(viewDir.xz) * 1e2;
 
     traceRay(ray);
-    updateRay(ray, seed);
+    updateRay(ray, dirIdx);
     shade(ray, fragData);
 
     Ray baseRay = ray;
     for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
-        seed += 1.0;
+        dirIdx += 1;
         traceRay(ray);
-        updateRay(ray, seed);
+        updateRay(ray, dirIdx);
         shade(ray, fragData);
     }
 
-    fragDataShared[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = fragData;
-    memoryBarrierShared();
-    barrier();
+    // screen space coordinate from global point
+    vec3 p = normalize(baseRay.origin - pc.pPos);
+    vec3 r = rotate(pc.ipRot, p);
+    vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
+    i = (i + 1.0) * cs.view * 0.5; // [0, cs.view]
 
-    if (gl_LocalInvocationID.z == 0) {
-        for (uint z = 1; z < gl_WorkGroupSize.z; z++) {
-            fragData += fragDataShared[gl_LocalInvocationID.x][gl_LocalInvocationID.y][z];
-        }
-        fragData.rgb /= TEMPORAL_SAMPLES; // number of samples
-        fragData /= gl_WorkGroupSize.z;
+    Ray pRay = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
+    traceRay(pRay);
 
-        // screen space coordinate from global point
-        vec3 p = normalize(baseRay.origin - pc.pPos);
-        vec3 r = rotate(pc.ipRot, p);
-        vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
-        i = (i + 1.0) * cs.view * 0.5; // [0, cs.view]
+    if (pRay.objectHit == baseRay.objectHit && clamp(i, vec2(0.0), cs.view - 1.0) == i) {
+        vec2 ni = (i + 0.5) / cs.view;
 
-        Ray pRay = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
-        traceRay(pRay);
+        vec2 moment = texture(prevMomentImage, ni).xy;
+        imageStore(curMomentImage, ivec2(gl_GlobalInvocationID.xy), vec4(moment, vec2(0.0)));
 
-        if (pRay.objectHit == baseRay.objectHit && clamp(i, vec2(-1e-4), cs.view - 0.99) == i) {
-            vec4 accData = texture(accumulatorImageRead, (i + 0.5) / cs.view);
-            fragData.rgb *= uint(accData.w < TEMPORAL_SAMPLES);
-            fragData += accData;
-        }
-        fragData.w = min(fragData.w + 1.0, TEMPORAL_SAMPLES);
+        float variance = texture(prevVarianceImage, ni).x;
+        imageStore(curVarianceImage, ivec2(gl_GlobalInvocationID.xy), vec4(variance));
 
-        imageStore(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy), fragData); // accData.w = sample count
-        imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.bgr * (TEMPORAL_SAMPLES / fragData.w), 1.0)); // TODO: fix formats (rgb/bgr)
+        vec4 accData = texture(accumulatorImageRead, ni);
+        fragData = mix(accData, fragData, 0.05);
+
+        // TODO: use normals, albedo, material to determine temporal stability
+        // accData /= distance(pc.pos, pc.pPos) + 1.0;
+        // accData *= dot(rotate(pc.pRot, vec3(0.0, 1.0, 0.0)), rotate(pc.rot, vec3(0.0, 1.0, 0.0)));
     }
-}
 
-// TODO: add another compute shader with a sampler for the raw fragData output from this shader
-// TODO: add parallel sampling
+    imageStore(normalsDepthImage, ivec2(gl_GlobalInvocationID.xy), vec4(normalize(baseRay.normalOfObject), baseRay.distanceToObject));
+    imageStore(materialImage, ivec2(gl_GlobalInvocationID.xy), uvec4(buf.objs[baseRay.objectHit].mat, uvec3(0)));
+
+    imageStore(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.rgb, fragData.w + 1.0)); // accData.w = sample count
+}
