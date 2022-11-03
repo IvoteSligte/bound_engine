@@ -157,34 +157,19 @@ fn get_intermediate_image(
     .unwrap()
 }
 
-fn get_temporal_images(
+fn get_denoise_images(
     allocator: &(impl MemoryAllocator + ?Sized),
     dimensions: PhysicalSize<u32>,
     queue_family_index: u32,
 ) -> [Arc<StorageImage>; 2] {
-    let accumulator_read_image = StorageImage::with_usage(
+    let denoise_input_image = StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
             width: dimensions.width,
             height: dimensions.height,
             array_layers: 1,
         },
-        Format::R16G16B16A16_SFLOAT, // TODO: loosely match format with swapchain image format
-        ImageUsage {
-            storage: true,
-            sampled: true,
-            transfer_src: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue_family_index],
-    )
-    .unwrap();
-
-    let accumulator_write_image = StorageImage::with_usage(
-        allocator,
-        accumulator_read_image.dimensions(),
-        accumulator_read_image.format(), // TODO: loosely match format with swapchain image format
+        Format::R16G16B16A16_SFLOAT,
         ImageUsage {
             storage: true,
             transfer_dst: true,
@@ -195,7 +180,52 @@ fn get_temporal_images(
     )
     .unwrap();
 
-    [accumulator_read_image, accumulator_write_image]
+    let denoise_output_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R16G16B16A16_SFLOAT,
+        ImageUsage {
+            storage: true,
+            transfer_src: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    [denoise_input_image, denoise_output_image]
+}
+
+fn get_temporal_accumulator_image(
+    allocator: &(impl MemoryAllocator + ?Sized),
+    dimensions: PhysicalSize<u32>,
+    queue_family_index: u32,
+) -> Arc<StorageImage> {
+    let temporal_accumulator_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R16G16B16A16_SFLOAT, // TODO: loosely match format with swapchain image format
+        ImageUsage {
+            storage: true,
+            sampled: true,
+            transfer_dst: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    temporal_accumulator_image
 }
 
 fn get_direct_images(
@@ -245,7 +275,7 @@ fn get_moment_images(
     dimensions: PhysicalSize<u32>,
     queue_family_index: u32,
 ) -> [Arc<StorageImage>; 2] {
-    let prev_moment_image = StorageImage::with_usage(
+    let temporal_moment_image = StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
             width: dimensions.width,
@@ -263,7 +293,7 @@ fn get_moment_images(
     )
     .unwrap();
 
-    let cur_moment_image = StorageImage::with_usage(
+    let moment_image = StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
             width: dimensions.width,
@@ -280,7 +310,7 @@ fn get_moment_images(
     )
     .unwrap();
 
-    [prev_moment_image, cur_moment_image]
+    [temporal_moment_image, moment_image]
 }
 
 fn get_variance_images(
@@ -288,7 +318,7 @@ fn get_variance_images(
     dimensions: PhysicalSize<u32>,
     queue_family_index: u32,
 ) -> [Arc<StorageImage>; 2] {
-    let prev_variance_image = StorageImage::with_usage(
+    let temporal_variance_image = StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
             width: dimensions.width,
@@ -306,7 +336,7 @@ fn get_variance_images(
     )
     .unwrap();
 
-    let cur_variance_image = StorageImage::with_usage(
+    let variance_image = StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
             width: dimensions.width,
@@ -323,7 +353,7 @@ fn get_variance_images(
     )
     .unwrap();
 
-    [prev_variance_image, cur_variance_image]
+    [temporal_variance_image, variance_image]
 }
 
 fn get_compute_descriptor_sets<A>(
@@ -332,7 +362,8 @@ fn get_compute_descriptor_sets<A>(
     mutable_buffer: Arc<dyn BufferAccess>,
     constant_buffer: Arc<dyn BufferAccess>,
     render_image: Arc<dyn ImageAccess>,
-    accumulator_images: [Arc<StorageImage>; 2],
+    temporal_accumulator_image: Arc<StorageImage>,
+    denoise_images: [Arc<StorageImage>; 2],
     blue_noise_image: Arc<dyn ImageAccess>,
     sampler: Arc<Sampler>,
     direct_images: [Arc<StorageImage>; 2],
@@ -342,14 +373,15 @@ fn get_compute_descriptor_sets<A>(
 where
     A: DescriptorSetAllocator + ?Sized,
 {
-    let accumulator_read_image_view = ImageView::new_default(accumulator_images[0].clone()).unwrap();
-    let accumulator_write_image_view = ImageView::new_default(accumulator_images[1].clone()).unwrap();
+    let accumulator_image_view = ImageView::new_default(temporal_accumulator_image.clone()).unwrap();
+    let denoise_input_image_view = ImageView::new_default(denoise_images[0].clone()).unwrap();
+    let denoise_output_image_view = ImageView::new_default(denoise_images[1].clone()).unwrap();
     let normals_image_view = ImageView::new_default(direct_images[0].clone()).unwrap();
     let material_image_view = ImageView::new_default(direct_images[1].clone()).unwrap();
-    let prev_moment_image_view = ImageView::new_default(moment_images[0].clone()).unwrap();
-    let cur_moment_image_view = ImageView::new_default(moment_images[1].clone()).unwrap();
-    let prev_variance_image_view = ImageView::new_default(variance_images[0].clone()).unwrap();
-    let cur_variance_image_view = ImageView::new_default(variance_images[1].clone()).unwrap();
+    let temporal_moment_image_view = ImageView::new_default(moment_images[0].clone()).unwrap();
+    let moment_image_view = ImageView::new_default(moment_images[1].clone()).unwrap();
+    let temporal_variance_image_view = ImageView::new_default(variance_images[0].clone()).unwrap();
+    let variance_image_view = ImageView::new_default(variance_images[1].clone()).unwrap();
 
     let blue_noise_image_view = ImageView::new_default(blue_noise_image).unwrap();
 
@@ -361,24 +393,24 @@ where
             WriteDescriptorSet::buffer(1, constant_buffer.clone()),
             WriteDescriptorSet::image_view_sampler(
                 2,
-                accumulator_read_image_view.clone(),
+                accumulator_image_view.clone(),
                 sampler.clone(),
             ),
-            WriteDescriptorSet::image_view(3, accumulator_write_image_view.clone()),
+            WriteDescriptorSet::image_view(3, denoise_input_image_view.clone()),
             WriteDescriptorSet::image_view(4, normals_image_view.clone()),
             WriteDescriptorSet::image_view(5, material_image_view.clone()),
             WriteDescriptorSet::image_view_sampler(
                 6,
-                prev_moment_image_view.clone(),
+                temporal_moment_image_view.clone(),
                 sampler.clone(),
             ),
-            WriteDescriptorSet::image_view(7, cur_moment_image_view.clone()),
+            WriteDescriptorSet::image_view(7, moment_image_view.clone()),
             WriteDescriptorSet::image_view_sampler(
                 8,
-                prev_variance_image_view.clone(),
+                temporal_variance_image_view.clone(),
                 sampler.clone(),
             ),
-            WriteDescriptorSet::image_view(9, cur_variance_image_view.clone()),
+            WriteDescriptorSet::image_view(9, variance_image_view.clone()),
             WriteDescriptorSet::image_view_sampler(10, blue_noise_image_view, sampler.clone()),
         ],
     )
@@ -388,14 +420,14 @@ where
         allocator,
         pipelines[1].layout().set_layouts()[0].clone(),
         [
-            WriteDescriptorSet::image_view(0, accumulator_read_image_view.clone()),
-            WriteDescriptorSet::image_view(1, accumulator_write_image_view),
+            WriteDescriptorSet::image_view(0, denoise_output_image_view.clone()),
+            WriteDescriptorSet::image_view(1, denoise_input_image_view), // TODO: rename accumulator images
             WriteDescriptorSet::image_view(2, normals_image_view),
             WriteDescriptorSet::image_view(3, material_image_view),
-            WriteDescriptorSet::image_view(4, prev_moment_image_view),
-            WriteDescriptorSet::image_view(5, cur_moment_image_view),
-            WriteDescriptorSet::image_view(6, prev_variance_image_view),
-            WriteDescriptorSet::image_view(7, cur_variance_image_view),
+            WriteDescriptorSet::image_view(4, temporal_moment_image_view),
+            WriteDescriptorSet::image_view(5, moment_image_view),
+            WriteDescriptorSet::image_view(6, temporal_variance_image_view),
+            WriteDescriptorSet::image_view(7, variance_image_view),
         ],
     )
     .unwrap();
@@ -406,7 +438,7 @@ where
         allocator,
         pipelines[2].layout().set_layouts()[0].clone(),
         [
-            WriteDescriptorSet::image_view(0, accumulator_read_image_view),
+            WriteDescriptorSet::image_view(0, denoise_output_image_view),
             WriteDescriptorSet::image_view(1, render_image_view),
         ],
     )
@@ -427,7 +459,8 @@ fn get_command_buffer<A, S>(
     descriptor_sets: [S; 3],
     intermediate_image: Arc<dyn ImageAccess>,
     swapchain_image: Arc<SwapchainImage>,
-    accumulator_images: [Arc<StorageImage>; 2],
+    accumulator_image: Arc<StorageImage>,
+    denoise_images: [Arc<StorageImage>; 2],
 ) -> Arc<PrimaryAutoCommandBuffer<A::Alloc>>
 where
     A: CommandBufferAllocator,
@@ -476,14 +509,27 @@ where
     const MAX_STAGE: u32 = 5;
     let mut denoise_push_constants = shaders::ty::DenoisePushConstants { stage: 0 };
 
-    for i in 0..MAX_STAGE {
+    builder
+        .push_constants(denoise_pipeline.layout().clone(), 0, denoise_push_constants)
+        .dispatch(dispatch_groups)
+        .unwrap()
+        .copy_image(CopyImageInfo::images(
+            denoise_images[1].clone(),
+            accumulator_image.clone(),
+        ))
+        .unwrap();
+
+    for i in 1..MAX_STAGE {
         denoise_push_constants.stage = i;
 
         builder
+            .copy_image(CopyImageInfo::images(
+                denoise_images[1].clone(),
+                denoise_images[0].clone(),
+            ))
+            .unwrap()
             .push_constants(denoise_pipeline.layout().clone(), 0, denoise_push_constants)
             .dispatch(dispatch_groups)
-            .unwrap()
-            .copy_image(CopyImageInfo::images(accumulator_images[0].clone(), accumulator_images[1].clone()))
             .unwrap();
     }
 
@@ -842,7 +888,10 @@ fn main() {
         queue_family_index,
     );
 
-    let mut accumulator_images = get_temporal_images(&memory_allocator, dimensions, queue_family_index);
+    let mut temporal_accumulator_image =
+        get_temporal_accumulator_image(&memory_allocator, dimensions, queue_family_index);
+
+    let mut denoise_images = get_denoise_images(&memory_allocator, dimensions, queue_family_index);
 
     let moment_images = get_moment_images(&memory_allocator, dimensions, queue_family_index);
 
@@ -857,7 +906,8 @@ fn main() {
         mutable_buffer.clone(),
         constant_buffer.clone(),
         intermediate_image.clone(),
-        accumulator_images.clone(),
+        temporal_accumulator_image.clone(),
+        denoise_images.clone(),
         blue_noise_image.clone(),
         sampler.clone(),
         direct_images.clone(),
@@ -1077,8 +1127,10 @@ fn main() {
                     queue_family_index,
                 );
 
-                accumulator_images =
-                    get_temporal_images(&memory_allocator, dimensions, queue_family_index);
+                denoise_images = get_denoise_images(&memory_allocator, dimensions, queue_family_index);
+
+                temporal_accumulator_image =
+                    get_temporal_accumulator_image(&memory_allocator, dimensions, queue_family_index);
 
                 let direct_images =
                     get_direct_images(&memory_allocator, dimensions, queue_family_index);
@@ -1089,7 +1141,8 @@ fn main() {
                     mutable_buffer.clone(),
                     constant_buffer.clone(),
                     intermediate_image.clone(),
-                    accumulator_images.clone(),
+                    temporal_accumulator_image.clone(),
+                    denoise_images.clone(),
                     blue_noise_image.clone(),
                     sampler.clone(),
                     direct_images.clone(),
@@ -1117,7 +1170,8 @@ fn main() {
             descriptor_sets.clone(),
             intermediate_image.clone(),
             swapchain_images[image_index as usize].clone(),
-            accumulator_images.clone(),
+            temporal_accumulator_image.clone(),
+            denoise_images.clone(),
         );
 
         if let Some(image_fence) = &fences[image_index as usize] {

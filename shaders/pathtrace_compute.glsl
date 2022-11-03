@@ -36,14 +36,14 @@ layout(binding = 1) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 2) uniform sampler2D accumulatorImageRead;
-layout(binding = 3, rgba16f) uniform restrict writeonly image2D accumulatorImageWrite;
+layout(binding = 2) uniform sampler2D tAccumulatorImage; // temporal accumulator image
+layout(binding = 3, rgba16f) uniform restrict writeonly image2D denoiseInputImage;
 layout(binding = 4, rgba32f) uniform restrict writeonly image2D normalsDepthImage;
 layout(binding = 5, r8ui) uniform restrict writeonly uimage2D materialImage;
-layout(binding = 6) uniform sampler2D prevMomentImage; // TODO: momentImage output
-layout(binding = 7, r16f) uniform restrict writeonly image2D curMomentImage;
-layout(binding = 8) uniform sampler2D prevVarianceImage;
-layout(binding = 9, r16f) uniform restrict writeonly image2D curVarianceImage;
+layout(binding = 6) uniform sampler2D tMomentImage;
+layout(binding = 7, r16f) uniform restrict writeonly image2D momentImage;
+layout(binding = 8) uniform sampler2D tVarianceImage;
+layout(binding = 9, r16f) uniform restrict writeonly image2D varianceImage;
 
 layout(binding = 10) uniform sampler2D blueNoiseSampler;
 
@@ -154,14 +154,14 @@ void main() {
     if (pRay.objectHit == baseRay.objectHit && clamp(i, vec2(0.0), cs.view - 1.0) == i) {
         vec2 ni = (i + 0.5) / cs.view;
 
-        vec2 moment = texture(prevMomentImage, ni).xy;
-        imageStore(curMomentImage, ivec2(gl_GlobalInvocationID.xy), vec4(moment, vec2(0.0)));
+        vec2 moment = texture(tMomentImage, ni).xy;
+        imageStore(momentImage, ivec2(gl_GlobalInvocationID.xy), vec4(moment, vec2(0.0)));
 
-        float variance = texture(prevVarianceImage, ni).x;
-        imageStore(curVarianceImage, ivec2(gl_GlobalInvocationID.xy), vec4(variance));
+        float variance = texture(tVarianceImage, ni).x;
+        imageStore(varianceImage, ivec2(gl_GlobalInvocationID.xy), vec4(variance));
 
-        vec4 accData = texture(accumulatorImageRead, ni);
-        fragData = mix(accData, fragData, 0.05);
+        vec4 accData = texture(tAccumulatorImage, ni);
+        fragData = mix(accData, fragData, clamp(variance, 0.01, 0.2));
 
         // TODO: use normals, albedo, material to determine temporal stability
         // accData /= distance(pc.pos, pc.pPos) + 1.0;
@@ -171,5 +171,5 @@ void main() {
     imageStore(normalsDepthImage, ivec2(gl_GlobalInvocationID.xy), vec4(normalize(baseRay.normalOfObject), baseRay.distanceToObject));
     imageStore(materialImage, ivec2(gl_GlobalInvocationID.xy), uvec4(buf.objs[baseRay.objectHit].mat, uvec3(0)));
 
-    imageStore(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.rgb, fragData.w + 1.0)); // accData.w = sample count
+    imageStore(denoiseInputImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.rgb, fragData.w + 1.0)); // accData.w = sample count
 }

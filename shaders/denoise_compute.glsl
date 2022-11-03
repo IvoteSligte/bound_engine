@@ -8,14 +8,14 @@ layout(push_constant) uniform DenoisePushConstants {
     uint stage;
 } pc;
 
-layout(binding = 0, rgba16f) uniform restrict writeonly image2D accumulatorImageRead; // read from in previous shader
-layout(binding = 1, rgba16f) uniform restrict readonly image2D accumulatorImageWrite; // written to in previous shader
+layout(binding = 0, rgba16f) uniform restrict writeonly image2D denoiseOutputImage; // read from in previous shader
+layout(binding = 1, rgba16f) uniform restrict readonly image2D denoiseInputImage; // written to in previous shader
 layout(binding = 2, rgba32f) uniform restrict readonly image2D normalsDepthImage;
 layout(binding = 3, r8ui) uniform restrict readonly uimage2D materialImage;
-layout(binding = 4, r16f) uniform restrict writeonly image2D prevMomentImage;
-layout(binding = 5, r16f) uniform restrict readonly image2D curMomentImage;
-layout(binding = 6, r16f) uniform restrict writeonly image2D prevVarianceImage;
-layout(binding = 7, r16f) uniform restrict readonly image2D curVarianceImage;
+layout(binding = 4, r16f) uniform restrict writeonly image2D tMomentImage;
+layout(binding = 5, r16f) uniform restrict readonly image2D momentImage;
+layout(binding = 6, r16f) uniform restrict writeonly image2D tVarianceImage;
+layout(binding = 7, r16f) uniform restrict readonly image2D varianceImage;
 
 float luminance(vec3 rgb) {
     return dot(rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -28,17 +28,17 @@ const float wavelet[3][3] = {
 };
 
 void main() {
-    vec4 data = imageLoad(accumulatorImageWrite, ivec2(gl_GlobalInvocationID.xy));
+    vec4 data = imageLoad(denoiseInputImage, ivec2(gl_GlobalInvocationID.xy));
     data.rgb *= wavelet[0][0];
 
     vec4 normalDepth = imageLoad(normalsDepthImage, ivec2(gl_GlobalInvocationID.xy)); // xyz = normal, w = depth
     uint material = imageLoad(materialImage, ivec2(gl_GlobalInvocationID.xy)).x;
 
     float weightSum = wavelet[0][0];
-    vec2 moment = imageLoad(curMomentImage, ivec2(gl_GlobalInvocationID.xy)).xy;
+    vec2 moment = imageLoad(momentImage, ivec2(gl_GlobalInvocationID.xy)).xy;
 
     // TEMP;
-    float none = imageLoad(curVarianceImage, ivec2(gl_GlobalInvocationID.xy)).x;
+    float none = imageLoad(varianceImage, ivec2(gl_GlobalInvocationID.xy)).x;
 
     int stride = 1 << pc.stage;
 
@@ -50,7 +50,7 @@ void main() {
                 continue;
             }
 
-            vec4 cData = imageLoad(accumulatorImageWrite, i);
+            vec4 cData = imageLoad(denoiseInputImage, i);
             vec4 cNormalDepth = imageLoad(normalsDepthImage, i);
             uint cMaterial = imageLoad(materialImage, i).x;
 
@@ -71,7 +71,7 @@ void main() {
     moment /= weightSum;
     data.rgb /= weightSum;
 
-    imageStore(prevVarianceImage, ivec2(gl_GlobalInvocationID.xy), vec4(max(0.0, moment.y - moment.x * moment.x)));
-    imageStore(prevMomentImage, ivec2(gl_GlobalInvocationID.xy), vec4(moment, vec2(0.0)));
-    imageStore(accumulatorImageRead, ivec2(gl_GlobalInvocationID.xy), data);
+    imageStore(tVarianceImage, ivec2(gl_GlobalInvocationID.xy), vec4(max(0.0, moment.y - moment.x * moment.x), vec3(0.0)));
+    imageStore(tMomentImage, ivec2(gl_GlobalInvocationID.xy), vec4(moment, vec2(0.0)));
+    imageStore(denoiseOutputImage, ivec2(gl_GlobalInvocationID.xy), data);
 }
