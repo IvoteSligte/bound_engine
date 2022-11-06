@@ -8,70 +8,86 @@ layout(push_constant) uniform DenoisePushConstants {
     uint stage;
 } pc;
 
-layout(binding = 0, rgba16f) uniform restrict writeonly image2D denoiseOutputImage; // read from in previous shader
-layout(binding = 1, rgba16f) uniform restrict readonly image2D denoiseInputImage; // written to in previous shader
-layout(binding = 2, rgba32f) uniform restrict readonly image2D normalsDepthImage;
+layout(binding = 0, rgba16f) uniform restrict readonly image2D dataInputImage;
+layout(binding = 1, rgba16f) uniform restrict writeonly image2D dataOutputImage;
+layout(binding = 2, rgba32f) uniform restrict readonly image2D normalsDepthImage; // TODO: 16f ?
 layout(binding = 3, r8ui) uniform restrict readonly uimage2D materialImage;
-layout(binding = 4, r16f) uniform restrict writeonly image2D tMomentImage;
-layout(binding = 5, r16f) uniform restrict readonly image2D momentImage;
-layout(binding = 6, r16f) uniform restrict writeonly image2D tVarianceImage;
-layout(binding = 7, r16f) uniform restrict readonly image2D varianceImage;
 
-float luminance(vec3 rgb) {
-    return dot(rgb, vec3(0.2126, 0.7152, 0.0722));
-}
-
-const float wavelet[3][3] = {
+// corner of an a trous WAVELET
+const float WAVELET[3][3] = {
     { 0.140625, 0.09375, 0.0234375 },
     { 0.09375, 0.125, 0.015625 },
     { 0.0234375, 0.015625, 0.00390625 },
 };
 
-void main() {
-    vec4 data = imageLoad(denoiseInputImage, ivec2(gl_GlobalInvocationID.xy));
-    data.rgb *= wavelet[0][0];
+const ivec2 COORDS[24] = {
+    ivec2(-2, -2), ivec2(-1, -2), ivec2(0, -2), ivec2(1, -2), ivec2(2, -2),
+    ivec2(-2, -1), ivec2(-1, -1), ivec2(0, -1), ivec2(1, -1), ivec2(2, -1),
+    ivec2(-2,  0), ivec2(-1,  0),               ivec2(1,  0), ivec2(2,  0),
+    ivec2(-2,  1), ivec2(-1,  1), ivec2(0,  1), ivec2(1,  1), ivec2(2,  1),
+    ivec2(-2,  2), ivec2(-1,  2), ivec2(0,  2), ivec2(1,  2), ivec2(2,  2),
+};
 
-    vec4 normalDepth = imageLoad(normalsDepthImage, ivec2(gl_GlobalInvocationID.xy)); // xyz = normal, w = depth
-    uint material = imageLoad(materialImage, ivec2(gl_GlobalInvocationID.xy)).x;
+float varianceGaussian() {
+    float sum = 0.0;
 
-    float weightSum = wavelet[0][0];
-    vec2 moment = imageLoad(momentImage, ivec2(gl_GlobalInvocationID.xy)).xy;
+    const float kernel[2][2] = {
+        { 1.0 / 4.0, 1.0 / 8.0  },
+        { 1.0 / 8.0, 1.0 / 16.0 }
+    };
 
-    // TEMP;
-    float none = imageLoad(varianceImage, ivec2(gl_GlobalInvocationID.xy)).x;
+    const ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
 
-    int stride = 1 << pc.stage;
+    const int radius = 1;
+    for (int yy = -radius; yy <= radius; yy++)
+    {
+        for (int xx = -radius; xx <= radius; xx++)
+        {
+            ivec2 p = ipos + ivec2(xx, yy);
 
-    for (int x = -2; x <= 2; x++) {
-        for (int y = -2; y <= 2; y++) {
-            ivec2 i = ivec2(gl_GlobalInvocationID.xy) + ivec2(x, y) * stride;
+            float k = kernel[abs(xx)][abs(yy)];
 
-            if (ivec2(x, y) == ivec2(0)) {
-                continue;
-            }
-
-            vec4 cData = imageLoad(denoiseInputImage, i);
-            vec4 cNormalDepth = imageLoad(normalsDepthImage, i);
-            uint cMaterial = imageLoad(materialImage, i).x;
-
-            float l = luminance(cData.rgb);
-
-            float weightDepth = abs(normalDepth.w - cNormalDepth.w);
-            float weightNormal = max(dot(normalDepth.xyz, cNormalDepth.xyz), 0.0); // to a power, maybe
-
-            float w = exp(-weightDepth) * weightNormal * float(material == cMaterial) * wavelet[abs(x)][abs(y)];
-
-            weightSum += w;
-
-            data.rgb += cData.rgb * w;
-            moment += vec2(l, l * l) * w;
+            sum += imageLoad(dataInputImage, p).a * k;
         }
     }
 
-    moment /= weightSum;
-    data.rgb /= weightSum;
+    return sum;
+}
 
-    imageStore(tVarianceImage, ivec2(gl_GlobalInvocationID.xy), vec4(max(0.0, moment.y - moment.x * moment.x), vec3(0.0)));
-    imageStore(tMomentImage, ivec2(gl_GlobalInvocationID.xy), vec4(moment, vec2(0.0)));
-    imageStore(denoiseOutputImage, ivec2(gl_GlobalInvocationID.xy), data);
+void main() {
+    ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
+
+    vec4 data = imageLoad(dataInputImage, ipos);
+    data.rgb *= WAVELET[0][0];
+
+    vec4 normalDepth = imageLoad(normalsDepthImage, ipos); // xyz = normal, w = depth
+    uint material = imageLoad(materialImage, ipos).x;
+
+    float weightSum = WAVELET[0][0];
+
+    float variance = varianceGaussian();
+    float luminance = luminanceFromRGB(data.rgb);
+
+    int stride = 1 << pc.stage;
+
+    for (uint i = 0; i < 24; i++) {
+        const ivec2 c = COORDS[i];
+        ivec2 p = ipos + c * stride;
+
+        vec4 cData = imageLoad(dataInputImage, p);
+        vec4 cNormalDepth = imageLoad(normalsDepthImage, p);
+        uint cMaterial = imageLoad(materialImage, p).x;
+
+        float cLuminance = luminanceFromRGB(cData.rgb);
+
+        float w = computeWeight(normalDepth, cNormalDepth, luminance, cLuminance, material, cMaterial) * WAVELET[abs(c.x)][abs(c.y)];
+
+        weightSum += w;
+
+        data += cData * vec4(w.xxx, w * w);
+    }
+
+    data /= vec4(weightSum.xxx, weightSum * weightSum);
+
+    imageStore(dataOutputImage, ivec2(gl_GlobalInvocationID.xy), data);
 }

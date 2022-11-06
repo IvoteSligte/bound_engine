@@ -14,6 +14,7 @@ layout(push_constant) uniform PathtracePushConstants {
 } pc;
 
 const uint RAYS_PER_SAMPLE = 4;
+const float GAMMA = RAYS_PER_SAMPLE * 0.25;
 
 struct Ray {
     vec3 origin; // origin
@@ -36,16 +37,13 @@ layout(binding = 1) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 2) uniform sampler2D tAccumulatorImage; // temporal accumulator image
-layout(binding = 3, rgba16f) uniform restrict writeonly image2D denoiseInputImage;
+layout(binding = 2) uniform sampler2D accumulatorImage; // temporal accumulator image
+layout(binding = 3, rgba16f) uniform restrict writeonly image2D dataOutputImage;
 layout(binding = 4, rgba32f) uniform restrict writeonly image2D normalsDepthImage;
 layout(binding = 5, r8ui) uniform restrict writeonly uimage2D materialImage;
-layout(binding = 6) uniform sampler2D tMomentImage;
-layout(binding = 7, r16f) uniform restrict writeonly image2D momentImage;
-layout(binding = 8) uniform sampler2D tVarianceImage;
-layout(binding = 9, r16f) uniform restrict writeonly image2D varianceImage;
+layout(binding = 6, r16f) uniform restrict image2D historyLengthImage;
 
-layout(binding = 10) uniform sampler2D blueNoiseSampler;
+layout(binding = 7) uniform sampler2D blueNoiseSampler;
 
 // pseudo random number generator
 // https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
@@ -105,24 +103,24 @@ void updateRay(inout Ray ray, float dirIdx) {
     ray.direction = randomDirection(ray.normalOfObject, dirIdx);
 }
 
-void shade(inout Ray ray, inout vec4 fragData) {
+void shade(inout Ray ray, inout vec4 data) {
     Material material = buf.mats[buf.objs[ray.objectHit].mat];
 
-    // rays are fired to account for diffuse falloff
+    // rays are fired according to brdf, negating the need to calculate it here
     vec3 BRDF = material.reflectance * 2.0;
 
-    fragData.rgb += ray.color * material.emittance;
+    data.rgb += ray.color * material.emittance;
     ray.color *= BRDF;
 }
 
 // TODO: fix samples per pixel
 void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
-    vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / cs.view - 1.0;
+    vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / cs.view - 1.0; // imageSize can be used instead of cs.view
     // maps normCoord to a different range (e.g. for FOV and non-square windows)
     normCoord *= cs.ratio;
 
-    vec4 fragData = vec4(0.0);
+    vec4 data = vec4(0.0);
     vec3 viewDir = rotate(pc.rot, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
 
     Ray ray = Ray(pc.pos, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
@@ -132,44 +130,54 @@ void main() {
 
     traceRay(ray);
     updateRay(ray, dirIdx);
-    shade(ray, fragData);
+    shade(ray, data);
 
-    Ray baseRay = ray;
+    Ray rayDirect = ray;
     for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
         dirIdx += 1;
         traceRay(ray);
         updateRay(ray, dirIdx);
-        shade(ray, fragData);
+        shade(ray, data);
     }
 
     // screen space coordinate from global point
-    vec3 p = normalize(baseRay.origin - pc.pPos);
+    vec3 p = normalize(rayDirect.origin - pc.pPos);
     vec3 r = rotate(pc.ipRot, p);
     vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
     i = (i + 1.0) * cs.view * 0.5; // [0, cs.view]
 
-    Ray pRay = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
-    traceRay(pRay);
+    Ray prevRayDirect = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
+    traceRay(prevRayDirect);
 
-    if (pRay.objectHit == baseRay.objectHit && clamp(i, vec2(0.0), cs.view - 1.0) == i) {
+    data.rgb /= GAMMA;
+
+    float historyLength = 1.0;
+
+    float moment2 = luminanceFromRGB(data.rgb);
+    vec2 moment = vec2(moment2, moment2 * moment2);
+
+    // TODO: improve acceptance criteria
+    if (prevRayDirect.objectHit == rayDirect.objectHit && clamp(i, vec2(0.0), cs.view - 1.0) == i) {
         vec2 ni = (i + 0.5) / cs.view;
 
-        vec2 moment = texture(tMomentImage, ni).xy;
-        imageStore(momentImage, ivec2(gl_GlobalInvocationID.xy), vec4(moment, vec2(0.0)));
+        historyLength = imageLoad(historyLengthImage, ivec2(gl_GlobalInvocationID.xy)).x;
+        historyLength = min(32.0, historyLength + 1.0);
 
-        float variance = texture(tVarianceImage, ni).x;
-        imageStore(varianceImage, ivec2(gl_GlobalInvocationID.xy), vec4(variance));
+        vec4 tData = texture(accumulatorImage, ni);
 
-        vec4 accData = texture(tAccumulatorImage, ni);
-        fragData = mix(accData, fragData, clamp(variance, 0.01, 0.2));
+        float moment1 = luminanceFromRGB(tData.rgb);
+        moment = mix(vec2(moment1, moment1 * moment1), moment, 1.0 / historyLength);
 
-        // TODO: use normals, albedo, material to determine temporal stability
-        // accData /= distance(pc.pos, pc.pPos) + 1.0;
-        // accData *= dot(rotate(pc.pRot, vec3(0.0, 1.0, 0.0)), rotate(pc.rot, vec3(0.0, 1.0, 0.0)));
+        data.rgb = mix(tData.rgb, data.rgb, 1.0 / historyLength);
     }
 
-    imageStore(normalsDepthImage, ivec2(gl_GlobalInvocationID.xy), vec4(normalize(baseRay.normalOfObject), baseRay.distanceToObject));
-    imageStore(materialImage, ivec2(gl_GlobalInvocationID.xy), uvec4(buf.objs[baseRay.objectHit].mat, uvec3(0)));
+    imageStore(historyLengthImage, ivec2(gl_GlobalInvocationID.xy), vec4(historyLength, vec3(0.0)));
 
-    imageStore(denoiseInputImage, ivec2(gl_GlobalInvocationID.xy), vec4(fragData.rgb, fragData.w + 1.0)); // accData.w = sample count
+    // variance
+    data.a = max(moment.y - moment.x * moment.x, 0.0);
+
+    imageStore(normalsDepthImage, ivec2(gl_GlobalInvocationID.xy), vec4(normalize(rayDirect.normalOfObject), rayDirect.distanceToObject));
+    imageStore(materialImage, ivec2(gl_GlobalInvocationID.xy), uvec4(buf.objs[rayDirect.objectHit].mat, uvec3(0)));
+
+    imageStore(dataOutputImage, ivec2(gl_GlobalInvocationID.xy), data);
 }

@@ -46,12 +46,17 @@ use winit::{
 };
 use winit_event_helper::{ElementState2, EventHelper};
 
+// TODO: fix green showing up on image occasionally after switching resolution
 mod shaders {
     vulkano_shaders::shader! {
         shaders: {
             PathtraceCompute: {
                 ty: "compute",
                 path: "shaders/pathtrace_compute.glsl",
+            },
+            VarianceCompute: {
+                ty: "compute",
+                path: "shaders/variance_compute.glsl",
             },
             DenoiseCompute: {
                 ty: "compute",
@@ -60,7 +65,7 @@ mod shaders {
             TransferCompute: {
                 ty: "compute",
                 path: "shaders/transfer_compute.glsl",
-            }
+            },
         },
         types_meta: { #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)] },
         include: ["compute_includes.glsl"]
@@ -98,40 +103,24 @@ fn select_physical_device<'a>(
 
 fn get_compute_pipelines(
     device: Arc<Device>,
-    pathtrace_shader: Arc<ShaderModule>,
-    denoise_shader: Arc<ShaderModule>,
-    transfer_shader: Arc<ShaderModule>,
-) -> [Arc<ComputePipeline>; 3] {
-    let pathtrace_pipeline = ComputePipeline::new(
-        device.clone(),
-        pathtrace_shader.entry_point("main").unwrap(),
-        &(),
-        None, // TODO: look into cache
-        |_| {},
-    )
-    .unwrap();
-
-    let denoise_pipeline = ComputePipeline::new(
-        device.clone(),
-        denoise_shader.entry_point("main").unwrap(),
-        &(),
-        None,
-        |_| {},
-    )
-    .unwrap();
-
-    let transfer_pipeline = ComputePipeline::new(
-        device.clone(),
-        transfer_shader.entry_point("main").unwrap(),
-        &(),
-        None,
-        |_| {},
-    )
-    .unwrap();
-
-    [pathtrace_pipeline, denoise_pipeline, transfer_pipeline]
+    shaders: impl IntoIterator<Item = Arc<ShaderModule>>,
+) -> Vec<Arc<ComputePipeline>> {
+    shaders
+        .into_iter()
+        .map(|shader| {
+            ComputePipeline::new(
+                device.clone(),
+                shader.entry_point("main").unwrap(),
+                &(),
+                None, // TODO: look into caches
+                |_| {},
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>()
 }
 
+// TODO: switch to srgb
 fn get_intermediate_image(
     allocator: &(impl MemoryAllocator + ?Sized),
     dimensions: [u32; 2],
@@ -157,56 +146,13 @@ fn get_intermediate_image(
     .unwrap()
 }
 
-fn get_denoise_images(
+// color + variance images
+fn get_data_images(
     allocator: &(impl MemoryAllocator + ?Sized),
     dimensions: PhysicalSize<u32>,
     queue_family_index: u32,
 ) -> [Arc<StorageImage>; 2] {
-    let denoise_input_image = StorageImage::with_usage(
-        allocator,
-        ImageDimensions::Dim2d {
-            width: dimensions.width,
-            height: dimensions.height,
-            array_layers: 1,
-        },
-        Format::R16G16B16A16_SFLOAT,
-        ImageUsage {
-            storage: true,
-            transfer_dst: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue_family_index],
-    )
-    .unwrap();
-
-    let denoise_output_image = StorageImage::with_usage(
-        allocator,
-        ImageDimensions::Dim2d {
-            width: dimensions.width,
-            height: dimensions.height,
-            array_layers: 1,
-        },
-        Format::R16G16B16A16_SFLOAT,
-        ImageUsage {
-            storage: true,
-            transfer_src: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue_family_index],
-    )
-    .unwrap();
-
-    [denoise_input_image, denoise_output_image]
-}
-
-fn get_temporal_accumulator_image(
-    allocator: &(impl MemoryAllocator + ?Sized),
-    dimensions: PhysicalSize<u32>,
-    queue_family_index: u32,
-) -> Arc<StorageImage> {
-    let temporal_accumulator_image = StorageImage::with_usage(
+    let data_0_image = StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
             width: dimensions.width,
@@ -225,7 +171,25 @@ fn get_temporal_accumulator_image(
     )
     .unwrap();
 
-    temporal_accumulator_image
+    let data_1_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R16G16B16A16_SFLOAT,
+        ImageUsage {
+            storage: true,
+            transfer_src: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    [data_0_image, data_1_image]
 }
 
 fn get_direct_images(
@@ -270,30 +234,12 @@ fn get_direct_images(
     [normals_depth_image, material_image]
 }
 
-fn get_moment_images(
+fn get_history_length_image(
     allocator: &(impl MemoryAllocator + ?Sized),
     dimensions: PhysicalSize<u32>,
     queue_family_index: u32,
-) -> [Arc<StorageImage>; 2] {
-    let temporal_moment_image = StorageImage::with_usage(
-        allocator,
-        ImageDimensions::Dim2d {
-            width: dimensions.width,
-            height: dimensions.height,
-            array_layers: 1,
-        },
-        Format::R16_SFLOAT,
-        ImageUsage {
-            sampled: true,
-            storage: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue_family_index],
-    )
-    .unwrap();
-
-    let moment_image = StorageImage::with_usage(
+) -> Arc<StorageImage> {
+    StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
             width: dimensions.width,
@@ -308,80 +254,31 @@ fn get_moment_images(
         ImageCreateFlags::empty(),
         [queue_family_index],
     )
-    .unwrap();
-
-    [temporal_moment_image, moment_image]
-}
-
-fn get_variance_images(
-    allocator: &(impl MemoryAllocator + ?Sized),
-    dimensions: PhysicalSize<u32>,
-    queue_family_index: u32,
-) -> [Arc<StorageImage>; 2] {
-    let temporal_variance_image = StorageImage::with_usage(
-        allocator,
-        ImageDimensions::Dim2d {
-            width: dimensions.width,
-            height: dimensions.height,
-            array_layers: 1,
-        },
-        Format::R16_SFLOAT,
-        ImageUsage {
-            storage: true,
-            sampled: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue_family_index],
-    )
-    .unwrap();
-
-    let variance_image = StorageImage::with_usage(
-        allocator,
-        ImageDimensions::Dim2d {
-            width: dimensions.width,
-            height: dimensions.height,
-            array_layers: 1,
-        },
-        Format::R16_SFLOAT,
-        ImageUsage {
-            storage: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue_family_index],
-    )
-    .unwrap();
-
-    [temporal_variance_image, variance_image]
+    .unwrap()
 }
 
 fn get_compute_descriptor_sets<A>(
     allocator: &A,
-    pipelines: [Arc<ComputePipeline>; 3],
+    pipelines: Vec<Arc<ComputePipeline>>,
     mutable_buffer: Arc<dyn BufferAccess>,
     constant_buffer: Arc<dyn BufferAccess>,
     render_image: Arc<dyn ImageAccess>,
-    temporal_accumulator_image: Arc<StorageImage>,
-    denoise_images: [Arc<StorageImage>; 2],
+    data_images: [Arc<StorageImage>; 2],
     blue_noise_image: Arc<dyn ImageAccess>,
     sampler: Arc<Sampler>,
     direct_images: [Arc<StorageImage>; 2],
-    moment_images: [Arc<StorageImage>; 2],
-    variance_images: [Arc<StorageImage>; 2],
-) -> [Arc<PersistentDescriptorSet<A::Alloc>>; 3]
+    history_length_image: Arc<StorageImage>,
+) -> [Arc<PersistentDescriptorSet<A::Alloc>>; 4]
 where
     A: DescriptorSetAllocator + ?Sized,
 {
-    let accumulator_image_view = ImageView::new_default(temporal_accumulator_image.clone()).unwrap();
-    let denoise_input_image_view = ImageView::new_default(denoise_images[0].clone()).unwrap();
-    let denoise_output_image_view = ImageView::new_default(denoise_images[1].clone()).unwrap();
+    let data_image_views = data_images
+        .iter()
+        .map(|image| ImageView::new_default(image.clone()).unwrap())
+        .collect::<Vec<_>>();
     let normals_image_view = ImageView::new_default(direct_images[0].clone()).unwrap();
     let material_image_view = ImageView::new_default(direct_images[1].clone()).unwrap();
-    let temporal_moment_image_view = ImageView::new_default(moment_images[0].clone()).unwrap();
-    let moment_image_view = ImageView::new_default(moment_images[1].clone()).unwrap();
-    let temporal_variance_image_view = ImageView::new_default(variance_images[0].clone()).unwrap();
-    let variance_image_view = ImageView::new_default(variance_images[1].clone()).unwrap();
+    let history_length_image_view = ImageView::new_default(history_length_image.clone()).unwrap();
 
     let blue_noise_image_view = ImageView::new_default(blue_noise_image).unwrap();
 
@@ -391,43 +288,37 @@ where
         [
             WriteDescriptorSet::buffer(0, mutable_buffer.clone()),
             WriteDescriptorSet::buffer(1, constant_buffer.clone()),
-            WriteDescriptorSet::image_view_sampler(
-                2,
-                accumulator_image_view.clone(),
-                sampler.clone(),
-            ),
-            WriteDescriptorSet::image_view(3, denoise_input_image_view.clone()),
+            WriteDescriptorSet::image_view_sampler(2, data_image_views[0].clone(), sampler.clone()),
+            WriteDescriptorSet::image_view(3, data_image_views[1].clone()),
             WriteDescriptorSet::image_view(4, normals_image_view.clone()),
             WriteDescriptorSet::image_view(5, material_image_view.clone()),
-            WriteDescriptorSet::image_view_sampler(
-                6,
-                temporal_moment_image_view.clone(),
-                sampler.clone(),
-            ),
-            WriteDescriptorSet::image_view(7, moment_image_view.clone()),
-            WriteDescriptorSet::image_view_sampler(
-                8,
-                temporal_variance_image_view.clone(),
-                sampler.clone(),
-            ),
-            WriteDescriptorSet::image_view(9, variance_image_view.clone()),
-            WriteDescriptorSet::image_view_sampler(10, blue_noise_image_view, sampler.clone()),
+            WriteDescriptorSet::image_view(6, history_length_image_view.clone()),
+            WriteDescriptorSet::image_view_sampler(7, blue_noise_image_view, sampler.clone()),
+        ],
+    )
+    .unwrap();
+
+    let variance_descriptor_set = PersistentDescriptorSet::new(
+        allocator,
+        pipelines[1].layout().set_layouts()[0].clone(),
+        [
+            WriteDescriptorSet::image_view(0, data_image_views[1].clone()),
+            WriteDescriptorSet::image_view(1, data_image_views[0].clone()),
+            WriteDescriptorSet::image_view(2, normals_image_view.clone()),
+            WriteDescriptorSet::image_view(3, material_image_view.clone()),
+            WriteDescriptorSet::image_view(4, history_length_image_view.clone()),
         ],
     )
     .unwrap();
 
     let denoise_descriptor_set = PersistentDescriptorSet::new(
         allocator,
-        pipelines[1].layout().set_layouts()[0].clone(),
+        pipelines[2].layout().set_layouts()[0].clone(),
         [
-            WriteDescriptorSet::image_view(0, denoise_output_image_view.clone()),
-            WriteDescriptorSet::image_view(1, denoise_input_image_view), // TODO: rename accumulator images
+            WriteDescriptorSet::image_view(0, data_image_views[0].clone()),
+            WriteDescriptorSet::image_view(1, data_image_views[1].clone()),
             WriteDescriptorSet::image_view(2, normals_image_view),
             WriteDescriptorSet::image_view(3, material_image_view),
-            WriteDescriptorSet::image_view(4, temporal_moment_image_view),
-            WriteDescriptorSet::image_view(5, moment_image_view),
-            WriteDescriptorSet::image_view(6, temporal_variance_image_view),
-            WriteDescriptorSet::image_view(7, variance_image_view),
         ],
     )
     .unwrap();
@@ -436,9 +327,9 @@ where
 
     let transfer_descriptor_set = PersistentDescriptorSet::new(
         allocator,
-        pipelines[2].layout().set_layouts()[0].clone(),
+        pipelines[3].layout().set_layouts()[0].clone(),
         [
-            WriteDescriptorSet::image_view(0, denoise_output_image_view),
+            WriteDescriptorSet::image_view(0, data_image_views[0].clone()),
             WriteDescriptorSet::image_view(1, render_image_view),
         ],
     )
@@ -446,6 +337,7 @@ where
 
     [
         pathtrace_descriptor_set,
+        variance_descriptor_set,
         denoise_descriptor_set,
         transfer_descriptor_set,
     ]
@@ -454,13 +346,12 @@ where
 fn get_command_buffer<A, S>(
     allocator: &A,
     queue: Arc<Queue>,
-    pipelines: [Arc<ComputePipeline>; 3],
+    pipelines: Vec<Arc<ComputePipeline>>,
     pathtrace_push_constants: shaders::ty::PathtracePushConstants,
-    descriptor_sets: [S; 3],
+    descriptor_sets: [S; 4],
     intermediate_image: Arc<dyn ImageAccess>,
     swapchain_image: Arc<SwapchainImage>,
-    accumulator_image: Arc<StorageImage>,
-    denoise_images: [Arc<StorageImage>; 2],
+    data_images: [Arc<StorageImage>; 2],
 ) -> Arc<PrimaryAutoCommandBuffer<A::Alloc>>
 where
     A: CommandBufferAllocator,
@@ -473,8 +364,13 @@ where
     )
     .unwrap();
 
-    let [pathtrace_pipeline, denoise_pipeline, transfer_pipeline] = pipelines;
-    let [pathtrace_descriptor_set, denoise_descriptor_set, transfer_descriptor_set] =
+    let [pathtrace_pipeline, variance_pipeline, denoise_pipeline, transfer_pipeline] = [
+        pipelines[0].clone(),
+        pipelines[1].clone(),
+        pipelines[2].clone(),
+        pipelines[3].clone(),
+    ];
+    let [pathtrace_descriptor_set, variance_descriptor_set, denoise_descriptor_set, transfer_descriptor_set] =
         descriptor_sets;
 
     let dispatch_groups =
@@ -498,6 +394,15 @@ where
         )
         .dispatch(dispatch_groups)
         .unwrap()
+        .bind_pipeline_compute(variance_pipeline.clone())
+        .bind_descriptor_sets(
+            PipelineBindPoint::Compute,
+            variance_pipeline.layout().clone(),
+            0,
+            variance_descriptor_set.clone(),
+        )
+        .dispatch(dispatch_groups)
+        .unwrap()
         .bind_pipeline_compute(denoise_pipeline.clone())
         .bind_descriptor_sets(
             PipelineBindPoint::Compute,
@@ -509,27 +414,18 @@ where
     const MAX_STAGE: u32 = 5;
     let mut denoise_push_constants = shaders::ty::DenoisePushConstants { stage: 0 };
 
-    builder
-        .push_constants(denoise_pipeline.layout().clone(), 0, denoise_push_constants)
-        .dispatch(dispatch_groups)
-        .unwrap()
-        .copy_image(CopyImageInfo::images(
-            denoise_images[1].clone(),
-            accumulator_image.clone(),
-        ))
-        .unwrap();
-
-    for i in 1..MAX_STAGE {
+    // INFO: how much you denoise has an effect on the temporal stability
+    for i in 0..MAX_STAGE {
         denoise_push_constants.stage = i;
 
         builder
-            .copy_image(CopyImageInfo::images(
-                denoise_images[1].clone(),
-                denoise_images[0].clone(),
-            ))
-            .unwrap()
             .push_constants(denoise_pipeline.layout().clone(), 0, denoise_push_constants)
             .dispatch(dispatch_groups)
+            .unwrap()
+            .copy_image(CopyImageInfo::images(
+                data_images[1].clone(),
+                data_images[0].clone(),
+            ))
             .unwrap();
     }
 
@@ -647,20 +543,13 @@ fn main() {
         .surface_capabilities(&surface, Default::default())
         .unwrap();
     let dimensions = window.inner_size();
-    let composite_alpha = capabilities
-        .supported_composite_alpha
-        .iter()
-        .next()
-        .unwrap();
     let image_format = physical
         .surface_formats(&surface, Default::default())
         .unwrap()
         .iter()
         .max_by_key(|(format, _)| match format {
-            Format::R8G8B8_UNORM
-            | Format::B8G8R8_UNORM
-            | Format::R8G8B8A8_UNORM
-            | Format::B8G8R8A8_UNORM => 1,
+            Format::R8G8B8A8_SRGB
+            | Format::B8G8R8A8_SRGB => 1,
             _ => 0,
         })
         .unwrap()
@@ -674,17 +563,16 @@ fn main() {
             image_format: Some(image_format),
             image_extent: dimensions.into(),
             image_usage: ImageUsage {
-                storage: true,
                 transfer_dst: true,
                 ..ImageUsage::empty()
             },
-            composite_alpha,
             ..Default::default()
         },
     )
     .unwrap();
 
     let pathtrace_compute_shader = shaders::load_PathtraceCompute(device.clone()).unwrap();
+    let variance_compute_shader = shaders::load_VarianceCompute(device.clone()).unwrap();
     let denoise_compute_shader = shaders::load_DenoiseCompute(device.clone()).unwrap();
     let transfer_compute_shader = shaders::load_TransferCompute(device.clone()).unwrap();
 
@@ -696,9 +584,12 @@ fn main() {
 
     let mut compute_pipelines = get_compute_pipelines(
         device.clone(),
-        pathtrace_compute_shader.clone(),
-        denoise_compute_shader.clone(),
-        transfer_compute_shader.clone(),
+        [
+            pathtrace_compute_shader.clone(),
+            variance_compute_shader.clone(),
+            denoise_compute_shader.clone(),
+            transfer_compute_shader.clone(),
+        ],
     );
 
     let materials = [
@@ -723,6 +614,18 @@ fn main() {
         shaders::ty::Material {
             reflectance: [0.0; 3],
             emittance: [1.0; 3],
+            _dummy0: [0u8; 4],
+            _dummy1: [0u8; 4],
+        },
+        shaders::ty::Material {
+            reflectance: [0.7; 3],
+            emittance: [0.0; 3],
+            _dummy0: [0u8; 4],
+            _dummy1: [0u8; 4],
+        },
+        shaders::ty::Material {
+            reflectance: [0.5; 3],
+            emittance: [0.5, 0.5, 0.6],
             _dummy0: [0u8; 4],
             _dummy1: [0u8; 4],
         },
@@ -775,6 +678,18 @@ fn main() {
             pos: [0.0, 0.0, 109.95],
             radiusSquared: 100.0 * 100.0,
             mat: 3,
+            _dummy0: [0u8; 12],
+        },
+        shaders::ty::Object {
+            pos: [-3.0, 1.0, -6.0],
+            radiusSquared: 4.0 * 4.0,
+            mat: 4,
+            _dummy0: [0u8; 12],
+        },
+        shaders::ty::Object {
+            pos: [4.0, 3.0, -1.0],
+            radiusSquared: 2.0 * 2.0,
+            mat: 5,
             _dummy0: [0u8; 12],
         },
     ];
@@ -888,14 +803,9 @@ fn main() {
         queue_family_index,
     );
 
-    let mut temporal_accumulator_image =
-        get_temporal_accumulator_image(&memory_allocator, dimensions, queue_family_index);
+    let mut data_images = get_data_images(&memory_allocator, dimensions, queue_family_index);
 
-    let mut denoise_images = get_denoise_images(&memory_allocator, dimensions, queue_family_index);
-
-    let moment_images = get_moment_images(&memory_allocator, dimensions, queue_family_index);
-
-    let variance_images = get_variance_images(&memory_allocator, dimensions, queue_family_index);
+    let history_length_image = get_history_length_image(&memory_allocator, dimensions, queue_family_index);
 
     let direct_images = get_direct_images(&memory_allocator, dimensions, queue_family_index);
 
@@ -906,13 +816,11 @@ fn main() {
         mutable_buffer.clone(),
         constant_buffer.clone(),
         intermediate_image.clone(),
-        temporal_accumulator_image.clone(),
-        denoise_images.clone(),
+        data_images.clone(),
         blue_noise_image.clone(),
         sampler.clone(),
         direct_images.clone(),
-        moment_images.clone(),
-        variance_images.clone(),
+        history_length_image.clone(),
     );
 
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
@@ -1116,9 +1024,12 @@ fn main() {
 
                 compute_pipelines = get_compute_pipelines(
                     device.clone(),
-                    pathtrace_compute_shader.clone(),
-                    denoise_compute_shader.clone(),
-                    transfer_compute_shader.clone(),
+                    [
+                        pathtrace_compute_shader.clone(),
+                        variance_compute_shader.clone(),
+                        denoise_compute_shader.clone(),
+                        transfer_compute_shader.clone(),
+                    ],
                 );
 
                 intermediate_image = get_intermediate_image(
@@ -1127,10 +1038,10 @@ fn main() {
                     queue_family_index,
                 );
 
-                denoise_images = get_denoise_images(&memory_allocator, dimensions, queue_family_index);
+                data_images = get_data_images(&memory_allocator, dimensions, queue_family_index);
 
-                temporal_accumulator_image =
-                    get_temporal_accumulator_image(&memory_allocator, dimensions, queue_family_index);
+                let variance_image =
+                    get_history_length_image(&memory_allocator, dimensions, queue_family_index);
 
                 let direct_images =
                     get_direct_images(&memory_allocator, dimensions, queue_family_index);
@@ -1141,13 +1052,11 @@ fn main() {
                     mutable_buffer.clone(),
                     constant_buffer.clone(),
                     intermediate_image.clone(),
-                    temporal_accumulator_image.clone(),
-                    denoise_images.clone(),
+                    data_images.clone(),
                     blue_noise_image.clone(),
                     sampler.clone(),
                     direct_images.clone(),
-                    moment_images.clone(),
-                    variance_images.clone(),
+                    variance_image.clone(),
                 );
             }
         }
@@ -1170,8 +1079,7 @@ fn main() {
             descriptor_sets.clone(),
             intermediate_image.clone(),
             swapchain_images[image_index as usize].clone(),
-            temporal_accumulator_image.clone(),
-            denoise_images.clone(),
+            data_images.clone(),
         );
 
         if let Some(image_fence) = &fences[image_index as usize] {
