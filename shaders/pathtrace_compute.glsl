@@ -33,17 +33,15 @@ layout(binding = 0) uniform restrict readonly MutableData {
 
 // TODO: specialization constants?
 layout(binding = 1) uniform restrict readonly ConstantBuffer {
-    ivec2 view; // window size
     vec2 ratio; // window height / width * fov
 } cs;
 
 layout(binding = 2) uniform sampler2D accumulatorImage; // temporal accumulator image
 layout(binding = 3, rgba16f) uniform restrict writeonly image2D dataOutputImage;
 layout(binding = 4, rgba32f) uniform restrict writeonly image2D normalsDepthImage;
-layout(binding = 5, r8ui) uniform restrict writeonly uimage2D materialImage;
-layout(binding = 6, r16f) uniform restrict image2D historyLengthImage;
+layout(binding = 5, r16f) uniform restrict image2D historyLengthImage;
 
-layout(binding = 7) uniform sampler2D blueNoiseSampler;
+layout(binding = 6) uniform sampler2D blueNoiseSampler;
 
 // pseudo random number generator
 // https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
@@ -85,6 +83,7 @@ float distanceToObject(Ray ray, Object obj) {
 
 void traceRay(inout Ray ray) {
     ray.distanceToObject = 1e20;
+    ray.objectHit = MAX_OBJECTS;
 
     // TODO: hardcode the number of intersection tests (3x speedup)
     for (uint i = 0; i < MAX_OBJECTS; i++) {
@@ -106,17 +105,16 @@ void updateRay(inout Ray ray, float dirIdx) {
 void shade(inout Ray ray, inout vec4 data) {
     Material material = buf.mats[buf.objs[ray.objectHit].mat];
 
-    // rays are fired according to brdf, negating the need to calculate it here
-    vec3 BRDF = material.reflectance * 2.0;
-
     data.rgb += ray.color * material.emittance;
-    ray.color *= BRDF;
+    // rays are fired according to brdf, negating the need to calculate it here
+    ray.color *= material.reflectance;
 }
 
-// TODO: fix samples per pixel
 void main() {
+    const ivec2 viewport = ivec2(imageSize(dataOutputImage).xy);
+
     // maps FragCoord to xy range [-1.0, 1.0]
-    vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / cs.view - 1.0; // imageSize can be used instead of cs.view
+    vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / viewport - 1.0;
     // maps normCoord to a different range (e.g. for FOV and non-square windows)
     normCoord *= cs.ratio;
 
@@ -125,8 +123,7 @@ void main() {
 
     Ray ray = Ray(pc.pos, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
-    // TODO: fix
-    float dirIdx = pc.time + rand(viewDir.xz) * 1e2;
+    float dirIdx = pc.time * 32145.313 + sin(dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233))) * 43758.5453;
 
     traceRay(ray);
     updateRay(ray, dirIdx);
@@ -144,7 +141,7 @@ void main() {
     vec3 p = normalize(rayDirect.origin - pc.pPos);
     vec3 r = rotate(pc.ipRot, p);
     vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
-    i = (i + 1.0) * cs.view * 0.5; // [0, cs.view]
+    i = (i + 1.0) * viewport * 0.5; // [0, viewport]
 
     Ray prevRayDirect = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
     traceRay(prevRayDirect);
@@ -157,8 +154,8 @@ void main() {
     vec2 moment = vec2(moment2, moment2 * moment2);
 
     // TODO: improve acceptance criteria
-    if (prevRayDirect.objectHit == rayDirect.objectHit && clamp(i, vec2(0.0), cs.view - 1.0) == i) {
-        vec2 ni = (i + 0.5) / cs.view;
+    if (prevRayDirect.objectHit == rayDirect.objectHit && all(lessThan(i, viewport - 1.0)) && all(greaterThan(i, vec2(0.0)))) {
+        vec2 ni = (i + 0.5) / viewport;
 
         historyLength = imageLoad(historyLengthImage, ivec2(gl_GlobalInvocationID.xy)).x;
         historyLength = min(32.0, historyLength + 1.0);
@@ -177,7 +174,5 @@ void main() {
     data.a = max(moment.y - moment.x * moment.x, 0.0);
 
     imageStore(normalsDepthImage, ivec2(gl_GlobalInvocationID.xy), vec4(normalize(rayDirect.normalOfObject), rayDirect.distanceToObject));
-    imageStore(materialImage, ivec2(gl_GlobalInvocationID.xy), uvec4(buf.objs[rayDirect.objectHit].mat, uvec3(0)));
-
     imageStore(dataOutputImage, ivec2(gl_GlobalInvocationID.xy), data);
 }
