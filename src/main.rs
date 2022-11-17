@@ -353,8 +353,7 @@ where
         .unwrap()
         .bind_pipeline_compute(denoise_pipeline.clone());
 
-    // TODO: TEMP 0
-    const MAX_STAGE_DIV_2: u32 = 0; // max stage divided by two
+    const MAX_STAGE_DIV_2: u32 = 2; // max stage divided by two
     let mut denoise_push_constants = shaders::ty::DenoisePushConstants { stage: 0 };
 
     for i in 0..MAX_STAGE_DIV_2 {
@@ -581,7 +580,7 @@ fn main() {
             parent: None,
         },
         BVHNode {
-            center: Vec3::new(0.0, 0.0, 119.5),
+            center: Vec3::new(0.0, 0.0, 119.7),
             radius: 100.0,
             left: None,
             right: None,
@@ -679,11 +678,6 @@ fn main() {
         });
     });
 
-    bvh.pretty_print();
-
-    // DEBUG
-    // println!("{:#?}", <BVH as Into<shaders::ty::BoundingVolumeHierarchy>>::into(bvh.clone()));
-
     let bvh_buffer = DeviceLocalBuffer::<shaders::ty::BoundingVolumeHierarchy>::from_data(
         &memory_allocator,
         bvh.into(),
@@ -737,7 +731,7 @@ fn main() {
         .chunks(4)
         .map(|v| {
             const M: f32 = u16::MAX as f32;
-            [v[0], ((v[1] as f32 / M).acos() * M) as u16] // maps v[1] to cosine distribution
+            [v[0], ((v[1] as f32 / M * 2.0 - 1.0).acos() / PI * M) as u16] // maps v[1] to cosine distribution
         })
         .collect::<Vec<_>>()
         .into_iter();

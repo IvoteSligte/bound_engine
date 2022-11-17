@@ -69,17 +69,17 @@ vec3 rotate(vec4 q, vec3 v) {
 
 // NOTE: dot(ray.direction, ray.normalOfObject) gives higher results when looking at surfaces pointing up/down
 vec3 randomDirection(vec3 normal, float index) {
-    const float PI_x2 = 3.14159265 * 2.0;
-    const float PI_d2 = 3.14159265 * 0.5;
+    const float PI = 3.14159265;
+    const float PI_2 = PI * 0.5;
 
     const float imageW = textureSize(blueNoiseSampler, 0).x;
 
     vec2 offset = texture(blueNoiseSampler, vec2(index, index / imageW)).xy;
-    offset *= vec2(PI_x2, PI_d2); // TESTING
+    offset *= vec2(PI, PI_2);
 
     // atan(a / b) gives a different, incorrent number than atan(a, b)
     // vec2(longitude, latitude) or vec2(phi, theta)
-    vec2 t = vec2(atan(normal.y, normal.x), atan(normal.z, length(normal.xy))) + offset;
+    vec2 t = vec2(atan(normal.y, normal.x), atan(normal.z, length(normal.xy))) + offset.xy;
 
     vec2 s = sin(t);
     vec2 c = cos(t);
@@ -101,6 +101,7 @@ void traceRayWithBVH(inout Ray ray) {
     ray.distanceToObject = 1e20;
     ray.nodeHit = 0;
 
+    // TODO: add a cpu-side limit to the number of layers
     uint stack[32]; // max number of layers is 32 because of pre-set stack size
     stack[0] = bvh.head;
     int i = 0;
@@ -118,6 +119,7 @@ void traceRayWithBVH(inout Ray ray) {
                 continue;
             }
 
+            // TODO: improve this, is_inside causes the function to return an incorrect value if not checked against here
             if (!is_inside) {
                 // is a leaf, store data
                 ray.distanceToObject = d;
@@ -202,7 +204,7 @@ void main() {
         float moment1 = luminanceFromRGB(tData.rgb);
         moment = mix(vec2(moment1, moment1 * moment1), moment, 1.0 / historyLength);
 
-        data.rgb = mix(tData.rgb, data.rgb, 1.0 / historyLength);
+        data.rgb = mix(tData.rgb, data.rgb, moment.x / historyLength); // TODO: determine if moment.x / historyLength is appropriate
     }
 
     imageStore(historyLengthImage, ivec2(gl_GlobalInvocationID.xy), uvec4(historyLength, uvec3(0)));

@@ -164,12 +164,14 @@ impl BVH {
             .unwrap()
     }
 
+    #[allow(dead_code)]
     pub fn pretty_print(&self) {
         let mut tree = TreeBuilder::new("Bounding Volume Hierarchy".to_string());
         self.traverse_tree(&self.nodes[self.head], &mut tree);
         print_tree(&tree.build()).unwrap();
     }
 
+    #[allow(dead_code)]
     fn traverse_tree(&self, node: &BVHNode, printer: &mut TreeBuilder) {
         if node.leaf.is_some() {
             return;
