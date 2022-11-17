@@ -6,8 +6,9 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(binding = 0, rgba16f) uniform restrict readonly image2D dataInputImage;
 layout(binding = 1, rgba16f) uniform restrict writeonly image2D dataOutputImage;
-layout(binding = 2, rgba32f) uniform restrict readonly image2D normalsDepthImage;
-layout(binding = 3, r16f) uniform restrict readonly image2D historyLengthImage;
+
+layout(set = 1, binding = 0, rgba32f) uniform restrict readonly image2D normalsDepthImage;
+layout(set = 1, binding = 1, r8ui) uniform restrict uimage2D historyLengthImage;
 
 const ivec2 COORDS[40] = {
                                                                       ivec2(0, -64),

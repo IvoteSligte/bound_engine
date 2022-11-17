@@ -4,17 +4,17 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(push_constant) uniform PathtracePushConstants {
-    vec4 rot;
-    vec3 pos;
-    float time;
-    vec4 pRot;
-    vec4 ipRot; // inverse previous rotation
-    vec3 pPos; // previous position
-} pc;
-
 const uint RAYS_PER_SAMPLE = 4;
 const float GAMMA = RAYS_PER_SAMPLE * 0.25;
+
+struct Bounds { // node of a binary tree
+    vec3 center;
+    float radiusSquared;
+    uint left;
+    uint right;
+    uint leaf;
+    uint parent;
+};
 
 struct Ray {
     vec3 origin; // origin
@@ -22,26 +22,39 @@ struct Ray {
     vec3 normalOfObject; // normalOfObject at origin (or vec3(-0.0))
     vec3 color; // color left after previous absorptions
     float distanceToObject;
-    uint objectHit;
+    uint nodeHit;
 };
 
-// TODO: specialization constants?
-layout(binding = 0) uniform restrict readonly MutableData {
+layout(binding = 0) uniform restrict readonly RealTimeBuffer {
+    vec4 rotation;
+    vec3 position;
+    float time;
+    vec4 previousRotation;
+    vec4 inversePreviousRotation; // inverse previous rotation
+    vec3 previousPosition; // previous position
+} rt;
+
+layout(binding = 1) uniform restrict readonly BoundingVolumeHierarchy {
+    uint head;
+    Bounds volumes[2 * MAX_OBJECTS];
+} bvh;
+
+layout(binding = 2) uniform restrict readonly MutableData {
     Material mats[MAX_MATERIALS];
-    Object objs[MAX_OBJECTS];
 } buf;
 
 // TODO: specialization constants?
-layout(binding = 1) uniform restrict readonly ConstantBuffer {
+layout(binding = 3) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 2) uniform sampler2D accumulatorImage; // temporal accumulator image
-layout(binding = 3, rgba16f) uniform restrict writeonly image2D dataOutputImage;
-layout(binding = 4, rgba32f) uniform restrict writeonly image2D normalsDepthImage;
-layout(binding = 5, r16f) uniform restrict image2D historyLengthImage;
+layout(binding = 4) uniform sampler2D blueNoiseSampler;
 
-layout(binding = 6) uniform sampler2D blueNoiseSampler;
+layout(binding = 5) uniform sampler2D accumulatorImage; // temporal accumulator image
+layout(binding = 6, rgba16f) uniform restrict writeonly image2D dataOutputImage;
+
+layout(set = 1, binding = 0, rgba32f) uniform restrict writeonly image2D normalsDepthImage;
+layout(set = 1, binding = 1, r8ui) uniform restrict uimage2D historyLengthImage;
 
 // pseudo random number generator
 // https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
@@ -54,14 +67,15 @@ vec3 rotate(vec4 q, vec3 v) {
     return v + 2.0 * cross(q.xyz, t);
 }
 
+// NOTE: dot(ray.direction, ray.normalOfObject) gives higher results when looking at surfaces pointing up/down
 vec3 randomDirection(vec3 normal, float index) {
-    const float PI = 3.14159265;
-    const float PI_2 = PI * 0.5;
+    const float PI_x2 = 3.14159265 * 2.0;
+    const float PI_d2 = 3.14159265 * 0.5;
 
     const float imageW = textureSize(blueNoiseSampler, 0).x;
 
     vec2 offset = texture(blueNoiseSampler, vec2(index, index / imageW)).xy;
-    offset *= vec2(PI_2, PI);
+    offset *= vec2(PI_x2, PI_d2); // TESTING
 
     // atan(a / b) gives a different, incorrent number than atan(a, b)
     // vec2(longitude, latitude) or vec2(phi, theta)
@@ -73,37 +87,60 @@ vec3 randomDirection(vec3 normal, float index) {
     return vec3(c.x*c.y, s.x*c.y, s.y);
 }
 
-// calculates the distance from a ray (Ray) to a sphere (Object)
-// returns a negative value when the sphere is not hit
-float distanceToObject(Ray ray, Object obj) {
-    vec3 v = obj.pos - ray.origin;
-    float a = dot(ray.direction, v); // distance to plane through obj.pos perpendicular to ray.direction
-    return a - sqrt(obj.radiusSquared - dot(v, v) + a * a);
+float distanceToObject(in Ray ray, in Bounds bnd, out bool is_inside) {
+    vec3 v = bnd.center - ray.origin;
+    float a = dot(ray.direction, v);
+    float b = dot(v, v);
+    float d = bnd.radiusSquared + a * a - b;
+    is_inside = b < bnd.radiusSquared;
+    if (d <= 0.0 || is_inside) { return -1.0; }
+    return a - sqrt(d);
 }
 
-void traceRay(inout Ray ray) {
+void traceRayWithBVH(inout Ray ray) {
     ray.distanceToObject = 1e20;
-    ray.objectHit = MAX_OBJECTS;
+    ray.nodeHit = 0;
 
-    // TODO: hardcode the number of intersection tests (3x speedup)
-    for (uint i = 0; i < MAX_OBJECTS; i++) {
-        float d = distanceToObject(ray, buf.objs[i]);
+    uint stack[32]; // max number of layers is 32 because of pre-set stack size
+    stack[0] = bvh.head;
+    int i = 0;
 
-        if (d > 0.0 && d < ray.distanceToObject) {
-            ray.distanceToObject = d;
-            ray.objectHit = i;
+    while (i >= 0) {
+        Bounds node = bvh.volumes[stack[i]];
+
+        bool is_inside;
+        float d = distanceToObject(ray, node, is_inside);
+        if (is_inside || (d > 0.0 && d < ray.distanceToObject)) {
+            // not a leaf, move to right child
+            if (node.leaf == 0) {
+                i += 1;
+                stack[i] = node.left;
+                continue;
+            }
+
+            if (!is_inside) {
+                // is a leaf, store data
+                ray.distanceToObject = d;
+                ray.nodeHit = stack[i];
+            }
         }
+
+        // move to left child of parent if current node is right child node, else to left child of grandparent
+        i -= 1;
+        stack[i] = bvh.volumes[stack[i]].right;
     }
+
+    // INFO: somehow this function returns -1.0 nearly always after bouncing at least once
 }
 
 void updateRay(inout Ray ray, float dirIdx) {
     ray.origin += ray.direction * ray.distanceToObject;
-    ray.normalOfObject = ray.origin - buf.objs[ray.objectHit].pos;
+    ray.normalOfObject = ray.origin - bvh.volumes[ray.nodeHit].center;
     ray.direction = randomDirection(ray.normalOfObject, dirIdx);
 }
 
 void shade(inout Ray ray, inout vec4 data) {
-    Material material = buf.mats[buf.objs[ray.objectHit].mat];
+    Material material = buf.mats[bvh.volumes[ray.nodeHit].leaf];
 
     data.rgb += ray.color * material.emittance;
     // rays are fired according to brdf, negating the need to calculate it here
@@ -119,34 +156,34 @@ void main() {
     normCoord *= cs.ratio;
 
     vec4 data = vec4(0.0);
-    vec3 viewDir = rotate(pc.rot, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
+    vec3 viewDir = rotate(rt.rotation, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
 
-    Ray ray = Ray(pc.pos, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
+    Ray ray = Ray(rt.position, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
-    float dirIdx = pc.time * 32145.313 + sin(dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233))) * 43758.5453;
+    float dirIdx = rt.time * 32145.313 + fract(sin(dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233)))) * 43758.5453;
 
-    traceRay(ray);
+    traceRayWithBVH(ray);
     updateRay(ray, dirIdx);
     shade(ray, data);
 
     Ray rayDirect = ray;
     for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
-        dirIdx += 1;
-        traceRay(ray);
+        dirIdx += 1.0;
+        traceRayWithBVH(ray);
         updateRay(ray, dirIdx);
         shade(ray, data);
     }
 
     // screen space coordinate from global point
-    vec3 p = normalize(rayDirect.origin - pc.pPos);
-    vec3 r = rotate(pc.ipRot, p);
+    vec3 p = normalize(rayDirect.origin - rt.previousPosition);
+    vec3 r = rotate(rt.inversePreviousRotation, p);
     vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
     i = (i + 1.0) * viewport * 0.5; // [0, viewport]
 
-    Ray prevRayDirect = Ray(pc.pPos, p, vec3(0.0), vec3(1.0), 0.0, 0);
-    traceRay(prevRayDirect);
+    Ray prevRayDirect = Ray(rt.previousPosition, p, vec3(0.0), vec3(1.0), 0.0, 0);
+    traceRayWithBVH(prevRayDirect);
 
-    data.rgb /= GAMMA;
+    data.rgb /= GAMMA; // compensates for brightness caused by a differing number of rays
 
     float historyLength = 1.0;
 
@@ -154,7 +191,7 @@ void main() {
     vec2 moment = vec2(moment2, moment2 * moment2);
 
     // TODO: improve acceptance criteria
-    if (prevRayDirect.objectHit == rayDirect.objectHit && all(lessThan(i, viewport - 1.0)) && all(greaterThan(i, vec2(0.0)))) {
+    if (prevRayDirect.nodeHit == rayDirect.nodeHit && all(lessThan(i, viewport - 1.0)) && all(greaterThan(i, vec2(0.0)))) {
         vec2 ni = (i + 0.5) / viewport;
 
         historyLength = imageLoad(historyLengthImage, ivec2(gl_GlobalInvocationID.xy)).x;
@@ -168,7 +205,7 @@ void main() {
         data.rgb = mix(tData.rgb, data.rgb, 1.0 / historyLength);
     }
 
-    imageStore(historyLengthImage, ivec2(gl_GlobalInvocationID.xy), vec4(historyLength, vec3(0.0)));
+    imageStore(historyLengthImage, ivec2(gl_GlobalInvocationID.xy), uvec4(historyLength, uvec3(0)));
 
     // variance
     data.a = max(moment.y - moment.x * moment.x, 0.0);

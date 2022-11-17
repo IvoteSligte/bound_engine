@@ -10,8 +10,9 @@ layout(push_constant) uniform DenoisePushConstants {
 
 layout(binding = 0, rgba16f) uniform restrict readonly image2D dataInputImage;
 layout(binding = 1, rgba16f) uniform restrict writeonly image2D dataOutputImage;
-layout(binding = 2, rgba32f) uniform restrict readonly image2D normalsDepthImage; // TODO: 16f ?
-layout(binding = 3, r16f) uniform restrict readonly image2D historyLengthImage;
+
+layout(set = 1, binding = 0, rgba32f) uniform restrict readonly image2D normalsDepthImage;
+layout(set = 1, binding = 1, r8ui) uniform restrict uimage2D historyLengthImage;
 
 // corner of an a trous WAVELET
 const float WAVELET[2][2] = {
@@ -62,7 +63,7 @@ void main() {
 
     float weightSum = WAVELET[0][0];
     float luminance = luminanceFromRGB(data.rgb);
-    float variance = varianceGaussian();
+    float sqrt_variance = sqrt(varianceGaussian());
 
     int stride = 1 << pc.stage;
 
@@ -78,7 +79,7 @@ void main() {
 
         float weightDepth = abs(normalDepth.w - cNormalDepth.w);
         float weightNormal = max(dot(normalDepth.xyz, cNormalDepth.xyz), 0.0);
-        float weightLuminance = abs(luminance - cLuminance);
+        float weightLuminance = abs(luminance - cLuminance) / sqrt_variance;
         float weightHistoryLength = cHistoryLength / historyLength;
 
         float w = exp(-weightDepth - max(weightLuminance, 0.0)) * weightNormal * weightHistoryLength * WAVELET[abs(c.x)][abs(c.y)];
@@ -88,7 +89,7 @@ void main() {
         data += cData * vec4(w.xxx, w * w);
     }
 
-    data /= weightSum;
+    data /= vec4(weightSum.xxx, weightSum);
 
     imageStore(dataOutputImage, ivec2(gl_GlobalInvocationID.xy), data);
 }
