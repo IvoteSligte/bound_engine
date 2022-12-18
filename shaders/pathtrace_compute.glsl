@@ -2,7 +2,7 @@
 
 #include "compute_includes.glsl"
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 16) in;
 
 const uint RAYS_PER_SAMPLE = 4;
 
@@ -49,13 +49,7 @@ layout(binding = 3) uniform restrict readonly ConstantBuffer {
 
 layout(binding = 4) uniform sampler2D blueNoiseTexture;
 
-layout(binding = 5) uniform sampler2D accumulatorTexture; // temporal accumulator image
-layout(binding = 6, rgba16f) uniform restrict writeonly image2D dataOutputImage;
-layout(binding = 7) uniform sampler2D temporalMomentsTexture; // stores previous frame's moments
-layout(binding = 8, rg32f) uniform restrict writeonly image2D momentsImage;
-
-layout(set = 1, binding = 0, rgba32f) uniform restrict writeonly image2D normalsDepthImage;
-layout(set = 1, binding = 1, r8ui) uniform restrict uimage2D historyLengthImage;
+layout(binding = 5, rgba16f) uniform restrict writeonly image2D dataOutputImage;
 
 // pseudo random number generator
 // https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
@@ -118,18 +112,18 @@ void traceRayWithBVH(inout Ray ray) {
         if (node.leaf == 0 && (is_inside || is_hit)) {
             i += 1;
             stack[i] = node.left;
+            continue;
         }
-        else {
-            if (is_hit) {
-                // is a leaf, store data
-                ray.distanceToObject = d;
-                ray.nodeHit = stack[i];
-            }
+        
+        if (is_hit) {
+            // is a leaf, store data
+            ray.distanceToObject = d;
+            ray.nodeHit = stack[i];
+        }
 
-            // move to next node (to the right)
-            i -= 1;
-            stack[i] = bvh.volumes[stack[i]].right;
-        }
+        // move to next node (to the right)
+        i -= 1;
+        stack[i] = bvh.volumes[stack[i]].right;
     }
 }
 
@@ -176,37 +170,21 @@ void main() {
         shade(ray, data);
     }
 
-    // screen space coordinate from global point
-    vec3 p = normalize(rayDirect.origin - rt.previousPosition);
-    vec3 r = rotate(rt.inversePreviousRotation, p);
-    vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
-    i = (i + 1.0) * viewport * 0.5; // [0, viewport]
+    // // screen space coordinate from global point
+    // vec3 p = normalize(rayDirect.origin - rt.previousPosition);
+    // vec3 r = rotate(rt.inversePreviousRotation, p);
+    // vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
+    // i = (i + 1.0) * viewport * 0.5; // [0, viewport]
 
-    Ray prevRayDirect = Ray(rt.previousPosition, p, vec3(0.0), vec3(1.0), 0.0, 0);
-    traceRayWithBVH(prevRayDirect);
+    // Ray prevRayDirect = Ray(rt.previousPosition, p, vec3(0.0), vec3(1.0), 0.0, 0);
+    // traceRayWithBVH(prevRayDirect);
 
-    float historyLength = 1.0;
+    // // TODO: improve acceptance criteria
+    // if (prevRayDirect.nodeHit == rayDirect.nodeHit && all(lessThan(i, viewport - 1.0)) && all(greaterThan(i, vec2(0.0)))) {
 
-    float l = luminanceFromRGB(data.rgb);
-    vec2 moments = vec2(l, l * l);
+    // }
 
-    // TODO: improve acceptance criteria
-    if (prevRayDirect.nodeHit == rayDirect.nodeHit && all(lessThan(i, viewport - 1.0)) && all(greaterThan(i, vec2(0.0)))) {
-        vec2 ni = (i + 0.5) / viewport;
-
-        historyLength = imageLoad(historyLengthImage, ipos).x;
-        historyLength = min(32.0, historyLength + 1.0);
-
-        vec4 tData = texture(accumulatorTexture, ni);
-        vec2 tMoments = texture(temporalMomentsTexture, ni).xy;
-
-        moments = mix(tMoments, moments, 1.0 / historyLength);
-        data.a = max(moments.y - moments.x * moments.x, 0.0);
-        data.rgb = mix(tData.rgb, data.rgb, 1.0 / historyLength);
+    if (gl_GlobalInvocationID.z == 1) {
+        imageStore(dataOutputImage, ipos, data);
     }
-
-    imageStore(historyLengthImage, ipos, uvec4(historyLength, uvec3(0)));
-    imageStore(normalsDepthImage, ipos, vec4(normalize(rayDirect.normalOfObject), rayDirect.distanceToObject));
-    imageStore(momentsImage, ipos, vec4(moments, vec2(0.0)));
-    imageStore(dataOutputImage, ipos, data);
 }
