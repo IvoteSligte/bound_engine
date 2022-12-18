@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use glam::Vec3;
-use ptree::{TreeBuilder, print_tree};
+use ptree::{print_tree, TreeBuilder};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BVH {
@@ -94,7 +94,9 @@ impl BVH {
             });
 
             let len = self.nodes.len();
-            if index == self.head { self.head = len - 1; }
+            if index == self.head {
+                self.head = len - 1;
+            }
             append_other_to_self(self, other);
 
             if let Some(p) = self.nodes[index].parent {
@@ -145,23 +147,44 @@ impl BVH {
     /// *Warning:* assumes `node` fits within `self`.
     fn get_best_fit(&mut self, node: &BVHNode) -> (usize, Vec3, f32) {
         // find the smallest node that the given node can form a boundary with, without changing the former's parent boundary
-        self.nodes
-            .iter()
-            .enumerate()
-            .filter_map(|(i, m)| {
-                let new_radius = m.get_parent_radius(node);
-                let new_center = m.get_parent_center(node, new_radius);
+        let mut best_fit = (
+            self.head,
+            self.nodes[self.head].center,
+            self.nodes[self.head].radius,
+        );
 
-                Some((i, new_center, new_radius)).filter(|_| match m.parent {
-                    Some(pi) => {
-                        let p = &self.nodes[pi];
-                        p.center.distance(new_center) + new_radius <= p.radius
-                    }
-                    None => true,
-                })
-            })
-            .min_by(|(_, _, ra), (_, _, rb)| ra.total_cmp(rb))
-            .unwrap()
+        if self.nodes[self.head].left.is_none() {
+            return best_fit;
+        }
+
+        let mut stack = vec![
+            self.nodes[self.head].left.unwrap(),
+            self.nodes[self.head].right.unwrap(),
+        ];
+
+        while !stack.is_empty() {
+            let i = stack.pop().unwrap();
+            let m = &self.nodes[i];
+
+            let new_radius = m.get_parent_radius(node);
+            let new_center = m.get_parent_center(node, new_radius);
+
+            let parent = &self.nodes[m.parent.unwrap()];
+
+            let does_not_deform_parent =
+                parent.center.distance(new_center) + new_radius <= parent.radius;
+            
+            if does_not_deform_parent {
+                m.left.map(|l| stack.push(l));
+                m.right.map(|r| stack.push(r));
+
+                if new_radius < best_fit.2 {
+                    best_fit = (i, new_center, new_radius);
+                }
+            }
+        }
+        
+        best_fit
     }
 
     #[allow(dead_code)]

@@ -5,7 +5,6 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 const uint RAYS_PER_SAMPLE = 4;
-const float GAMMA = RAYS_PER_SAMPLE * 0.25;
 
 struct Bounds { // node of a binary tree
     vec3 center;
@@ -48,10 +47,12 @@ layout(binding = 3) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 4) uniform sampler2D blueNoiseSampler;
+layout(binding = 4) uniform sampler2D blueNoiseTexture;
 
-layout(binding = 5) uniform sampler2D accumulatorImage; // temporal accumulator image
+layout(binding = 5) uniform sampler2D accumulatorTexture; // temporal accumulator image
 layout(binding = 6, rgba16f) uniform restrict writeonly image2D dataOutputImage;
+layout(binding = 7) uniform sampler2D temporalMomentsTexture; // stores previous frame's moments
+layout(binding = 8, rg32f) uniform restrict writeonly image2D momentsImage;
 
 layout(set = 1, binding = 0, rgba32f) uniform restrict writeonly image2D normalsDepthImage;
 layout(set = 1, binding = 1, r8ui) uniform restrict uimage2D historyLengthImage;
@@ -72,9 +73,9 @@ vec3 randomDirection(vec3 normal, float index) {
     const float PI = 3.14159265;
     const float PI_2 = PI * 0.5;
 
-    const float imageW = textureSize(blueNoiseSampler, 0).x;
+    const float imageW = textureSize(blueNoiseTexture, 0).x;
 
-    vec2 offset = texture(blueNoiseSampler, vec2(index, index / imageW)).xy;
+    vec2 offset = texture(blueNoiseTexture, vec2(index, index / imageW)).xy;
     offset *= vec2(PI, PI_2);
 
     // atan(a / b) gives a different, incorrent number than atan(a, b)
@@ -93,7 +94,7 @@ float distanceToObject(in Ray ray, in Bounds bnd, out bool is_inside) {
     float b = dot(v, v);
     float d = bnd.radiusSquared + a * a - b;
     is_inside = b < bnd.radiusSquared;
-    if (d <= 0.0 || is_inside) { return -1.0; }
+    if (d < 0.0) { return -1.0; }
     return a - sqrt(d);
 }
 
@@ -111,28 +112,25 @@ void traceRayWithBVH(inout Ray ray) {
 
         bool is_inside;
         float d = distanceToObject(ray, node, is_inside);
-        if (is_inside || (d > 0.0 && d < ray.distanceToObject)) {
-            // not a leaf, move to right child
-            if (node.leaf == 0) {
-                i += 1;
-                stack[i] = node.left;
-                continue;
-            }
+        bool is_hit = d > 0.0 && d < ray.distanceToObject;
 
-            // TODO: improve this, is_inside causes the function to return an incorrect value if not checked against here
-            if (!is_inside) {
+        // not a leaf, move to left child
+        if (node.leaf == 0 && (is_inside || is_hit)) {
+            i += 1;
+            stack[i] = node.left;
+        }
+        else {
+            if (is_hit) {
                 // is a leaf, store data
                 ray.distanceToObject = d;
                 ray.nodeHit = stack[i];
             }
+
+            // move to next node (to the right)
+            i -= 1;
+            stack[i] = bvh.volumes[stack[i]].right;
         }
-
-        // move to left child of parent if current node is right child node, else to left child of grandparent
-        i -= 1;
-        stack[i] = bvh.volumes[stack[i]].right;
     }
-
-    // INFO: somehow this function returns -1.0 nearly always after bouncing at least once
 }
 
 void updateRay(inout Ray ray, float dirIdx) {
@@ -151,6 +149,7 @@ void shade(inout Ray ray, inout vec4 data) {
 
 void main() {
     const ivec2 viewport = ivec2(imageSize(dataOutputImage).xy);
+    const ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
 
     // maps FragCoord to xy range [-1.0, 1.0]
     vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / viewport - 1.0;
@@ -169,6 +168,7 @@ void main() {
     shade(ray, data);
 
     Ray rayDirect = ray;
+
     for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
         dirIdx += 1.0;
         traceRayWithBVH(ray);
@@ -185,33 +185,28 @@ void main() {
     Ray prevRayDirect = Ray(rt.previousPosition, p, vec3(0.0), vec3(1.0), 0.0, 0);
     traceRayWithBVH(prevRayDirect);
 
-    data.rgb /= GAMMA; // compensates for brightness caused by a differing number of rays
-
     float historyLength = 1.0;
 
-    float moment2 = luminanceFromRGB(data.rgb);
-    vec2 moment = vec2(moment2, moment2 * moment2);
+    float l = luminanceFromRGB(data.rgb);
+    vec2 moments = vec2(l, l * l);
 
     // TODO: improve acceptance criteria
     if (prevRayDirect.nodeHit == rayDirect.nodeHit && all(lessThan(i, viewport - 1.0)) && all(greaterThan(i, vec2(0.0)))) {
         vec2 ni = (i + 0.5) / viewport;
 
-        historyLength = imageLoad(historyLengthImage, ivec2(gl_GlobalInvocationID.xy)).x;
+        historyLength = imageLoad(historyLengthImage, ipos).x;
         historyLength = min(32.0, historyLength + 1.0);
 
-        vec4 tData = texture(accumulatorImage, ni);
+        vec4 tData = texture(accumulatorTexture, ni);
+        vec2 tMoments = texture(temporalMomentsTexture, ni).xy;
 
-        float moment1 = luminanceFromRGB(tData.rgb);
-        moment = mix(vec2(moment1, moment1 * moment1), moment, 1.0 / historyLength);
-
-        data.rgb = mix(tData.rgb, data.rgb, moment.x / historyLength); // TODO: determine if moment.x / historyLength is appropriate
+        moments = mix(tMoments, moments, 1.0 / historyLength);
+        data.a = max(moments.y - moments.x * moments.x, 0.0);
+        data.rgb = mix(tData.rgb, data.rgb, 1.0 / historyLength);
     }
 
-    imageStore(historyLengthImage, ivec2(gl_GlobalInvocationID.xy), uvec4(historyLength, uvec3(0)));
-
-    // variance
-    data.a = max(moment.y - moment.x * moment.x, 0.0);
-
-    imageStore(normalsDepthImage, ivec2(gl_GlobalInvocationID.xy), vec4(normalize(rayDirect.normalOfObject), rayDirect.distanceToObject));
-    imageStore(dataOutputImage, ivec2(gl_GlobalInvocationID.xy), data);
+    imageStore(historyLengthImage, ipos, uvec4(historyLength, uvec3(0)));
+    imageStore(normalsDepthImage, ipos, vec4(normalize(rayDirect.normalOfObject), rayDirect.distanceToObject));
+    imageStore(momentsImage, ipos, vec4(moments, vec2(0.0)));
+    imageStore(dataOutputImage, ipos, data);
 }

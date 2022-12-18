@@ -157,6 +157,7 @@ fn get_data_images(
         },
         Format::R16G16B16A16_SFLOAT,
         ImageUsage {
+            sampled: true,
             storage: true,
             transfer_src: true,
             ..ImageUsage::empty()
@@ -215,6 +216,49 @@ fn get_history_length_image(
     .unwrap()
 }
 
+fn get_moments_images(
+    allocator: &(impl MemoryAllocator + ?Sized),
+    dimensions: PhysicalSize<u32>,
+    queue_family_index: u32,
+) -> [Arc<StorageImage>; 2] {
+    let temporal_moments_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R32G32_SFLOAT,
+        ImageUsage {
+            storage: true,
+            sampled: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    let moments_image = StorageImage::with_usage(
+        allocator,
+        ImageDimensions::Dim2d {
+            width: dimensions.width,
+            height: dimensions.height,
+            array_layers: 1,
+        },
+        Format::R32G32_SFLOAT,
+        ImageUsage {
+            storage: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    [temporal_moments_image, moments_image]
+}
+
 fn get_compute_descriptor_sets<A>(
     allocator: &A,
     pipelines: Vec<Arc<ComputePipeline>>,
@@ -227,7 +271,8 @@ fn get_compute_descriptor_sets<A>(
     sampler: Arc<Sampler>,
     normals_depth_image: Arc<StorageImage>,
     history_length_image: Arc<StorageImage>,
-) -> [Arc<PersistentDescriptorSet<A::Alloc>>; 4]
+    moments_images: [Arc<StorageImage>; 2],
+) -> [Arc<PersistentDescriptorSet<A::Alloc>>; 5]
 where
     A: DescriptorSetAllocator + ?Sized,
 {
@@ -237,6 +282,10 @@ where
         .collect::<Vec<_>>();
     let normals_depth_image_view = ImageView::new_default(normals_depth_image.clone()).unwrap();
     let history_length_image_view = ImageView::new_default(history_length_image.clone()).unwrap();
+    let moments_image_views = moments_images
+        .iter()
+        .map(|image| ImageView::new_default(image.clone()).unwrap())
+        .collect::<Vec<_>>();
 
     let blue_noise_image_view = ImageView::new_default(blue_noise_image).unwrap();
 
@@ -261,26 +310,46 @@ where
             WriteDescriptorSet::image_view_sampler(4, blue_noise_image_view, sampler.clone()),
             WriteDescriptorSet::image_view_sampler(5, data_image_views[0].clone(), sampler.clone()),
             WriteDescriptorSet::image_view(6, data_image_views[1].clone()),
+            WriteDescriptorSet::image_view_sampler(
+                7,
+                moments_image_views[0].clone(),
+                sampler.clone(),
+            ),
+            WriteDescriptorSet::image_view(8, moments_image_views[1].clone()),
         ],
     )
     .unwrap();
 
-    let screen_space_one_descriptor_set = PersistentDescriptorSet::new(
+    let variance_descriptor_set = PersistentDescriptorSet::new(
         allocator,
         pipelines[1].layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::image_view(0, data_image_views[1].clone()),
             WriteDescriptorSet::image_view(1, data_image_views[0].clone()),
+            WriteDescriptorSet::image_view(2, moments_image_views[1].clone()),
+            WriteDescriptorSet::image_view(3, moments_image_views[0].clone()),
         ],
     )
     .unwrap();
 
-    let screen_space_two_descriptor_set = PersistentDescriptorSet::new(
+    let denoise_one_descriptor_set = PersistentDescriptorSet::new(
+        allocator,
+        pipelines[2].layout().set_layouts()[0].clone(),
+        [
+            WriteDescriptorSet::image_view(0, data_image_views[1].clone()),
+            WriteDescriptorSet::image_view(1, data_image_views[0].clone()),
+            WriteDescriptorSet::image_view_sampler(2, data_image_views[1].clone(), sampler.clone()),
+        ],
+    )
+    .unwrap();
+
+    let denoise_two_descriptor_set = PersistentDescriptorSet::new(
         allocator,
         pipelines[2].layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::image_view(0, data_image_views[0].clone()),
             WriteDescriptorSet::image_view(1, data_image_views[1].clone()),
+            WriteDescriptorSet::image_view_sampler(2, data_image_views[0].clone(), sampler.clone()),
         ],
     )
     .unwrap();
@@ -288,8 +357,9 @@ where
     [
         base_descriptor_set,
         pathtrace_descriptor_set,
-        screen_space_one_descriptor_set,
-        screen_space_two_descriptor_set,
+        variance_descriptor_set,
+        denoise_one_descriptor_set,
+        denoise_two_descriptor_set,
     ]
 }
 
@@ -297,7 +367,7 @@ fn get_command_buffer<A, S>(
     allocator: &A,
     queue: Arc<Queue>,
     pipelines: Vec<Arc<ComputePipeline>>,
-    descriptor_sets: [S; 4],
+    descriptor_sets: [S; 5],
     dimensions: PhysicalSize<u32>,
 ) -> Arc<PrimaryAutoCommandBuffer<A::Alloc>>
 where
@@ -317,14 +387,14 @@ where
         pipelines[2].clone(),
     ];
     // screen_space_one.. writes to data_images[0] and reads from data_images[1], screen_space_two.. does the opposite
-    let [base_descriptor_set, pathtrace_descriptor_set, screen_space_one_descriptor_set, screen_space_two_descriptor_set] =
+    let [base_descriptor_set, pathtrace_descriptor_set, variance_descriptor_set, denoise_one_descriptor_set, denoise_two_descriptor_set] =
         descriptor_sets;
 
-    let dispatch_groups =
-        (UVec3::from_array([dimensions.width, dimensions.height, 1]).as_vec3() / 8.0)
-            .ceil()
-            .as_uvec3()
-            .to_array();
+    let dispatch_groups = (UVec3::from_array([dimensions.width, dimensions.height, 1]).as_vec3()
+        / 8.0)
+        .ceil()
+        .as_uvec3()
+        .to_array();
 
     builder
         .bind_pipeline_compute(pathtrace_pipeline.clone())
@@ -344,10 +414,7 @@ where
             PipelineBindPoint::Compute,
             variance_pipeline.layout().clone(),
             0,
-            vec![
-                screen_space_one_descriptor_set.clone(),
-                base_descriptor_set.clone(),
-            ],
+            vec![variance_descriptor_set.clone(), base_descriptor_set.clone()],
         )
         .dispatch(dispatch_groups)
         .unwrap()
@@ -365,7 +432,7 @@ where
                 denoise_pipeline.layout().clone(),
                 0,
                 vec![
-                    screen_space_two_descriptor_set.clone(),
+                    denoise_two_descriptor_set.clone(),
                     base_descriptor_set.clone(),
                 ],
             )
@@ -377,7 +444,7 @@ where
                 denoise_pipeline.layout().clone(),
                 0,
                 vec![
-                    screen_space_one_descriptor_set.clone(),
+                    denoise_one_descriptor_set.clone(),
                     base_descriptor_set.clone(),
                 ],
             )
@@ -795,6 +862,8 @@ fn main() {
     let history_length_image =
         get_history_length_image(&memory_allocator, dimensions, queue_family_index);
 
+    let moments_images = get_moments_images(&memory_allocator, dimensions, queue_family_index);
+
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
     let descriptor_sets = get_compute_descriptor_sets(
         &descriptor_set_allocator,
@@ -808,6 +877,7 @@ fn main() {
         sampler.clone(),
         normals_depth_image.clone(),
         history_length_image.clone(),
+        moments_images.clone(),
     );
 
     let mut main_command_buffer = get_command_buffer(
@@ -1032,6 +1102,9 @@ fn main() {
                 let history_length_image =
                     get_history_length_image(&memory_allocator, dimensions, queue_family_index);
 
+                let moments_images =
+                    get_moments_images(&memory_allocator, dimensions, queue_family_index);
+
                 let descriptor_sets = get_compute_descriptor_sets(
                     &descriptor_set_allocator,
                     compute_pipelines.clone(),
@@ -1044,6 +1117,7 @@ fn main() {
                     sampler.clone(),
                     normals_depth_image.clone(),
                     history_length_image.clone(),
+                    moments_images.clone(),
                 );
 
                 main_command_buffer = get_command_buffer(

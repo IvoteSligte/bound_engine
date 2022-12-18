@@ -10,6 +10,7 @@ layout(push_constant) uniform DenoisePushConstants {
 
 layout(binding = 0, rgba16f) uniform restrict readonly image2D dataInputImage;
 layout(binding = 1, rgba16f) uniform restrict writeonly image2D dataOutputImage;
+layout(binding = 2) uniform sampler2D dataInputTexture;
 
 layout(set = 1, binding = 0, rgba32f) uniform restrict readonly image2D normalsDepthImage;
 layout(set = 1, binding = 1, r8ui) uniform restrict uimage2D historyLengthImage;
@@ -26,30 +27,18 @@ const ivec2 COORDS[8] = {
     ivec2(-1,  1), ivec2(0,  1), ivec2(1,  1),
 };
 
-float varianceGaussian() {
+float varianceGaussianSampled() {
+    const vec2 OFFSETS[4] = { vec2(-0.5), vec2(0.5, -0.5), vec2(-0.5, 0.5), vec2(0.5) };
+    const vec2 fpos = vec2(gl_GlobalInvocationID.xy);
+
     float sum = 0.0;
 
-    const float kernel[2][2] = {
-        { 1.0 / 4.0, 1.0 / 8.0  },
-        { 1.0 / 8.0, 1.0 / 16.0 }
-    };
-
-    const ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
-
-    const int radius = 1;
-    for (int yy = -radius; yy <= radius; yy++)
-    {
-        for (int xx = -radius; xx <= radius; xx++)
-        {
-            ivec2 p = ipos + ivec2(xx, yy);
-
-            float k = kernel[abs(xx)][abs(yy)];
-
-            sum += imageLoad(dataInputImage, p).a * k;
-        }
+    for (uint i = 0; i < 4; i++) {
+        const vec2 p = fpos + OFFSETS[i];
+        sum += texture(dataInputTexture, p).a;
     }
 
-    return sum;
+    return sum * 0.25;
 }
 
 void main() {
@@ -63,7 +52,7 @@ void main() {
 
     float weightSum = WAVELET[0][0];
     float luminance = luminanceFromRGB(data.rgb);
-    float sqrt_variance = sqrt(varianceGaussian());
+    float sqrt_variance = sqrt(varianceGaussianSampled());
 
     int stride = 1 << pc.stage;
 
@@ -82,14 +71,14 @@ void main() {
         float weightLuminance = abs(luminance - cLuminance) / sqrt_variance;
         float weightHistoryLength = cHistoryLength / historyLength;
 
-        float w = exp(-weightDepth - max(weightLuminance, 0.0)) * weightNormal * weightHistoryLength * WAVELET[abs(c.x)][abs(c.y)];
+        const float weightWavelet = WAVELET[abs(c.x)][abs(c.y)];
+        float w = exp(-weightDepth - max(weightLuminance, 0.0)) * weightNormal * weightHistoryLength * weightWavelet;
 
         weightSum += w;
-
         data += cData * vec4(w.xxx, w * w);
     }
 
-    data /= vec4(weightSum.xxx, weightSum);
+    data /= vec4(weightSum.xxx, weightSum * weightSum);
 
     imageStore(dataOutputImage, ivec2(gl_GlobalInvocationID.xy), data);
 }
