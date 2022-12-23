@@ -3,7 +3,7 @@ mod bounding_volume_hierarchy;
 use std::{f32::consts::PI, sync::Arc};
 
 use fps_counter::FPSCounter;
-use glam::{DVec2, Quat, UVec2, UVec3, Vec2, Vec3};
+use glam::{DVec2, Quat, UVec2, Vec2, Vec3};
 use image::io::Reader as ImageReader;
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
@@ -13,7 +13,7 @@ use vulkano::{
             StandardCommandBufferAllocatorCreateInfo,
         },
         AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, PrimaryAutoCommandBuffer,
-        PrimaryCommandBufferAbstract,
+        PrimaryCommandBufferAbstract, ClearColorImageInfo,
     },
     descriptor_set::{
         allocator::{DescriptorSetAllocator, StandardDescriptorSetAllocator},
@@ -125,6 +125,7 @@ fn get_data_image(
         ImageUsage {
             storage: true,
             transfer_src: true,
+            transfer_dst: true,
             ..ImageUsage::empty()
         },
         ImageCreateFlags::empty(),
@@ -174,6 +175,7 @@ fn get_command_buffer<A, S>(
     pipeline: Arc<ComputePipeline>,
     descriptor_set: S,
     dimensions: PhysicalSize<u32>,
+    render_image: Arc<StorageImage>,
 ) -> Arc<PrimaryAutoCommandBuffer<A::Alloc>>
 where
     A: CommandBufferAllocator,
@@ -186,13 +188,11 @@ where
     )
     .unwrap();
 
-    let dispatch_groups = (UVec3::from_array([dimensions.width, dimensions.height, 1]).as_vec3()
-        / 8.0)
-        .ceil()
-        .as_uvec3()
-        .to_array();
+    let dispatch_groups = [(dimensions.width as f32 / 8.0).ceil() as u32, (dimensions.height as f32 / 8.0).ceil() as u32, 8];
 
     builder
+        .clear_color_image(ClearColorImageInfo::image(render_image.clone()))
+        .unwrap()
         .bind_pipeline_compute(pipeline.clone())
         .bind_descriptor_sets(
             PipelineBindPoint::Compute,
@@ -345,72 +345,72 @@ fn main() {
         BVHNode {
             center: Vec3::new(-100020.0, 0.0, 0.0),
             radius: 1e5,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(1),
             parent: None,
         },
         BVHNode {
             center: Vec3::new(100020.0, 0.0, 0.0),
             radius: 1e5,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(2),
             parent: None,
         },
         BVHNode {
             center: Vec3::new(0.0, -100020.0, 0.0),
             radius: 1e5,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(3),
             parent: None,
         },
         BVHNode {
             center: Vec3::new(0.0, 100020.0, 0.0),
             radius: 1e5,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(3),
             parent: None,
         },
         BVHNode {
             center: Vec3::new(0.0, 0.0, -100020.0),
             radius: 1e5,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(3),
             parent: None,
         },
         BVHNode {
             center: Vec3::new(1.0, 0.0, 100020.0),
             radius: 1e5,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(3),
             parent: None,
         },
         BVHNode {
             center: Vec3::new(0.0, 0.0, 119.7),
             radius: 100.0,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(4),
             parent: None,
         },
         BVHNode {
             center: Vec3::new(-3.0, 1.0, -16.0),
             radius: 4.0,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(5),
             parent: None,
         },
         BVHNode {
             center: Vec3::new(4.0, 3.0, -11.0),
             radius: 2.0,
-            left: None,
-            right: None,
+            child: None,
+            next: None,
             leaf: Some(6),
             parent: None,
         },
@@ -482,12 +482,12 @@ fn main() {
         nodes: vec![BVH_OBJECTS[0].clone()],
     };
 
-    BVH_OBJECTS[1..].into_iter().for_each(|b| {
-        bvh.merge(BVH {
+    for b in BVH_OBJECTS[1..].into_iter() {
+        bvh.merge_in_place(BVH {
             head: 0,
             nodes: vec![b.clone().into()],
         });
-    });
+    };
 
     let bvh_buffer = DeviceLocalBuffer::<shaders::ty::BoundingVolumeHierarchy>::from_data(
         &memory_allocator,
@@ -619,6 +619,7 @@ fn main() {
         compute_pipeline.clone(),
         descriptor_set.clone(),
         dimensions,
+        data_image.clone(),
     );
 
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
@@ -843,6 +844,7 @@ fn main() {
                     compute_pipelines.clone(),
                     descriptor_sets.clone(),
                     dimensions,
+                    data_image.clone(),
                 );
             }
         }

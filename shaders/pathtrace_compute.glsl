@@ -2,17 +2,17 @@
 
 #include "compute_includes.glsl"
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 16) in;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 const uint RAYS_PER_SAMPLE = 4;
 
 struct Bounds { // node of a binary tree
     vec3 center;
     float radiusSquared;
-    uint left;
-    uint right;
-    uint leaf;
-    uint parent;
+    uint child;
+    uint next;
+    uint leaf; // bool is_leaf;
+    // uint is_real_node;
 };
 
 struct Ray {
@@ -35,7 +35,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
 
 layout(binding = 1) uniform restrict readonly BoundingVolumeHierarchy {
     uint head;
-    Bounds volumes[2 * MAX_OBJECTS];
+    Bounds nodes[2 * MAX_OBJECTS];
 } bvh;
 
 layout(binding = 2) uniform restrict readonly MutableData {
@@ -49,7 +49,7 @@ layout(binding = 3) uniform restrict readonly ConstantBuffer {
 
 layout(binding = 4) uniform sampler2D blueNoiseTexture;
 
-layout(binding = 5, rgba16f) uniform restrict writeonly image2D dataOutputImage;
+layout(binding = 5, rgba16f) uniform restrict image2D dataOutputImage;
 
 // pseudo random number generator
 // https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
@@ -62,7 +62,6 @@ vec3 rotate(vec4 q, vec3 v) {
     return v + 2.0 * cross(q.xyz, t);
 }
 
-// NOTE: dot(ray.direction, ray.normalOfObject) gives higher results when looking at surfaces pointing up/down
 vec3 randomDirection(vec3 normal, float index) {
     const float PI = 3.14159265;
     const float PI_2 = PI * 0.5;
@@ -96,45 +95,40 @@ void traceRayWithBVH(inout Ray ray) {
     ray.distanceToObject = 1e20;
     ray.nodeHit = 0;
 
-    // TODO: add a cpu-side limit to the number of layers
-    uint stack[32]; // max number of layers is 32 because of pre-set stack size
-    stack[0] = bvh.head;
-    int i = 0;
+    uint curr_idx = bvh.head;
 
-    while (i >= 0) {
-        Bounds node = bvh.volumes[stack[i]];
+    while (curr_idx != 0) {
+        Bounds curr = bvh.nodes[curr_idx];
 
         bool is_inside;
-        float d = distanceToObject(ray, node, is_inside);
+        float d = distanceToObject(ray, curr, is_inside);
         bool is_hit = d > 0.0 && d < ray.distanceToObject;
-
-        // not a leaf, move to left child
-        if (node.leaf == 0 && (is_inside || is_hit)) {
-            i += 1;
-            stack[i] = node.left;
+        
+        // not a leaf, move to child
+        if (curr.leaf == 0 && (is_inside || is_hit)) {
+            curr_idx = curr.child;
             continue;
         }
         
         if (is_hit) {
             // is a leaf, store data
             ray.distanceToObject = d;
-            ray.nodeHit = stack[i];
+            ray.nodeHit = curr_idx;
         }
 
-        // move to next node (to the right)
-        i -= 1;
-        stack[i] = bvh.volumes[stack[i]].right;
+        // move to next node
+        curr_idx = curr.next;
     }
 }
 
 void updateRay(inout Ray ray, float dirIdx) {
     ray.origin += ray.direction * ray.distanceToObject;
-    ray.normalOfObject = ray.origin - bvh.volumes[ray.nodeHit].center;
+    ray.normalOfObject = ray.origin - bvh.nodes[ray.nodeHit].center;
     ray.direction = randomDirection(ray.normalOfObject, dirIdx);
 }
 
 void shade(inout Ray ray, inout vec4 data) {
-    Material material = buf.mats[bvh.volumes[ray.nodeHit].leaf];
+    Material material = buf.mats[bvh.nodes[ray.nodeHit].leaf];
 
     data.rgb += ray.color * material.emittance;
     // rays are fired according to brdf, negating the need to calculate it here
@@ -155,7 +149,7 @@ void main() {
 
     Ray ray = Ray(rt.position, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
-    float dirIdx = rt.time * 32145.313 + fract(sin(dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233)))) * 43758.5453;
+    float dirIdx = rt.time * 32145.313 + fract(sin(dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233)) + gl_GlobalInvocationID.z)) * 43758.5453;
 
     traceRayWithBVH(ray);
     updateRay(ray, dirIdx);
@@ -170,21 +164,6 @@ void main() {
         shade(ray, data);
     }
 
-    // // screen space coordinate from global point
-    // vec3 p = normalize(rayDirect.origin - rt.previousPosition);
-    // vec3 r = rotate(rt.inversePreviousRotation, p);
-    // vec2 i = r.xz / r.y / cs.ratio; // [-1, 1]
-    // i = (i + 1.0) * viewport * 0.5; // [0, viewport]
-
-    // Ray prevRayDirect = Ray(rt.previousPosition, p, vec3(0.0), vec3(1.0), 0.0, 0);
-    // traceRayWithBVH(prevRayDirect);
-
-    // // TODO: improve acceptance criteria
-    // if (prevRayDirect.nodeHit == rayDirect.nodeHit && all(lessThan(i, viewport - 1.0)) && all(greaterThan(i, vec2(0.0)))) {
-
-    // }
-
-    if (gl_GlobalInvocationID.z == 1) {
-        imageStore(dataOutputImage, ipos, data);
-    }
+    vec4 loaded = imageLoad(dataOutputImage, ipos);
+    imageStore(dataOutputImage, ipos, data / 8.0);
 }
