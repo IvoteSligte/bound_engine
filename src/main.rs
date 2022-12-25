@@ -12,8 +12,8 @@ use vulkano::{
             CommandBufferAllocator, StandardCommandBufferAllocator,
             StandardCommandBufferAllocatorCreateInfo,
         },
-        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, PrimaryAutoCommandBuffer,
-        PrimaryCommandBufferAbstract, ClearColorImageInfo,
+        AutoCommandBufferBuilder, BlitImageInfo, ClearColorImageInfo, CommandBufferUsage,
+        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
     },
     descriptor_set::{
         allocator::{DescriptorSetAllocator, StandardDescriptorSetAllocator},
@@ -188,7 +188,11 @@ where
     )
     .unwrap();
 
-    let dispatch_groups = [(dimensions.width as f32 / 8.0).ceil() as u32, (dimensions.height as f32 / 8.0).ceil() as u32, 8];
+    let dispatch_groups = [
+        (dimensions.width as f32 / 8.0).ceil() as u32,
+        (dimensions.height as f32 / 8.0).ceil() as u32,
+        8,
+    ];
 
     builder
         .clear_color_image(ClearColorImageInfo::image(render_image.clone()))
@@ -336,10 +340,7 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
-    let compute_pipeline = get_compute_pipeline(
-        device.clone(),
-        pathtrace_compute_shader.clone(),
-    );
+    let compute_pipeline = get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
 
     const BVH_OBJECTS: [BVHNode; 9] = [
         BVHNode {
@@ -487,7 +488,7 @@ fn main() {
             head: 0,
             nodes: vec![b.clone().into()],
         });
-    };
+    }
 
     let bvh_buffer = DeviceLocalBuffer::<shaders::ty::BoundingVolumeHierarchy>::from_data(
         &memory_allocator,
@@ -532,27 +533,27 @@ fn main() {
     )
     .unwrap();
 
-    let blue_noise_raw_image = ImageReader::open("blue_noise\\HDR_RGBA_0_256x256.png")
+    let blue_noise_raw_image = ImageReader::open("blue_noise\\HDR_RGB_0_64x64.png")
         .unwrap()
         .decode()
-        .unwrap();
+        .unwrap()
+        .to_rgba16();
 
     let blue_noise_data = blue_noise_raw_image
-        .to_rgba16()
-        .chunks(4)
+        .chunks(2)
         .map(|v| {
             const M: f32 = u16::MAX as f32;
             [v[0], ((v[1] as f32 / M * 2.0 - 1.0).acos() / PI * M) as u16] // maps v[1] to cosine distribution
         })
-        .collect::<Vec<_>>()
-        .into_iter();
+        .collect::<Vec<_>>();
+
+    let blue_noise_data_len = blue_noise_data.len();
 
     let blue_noise_image = ImmutableImage::from_iter(
         &memory_allocator,
-        blue_noise_data,
-        ImageDimensions::Dim2d {
-            width: blue_noise_raw_image.width(),
-            height: blue_noise_raw_image.height(),
+        blue_noise_data.into_iter(),
+        ImageDimensions::Dim1d {
+            width: blue_noise_data_len as u32,
             array_layers: 1,
         },
         MipmapsCount::One,
@@ -819,16 +820,14 @@ fn main() {
                     .wait(None)
                     .unwrap();
 
-                let compute_pipelines = get_compute_pipeline(
-                    device.clone(),
-                    pathtrace_compute_shader.clone(),
-                );
+                let pipeline =
+                    get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
 
                 data_image = get_data_image(&memory_allocator, dimensions, queue_family_index);
 
                 let descriptor_sets = get_compute_descriptor_set(
                     &descriptor_set_allocator,
-                    compute_pipelines.clone(),
+                    pipeline.clone(),
                     real_time_buffer.clone(),
                     bvh_buffer.clone(),
                     mutable_buffer.clone(),
@@ -841,7 +840,7 @@ fn main() {
                 main_command_buffer = get_command_buffer(
                     &command_buffer_allocator,
                     queue.clone(),
-                    compute_pipelines.clone(),
+                    pipeline.clone(),
                     descriptor_sets.clone(),
                     dimensions,
                     data_image.clone(),
@@ -866,11 +865,7 @@ fn main() {
         )
         .unwrap();
         real_time_command_buffer_builder
-            .update_buffer(
-                Box::new(real_time_data),
-                real_time_buffer.clone(),
-                0,
-            )
+            .update_buffer(Box::new(real_time_data), real_time_buffer.clone(), 0)
             .unwrap();
         let real_time_command_buffer = real_time_command_buffer_builder.build().unwrap();
 

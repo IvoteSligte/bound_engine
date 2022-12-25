@@ -11,8 +11,7 @@ struct Bounds { // node of a binary tree
     float radiusSquared;
     uint child;
     uint next;
-    uint leaf; // bool is_leaf;
-    // uint is_real_node;
+    uint leaf;
 };
 
 struct Ray {
@@ -47,7 +46,7 @@ layout(binding = 3) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 4) uniform sampler2D blueNoiseTexture;
+layout(binding = 4) uniform sampler1D blueNoiseTexture;
 
 layout(binding = 5, rgba16f) uniform restrict image2D dataOutputImage;
 
@@ -62,14 +61,14 @@ vec3 rotate(vec4 q, vec3 v) {
     return v + 2.0 * cross(q.xyz, t);
 }
 
-vec3 randomDirection(vec3 normal, float index) {
+// generates a cosine-distributed random direction relative to the normal
+// the given normal does not need to be normalized
+vec3 randomDirection(vec3 normal, uint index) {
     const float PI = 3.14159265;
     const float PI_2 = PI * 0.5;
 
-    const float imageW = textureSize(blueNoiseTexture, 0).x;
-
-    vec2 offset = texture(blueNoiseTexture, vec2(index, index / imageW)).xy;
-    offset *= vec2(PI, PI_2);
+    const float imageS = textureSize(blueNoiseTexture, 0).x;
+    vec2 offset = texture(blueNoiseTexture, index / imageS).xy * vec2(PI, PI_2);
 
     // atan(a / b) gives a different, incorrent number than atan(a, b)
     // vec2(longitude, latitude) or vec2(phi, theta)
@@ -85,9 +84,10 @@ float distanceToObject(in Ray ray, in Bounds bnd, out bool is_inside) {
     vec3 v = bnd.center - ray.origin;
     float a = dot(ray.direction, v);
     float b = dot(v, v);
-    float d = bnd.radiusSquared + a * a - b;
     is_inside = b < bnd.radiusSquared;
-    if (d < 0.0) { return -1.0; }
+    // if (a < 0.0) { return 0.0; }
+    float d = bnd.radiusSquared + a * a - b;
+    if (d < 0.0) { return 0.0; }
     return a - sqrt(d);
 }
 
@@ -121,16 +121,16 @@ void traceRayWithBVH(inout Ray ray) {
     }
 }
 
-void updateRay(inout Ray ray, float dirIdx) {
+void updateRay(inout Ray ray, uint dirIdx) {
     ray.origin += ray.direction * ray.distanceToObject;
     ray.normalOfObject = ray.origin - bvh.nodes[ray.nodeHit].center;
     ray.direction = randomDirection(ray.normalOfObject, dirIdx);
 }
 
-void shade(inout Ray ray, inout vec4 data) {
+void shade(inout Ray ray, inout vec3 color) {
     Material material = buf.mats[bvh.nodes[ray.nodeHit].leaf];
 
-    data.rgb += ray.color * material.emittance;
+    color += ray.color * material.emittance;
     // rays are fired according to brdf, negating the need to calculate it here
     ray.color *= material.reflectance;
 }
@@ -149,21 +149,21 @@ void main() {
 
     Ray ray = Ray(rt.position, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
-    float dirIdx = rt.time * 32145.313 + fract(sin(dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233)) + gl_GlobalInvocationID.z)) * 43758.5453;
+    uint dirIdx = uint(fract(sin(dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233)) + gl_GlobalInvocationID.z + rt.time)) * 43758.5453);
 
     traceRayWithBVH(ray);
     updateRay(ray, dirIdx);
-    shade(ray, data);
+    shade(ray, data.rgb);
 
     Ray rayDirect = ray;
 
     for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
-        dirIdx += 1.0;
+        dirIdx += 1;
         traceRayWithBVH(ray);
         updateRay(ray, dirIdx);
-        shade(ray, data);
+        shade(ray, data.rgb);
     }
 
     vec4 loaded = imageLoad(dataOutputImage, ipos);
-    imageStore(dataOutputImage, ipos, data / 8.0);
+    imageStore(dataOutputImage, ipos, vec4(loaded.rgb + data.rgb / 8.0, 0.0));
 }
