@@ -537,13 +537,12 @@ fn main() {
         .unwrap()
         .decode()
         .unwrap()
-        .to_rgba16();
+        .to_rgba32f();
 
     let blue_noise_data = blue_noise_raw_image
         .chunks(2)
         .map(|v| {
-            const M: f32 = u16::MAX as f32;
-            [v[0], ((v[1] as f32 / M * 2.0 - 1.0).acos() / PI * M) as u16] // maps v[1] to cosine distribution
+            [v[0] * 2.0 * PI, (v[1] * 2.0 - 1.0).acos() - PI / 2.0] // maps v[1] to cosine distribution
         })
         .collect::<Vec<_>>();
 
@@ -557,7 +556,7 @@ fn main() {
             array_layers: 1,
         },
         MipmapsCount::One,
-        Format::R16G16_SNORM,
+        Format::R32G32_SFLOAT,
         &mut alloc_command_buffer_builder,
     )
     .unwrap();

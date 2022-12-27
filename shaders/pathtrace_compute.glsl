@@ -64,11 +64,8 @@ vec3 rotate(vec4 q, vec3 v) {
 // generates a cosine-distributed random direction relative to the normal
 // the given normal does not need to be normalized
 vec3 randomDirection(vec3 normal, uint index) {
-    const float PI = 3.14159265;
-    const float PI_2 = PI * 0.5;
-
     const float imageS = textureSize(blueNoiseTexture, 0).x;
-    vec2 offset = texture(blueNoiseTexture, index / imageS).xy * vec2(PI, PI_2);
+    vec2 offset = texture(blueNoiseTexture, index / imageS).xy;
 
     // atan(a / b) gives a different, incorrent number than atan(a, b)
     // vec2(longitude, latitude) or vec2(phi, theta)
@@ -82,13 +79,12 @@ vec3 randomDirection(vec3 normal, uint index) {
 
 float distanceToObject(in Ray ray, in Bounds bnd, out bool is_inside) {
     vec3 v = bnd.center - ray.origin;
-    float a = dot(ray.direction, v);
-    float b = dot(v, v);
-    is_inside = b < bnd.radiusSquared;
-    // if (a < 0.0) { return 0.0; }
-    float d = bnd.radiusSquared + a * a - b;
+    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    is_inside = m.y < bnd.radiusSquared;
+    // if (a < 0.0) { return 0.0; } // if behind, return
+    float d = bnd.radiusSquared + m.x * m.x - m.y;
     if (d < 0.0) { return 0.0; }
-    return a - sqrt(d);
+    return m.x - sqrt(d);
 }
 
 void traceRayWithBVH(inout Ray ray) {

@@ -10,11 +10,11 @@ path = "C:/Users/gebruiker/IdeaProjects/winit_event_helper"
 features = ["save_device_inputs"]
 
 [dependencies]
-vulkano = "0.32.1"
+vulkano = "0.32.3"
 vulkano-shaders = "0.32.0"
 vulkano-win = "0.32.0"
-bytemuck = "1.12.1"
-winit = "0.27.2"
+bytemuck = "1.12.3"
+winit = "0.27.5"
 glam = "0.22.0"
 fps_counter = "2.0.0"
-image = "0.24.4"
+image = "0.24.5"
