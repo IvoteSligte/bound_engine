@@ -4,10 +4,17 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-const uint RAYS_PER_SAMPLE = 4;
+const uint MAX_OBJECTS = 16;
+const uint MAX_MATERIALS = 8;
+const uint RAYS_PER_SAMPLE = 6;
 
-struct Bounds { // node of a binary tree
-    vec3 center;
+struct Material {
+    vec3 reflectance;
+    vec3 emittance;
+};
+
+struct Bounds { // node of a bvh
+    vec3 position;
     float radiusSquared;
     uint child;
     uint next;
@@ -15,10 +22,10 @@ struct Bounds { // node of a binary tree
 };
 
 struct Ray {
-    vec3 origin; // origin
-    vec3 direction; // direction
-    vec3 normalOfObject; // normalOfObject at origin (or vec3(-0.0))
-    vec3 color; // color left after previous absorptions
+    vec3 origin;
+    vec3 direction;
+    vec3 normalOfObject;
+    vec3 colorLeft;
     float distanceToObject;
     uint nodeHit;
 };
@@ -32,8 +39,8 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 previousPosition; // previous position
 } rt;
 
-layout(binding = 1) uniform restrict readonly BoundingVolumeHierarchy {
-    uint head;
+layout(binding = 1) uniform restrict readonly GpuBVH {
+    uint root;
     Bounds nodes[2 * MAX_OBJECTS];
 } bvh;
 
@@ -46,52 +53,47 @@ layout(binding = 3) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 4) uniform sampler1D blueNoiseTexture;
-
-layout(binding = 5, rgba16f) uniform restrict image2D dataOutputImage;
-
-// pseudo random number generator
-// https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
-float rand(vec2 co){
-    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
-}
+layout(binding = 4, rgba16f) uniform restrict image2D dataOutputImage;
 
 vec3 rotate(vec4 q, vec3 v) {
-    vec3 t = cross(q.xyz, v) + q.w * v;
-    return v + 2.0 * cross(q.xyz, t);
+    vec3 t = q.w * v + cross(q.xyz, v);
+    return 2.0 * cross(q.xyz, t) + v;
 }
 
+// FIXME: weird angles (visible with red light)
+// FIXME: inverse cosine distribution ???
 // generates a cosine-distributed random direction relative to the normal
 // the given normal does not need to be normalized
-vec3 randomDirection(vec3 normal, uint index) {
-    const float imageS = textureSize(blueNoiseTexture, 0).x;
-    vec2 offset = texture(blueNoiseTexture, index / imageS).xy;
+vec3 randomDirection(vec3 normal, inout uvec4 seeds) {
+    const float OFFSET_2_CORRECTION = 3.14159265 * 2.0 * HYBRID_TAUS_NORMALIZER;
+    // angle offsets
+    float o1 = HybridTaus(seeds);
+    float o2 = OFFSET_2_CORRECTION * HybridTausUnnormalized(seeds);
 
-    // atan(a / b) gives a different, incorrent number than atan(a, b)
-    // vec2(longitude, latitude) or vec2(phi, theta)
-    vec2 t = vec2(atan(normal.y, normal.x), atan(normal.z, length(normal.xy))) + offset.xy;
+    vec3 v = vec3(o1, normal.xz);
+    vec3 sq = sqrt((-v * v) + 1.0);
 
-    vec2 s = sin(t);
-    vec2 c = cos(t);
+    // longitude
+    vec2 phi = vec2(normal.x, sq.y) * mat2x2(vec2(o1, sq.x), vec2(sq.x, -o1));
+    // latitude
+    vec2 theta = vec2(sq.z, normal.z) * mat2x2(vec2(sin(o2), cos(o2)), vec2(cos(o2), -sin(o2)));
 
-    return vec3(c.x*c.y, s.x*c.y, s.y);
+    return vec3(phi.yx*theta.y, theta.x);
 }
 
-float distanceToObject(in Ray ray, in Bounds bnd, out bool is_inside) {
-    vec3 v = bnd.center - ray.origin;
+float distanceToObject(Ray ray, Bounds bnd, out bool is_inside) {
+    vec3 v = bnd.position - ray.origin;
     vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
     is_inside = m.y < bnd.radiusSquared;
-    // if (a < 0.0) { return 0.0; } // if behind, return
-    float d = bnd.radiusSquared + m.x * m.x - m.y;
-    if (d < 0.0) { return 0.0; }
-    return m.x - sqrt(d);
+    float d = dot(vec3((m.x * m.x), -m.y, bnd.radiusSquared), vec3(1.0));
+    return d < 0.0 ? 0.0 : m.x - sqrt(d);
 }
 
 void traceRayWithBVH(inout Ray ray) {
     ray.distanceToObject = 1e20;
     ray.nodeHit = 0;
 
-    uint curr_idx = bvh.head;
+    uint curr_idx = bvh.root;
 
     while (curr_idx != 0) {
         Bounds curr = bvh.nodes[curr_idx];
@@ -99,13 +101,13 @@ void traceRayWithBVH(inout Ray ray) {
         bool is_inside;
         float d = distanceToObject(ray, curr, is_inside);
         bool is_hit = d > 0.0 && d < ray.distanceToObject;
-        
+
         // not a leaf, move to child
         if (curr.leaf == 0 && (is_inside || is_hit)) {
             curr_idx = curr.child;
             continue;
         }
-        
+
         if (is_hit) {
             // is a leaf, store data
             ray.distanceToObject = d;
@@ -117,18 +119,18 @@ void traceRayWithBVH(inout Ray ray) {
     }
 }
 
-void updateRay(inout Ray ray, uint dirIdx) {
-    ray.origin += ray.direction * ray.distanceToObject;
-    ray.normalOfObject = ray.origin - bvh.nodes[ray.nodeHit].center;
-    ray.direction = randomDirection(ray.normalOfObject, dirIdx);
+void updateRay(inout Ray ray, inout uvec4 seeds) {
+    ray.origin = (ray.direction * ray.distanceToObject) + ray.origin;
+    ray.normalOfObject = normalize(ray.origin - bvh.nodes[ray.nodeHit].position);
+    ray.direction = randomDirection(ray.normalOfObject, seeds);
 }
 
 void shade(inout Ray ray, inout vec3 color) {
     Material material = buf.mats[bvh.nodes[ray.nodeHit].leaf];
 
-    color += ray.color * material.emittance;
+    color = (ray.colorLeft * material.emittance) + color;
     // rays are fired according to brdf, negating the need to calculate it here
-    ray.color *= material.reflectance;
+    ray.colorLeft *= material.reflectance;
 }
 
 void main() {
@@ -136,30 +138,36 @@ void main() {
     const ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
 
     // maps FragCoord to xy range [-1.0, 1.0]
-    vec2 normCoord = gl_GlobalInvocationID.xy * 2.0 / viewport - 1.0;
+    vec2 normCoord = ipos * (2.0 / viewport) - 1.0;
     // maps normCoord to a different range (e.g. for FOV and non-square windows)
     normCoord *= cs.ratio;
 
     vec4 data = vec4(0.0);
     vec3 viewDir = rotate(rt.rotation, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
 
+    // FIXME: weird edges in rendering caused by a change in angle (lighting in said edges changes based on position)
     Ray ray = Ray(rt.position, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
-    uint dirIdx = uint(fract(sin(dot(gl_GlobalInvocationID.xy, vec2(12.9898, 78.233)) + gl_GlobalInvocationID.z + rt.time)) * 43758.5453);
+    const uvec4 baked_seeds = uvec4(
+        gl_GlobalInvocationID.x * gl_GlobalInvocationID.y * 43217 + gl_GlobalInvocationID.z * 10 + 128 * 1,
+        gl_GlobalInvocationID.x * gl_GlobalInvocationID.y * 73574 + gl_GlobalInvocationID.z * 5 + 128 * 57,
+        gl_GlobalInvocationID.x * gl_GlobalInvocationID.y * 57895 + gl_GlobalInvocationID.z * 71 + 128 * 6,
+        gl_GlobalInvocationID.x * gl_GlobalInvocationID.y * 11581 + gl_GlobalInvocationID.z * 12 + 128 * 11
+    );
+
+    uvec4 seeds = baked_seeds;
 
     traceRayWithBVH(ray);
-    updateRay(ray, dirIdx);
+    updateRay(ray, seeds);
     shade(ray, data.rgb);
 
-    Ray rayDirect = ray;
-
     for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
-        dirIdx += 1;
         traceRayWithBVH(ray);
-        updateRay(ray, dirIdx);
+        updateRay(ray, seeds);
         shade(ray, data.rgb);
     }
 
+    const float ALPHA = 1.0 / 32.0;
     vec4 loaded = imageLoad(dataOutputImage, ipos);
-    imageStore(dataOutputImage, ipos, vec4(loaded.rgb + data.rgb / 8.0, 0.0));
+    imageStore(dataOutputImage, ipos, vec4(data.rgb * ALPHA + loaded.rgb, 0.0));
 }

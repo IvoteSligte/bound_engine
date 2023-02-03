@@ -1,10 +1,9 @@
-mod bounding_volume_hierarchy;
+mod bvh;
 
 use std::{f32::consts::PI, sync::Arc};
 
 use fps_counter::FPSCounter;
 use glam::{DVec2, Quat, UVec2, Vec2, Vec3};
-use image::io::Reader as ImageReader;
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
@@ -25,13 +24,12 @@ use vulkano::{
     },
     format::Format,
     image::{
-        view::ImageView, ImageAccess, ImageCreateFlags, ImageDimensions, ImageUsage,
-        ImmutableImage, MipmapsCount, StorageImage,
+        view::ImageView, ImageCreateFlags, ImageDimensions, ImageUsage, StorageImage,
+        SwapchainImage,
     },
     instance::{Instance, InstanceCreateInfo},
     memory::allocator::{MemoryAllocator, StandardMemoryAllocator},
     pipeline::{graphics::viewport::Viewport, ComputePipeline, Pipeline, PipelineBindPoint},
-    sampler::{Sampler, SamplerCreateInfo},
     shader::ShaderModule,
     swapchain::{
         self, AcquireError, Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
@@ -42,13 +40,13 @@ use vulkano::{
 };
 use winit::{
     dpi::PhysicalSize,
-    event::VirtualKeyCode,
     event_loop::{ControlFlow, EventLoop},
-    window::{CursorGrabMode, Fullscreen, Window, WindowBuilder},
+    window::{CursorGrabMode, Window, WindowBuilder},
 };
-use winit_event_helper::{ElementState2, EventHelper};
+use winit_event_helper::*;
+use winit_fullscreen::WindowFullScreen;
 
-use crate::bounding_volume_hierarchy::{BVHNode, BVH};
+use crate::bvh::{CpuNode, CpuBVH};
 
 // TODO: fix green showing up on image occasionally after switching resolution
 mod shaders {
@@ -63,6 +61,127 @@ mod shaders {
         include: ["compute_includes.glsl"]
     }
 }
+
+const BVH_OBJECTS: [CpuNode; 9] = [
+    CpuNode {
+        position: Vec3::new(-10020.0, 0.0, 0.0),
+        radius: 1e4,
+        child: None,
+        next: None,
+        leaf: Some(1),
+        parent: None,
+    },
+    CpuNode {
+        position: Vec3::new(10020.0, 0.0, 0.0),
+        radius: 1e4,
+        child: None,
+        next: None,
+        leaf: Some(2),
+        parent: None,
+    },
+    CpuNode {
+        position: Vec3::new(0.0, -10020.0, 0.0),
+        radius: 1e4,
+        child: None,
+        next: None,
+        leaf: Some(3),
+        parent: None,
+    },
+    CpuNode {
+        position: Vec3::new(0.0, 10020.0, 0.0),
+        radius: 1e4,
+        child: None,
+        next: None,
+        leaf: Some(3),
+        parent: None,
+    },
+    CpuNode {
+        position: Vec3::new(0.0, 0.0, -10020.0),
+        radius: 1e4,
+        child: None,
+        next: None,
+        leaf: Some(3),
+        parent: None,
+    },
+    CpuNode {
+        position: Vec3::new(0.0, 0.0, 10020.0),
+        radius: 1e4,
+        child: None,
+        next: None,
+        leaf: Some(3),
+        parent: None,
+    },
+    CpuNode {
+        position: Vec3::new(0.0, 0.0, 119.7),
+        radius: 100.0,
+        child: None,
+        next: None,
+        leaf: Some(4),
+        parent: None,
+    },
+    CpuNode {
+        position: Vec3::new(-3.0, 1.0, -16.0),
+        radius: 4.0,
+        child: None,
+        next: None,
+        leaf: Some(5),
+        parent: None,
+    },
+    CpuNode {
+        position: Vec3::new(4.0, 3.0, -11.0),
+        radius: 2.0,
+        child: None,
+        next: None,
+        leaf: Some(6),
+        parent: None,
+    },
+];
+
+const MATERIALS: [shaders::ty::Material; 7] = [
+    // dummy material
+    shaders::ty::Material {
+        reflectance: [0.0; 3],
+        emittance: [0.0; 3],
+        _dummy0: [0u8; 4],
+        _dummy1: [0u8; 4],
+    },
+    shaders::ty::Material {
+        reflectance: [0.95, 0.1, 0.1],
+        emittance: [0.0; 3],
+        _dummy0: [0u8; 4],
+        _dummy1: [0u8; 4],
+    },
+    shaders::ty::Material {
+        reflectance: [0.1, 0.95, 0.1],
+        emittance: [0.0; 3],
+        _dummy0: [0u8; 4],
+        _dummy1: [0u8; 4],
+    },
+    shaders::ty::Material {
+        reflectance: [0.95; 3],
+        emittance: [0.0; 3],
+        _dummy0: [0u8; 4],
+        _dummy1: [0u8; 4],
+    },
+    shaders::ty::Material {
+        reflectance: [0.0; 3],
+        emittance: [2.0; 3],
+        _dummy0: [0u8; 4],
+        _dummy1: [0u8; 4],
+    },
+    shaders::ty::Material {
+        reflectance: [0.7; 3],
+        emittance: [0.0; 3],
+        _dummy0: [0u8; 4],
+        _dummy1: [0u8; 4],
+    },
+    shaders::ty::Material {
+        reflectance: [0.5; 3],
+        emittance: [10.0, 0.0, 0.0],
+        _dummy0: [0u8; 4],
+        _dummy1: [0u8; 4],
+    },
+];
 
 fn select_physical_device<'a>(
     instance: &'a Arc<Instance>,
@@ -142,15 +261,11 @@ fn get_compute_descriptor_set<A>(
     mutable_buffer: Arc<dyn BufferAccess>,
     constant_buffer: Arc<dyn BufferAccess>,
     data_image: Arc<StorageImage>,
-    blue_noise_image: Arc<dyn ImageAccess>,
-    sampler: Arc<Sampler>,
 ) -> Arc<PersistentDescriptorSet<A::Alloc>>
 where
     A: DescriptorSetAllocator + ?Sized,
 {
     let data_image_view = ImageView::new_default(data_image.clone()).unwrap();
-
-    let blue_noise_image_view = ImageView::new_default(blue_noise_image).unwrap();
 
     let pathtrace_descriptor_set = PersistentDescriptorSet::new(
         allocator,
@@ -160,8 +275,7 @@ where
             WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
             WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
             WriteDescriptorSet::buffer(3, constant_buffer.clone()),
-            WriteDescriptorSet::image_view_sampler(4, blue_noise_image_view, sampler.clone()),
-            WriteDescriptorSet::image_view(5, data_image_view.clone()),
+            WriteDescriptorSet::image_view(4, data_image_view.clone()),
         ],
     )
     .unwrap();
@@ -169,7 +283,7 @@ where
     pathtrace_descriptor_set
 }
 
-fn get_command_buffer<A, S>(
+fn get_main_command_buffer<A, S>(
     allocator: &A,
     queue: Arc<Queue>,
     pipeline: Arc<ComputePipeline>,
@@ -184,14 +298,16 @@ where
     let mut builder = AutoCommandBufferBuilder::primary(
         allocator,
         queue.queue_family_index(),
-        CommandBufferUsage::SimultaneousUse,
+        CommandBufferUsage::SimultaneousUse, // FIXME: supposed to be CommandBufferUsage::MultipleUse
     )
     .unwrap();
+
+    const SAMPLES_PER_PIXEL: u32 = 16;
 
     let dispatch_groups = [
         (dimensions.width as f32 / 8.0).ceil() as u32,
         (dimensions.height as f32 / 8.0).ceil() as u32,
-        8,
+        SAMPLES_PER_PIXEL,
     ];
 
     builder
@@ -208,6 +324,32 @@ where
         .unwrap();
 
     Arc::new(builder.build().unwrap())
+}
+
+fn get_blit_command_buffers<A>(
+    allocator: &A,
+    queue: Arc<Queue>,
+    data_image: Arc<StorageImage>,
+    swapchain_images: Vec<Arc<SwapchainImage>>,
+) -> Vec<Arc<PrimaryAutoCommandBuffer<A::Alloc>>>
+where
+    A: CommandBufferAllocator,
+{
+    swapchain_images
+        .into_iter()
+        .map(|swapchain_image| {
+            let mut blit_command_buffer_builder = AutoCommandBufferBuilder::primary(
+                allocator,
+                queue.queue_family_index(),
+                CommandBufferUsage::MultipleSubmit,
+            )
+            .unwrap();
+            blit_command_buffer_builder
+                .blit_image(BlitImageInfo::images(data_image.clone(), swapchain_image))
+                .unwrap();
+            Arc::new(blit_command_buffer_builder.build().unwrap())
+        })
+        .collect()
 }
 
 mod rotation {
@@ -235,7 +377,7 @@ struct Data {
     /// absolute rotation around the x and z axes
     rotation: Vec2,
     quit: bool,
-    speed_multiplier: f32,
+    movement_multiplier: f32,
     rotation_multiplier: f32,
 }
 
@@ -272,8 +414,8 @@ fn main() {
     let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
     let surface = vulkano_win::create_surface_from_winit(window.clone(), instance.clone()).unwrap();
     // BUG: spamming any key on application startup will make the window invisible
+    window.set_visible(true);
     window.set_cursor_visible(false);
-    window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
     window.set_resizable(false);
 
     let device_extensions = DeviceExtensions {
@@ -316,7 +458,7 @@ fn main() {
         .unwrap()
         .0;
 
-    let (mut swapchain, mut swapchain_images) = Swapchain::new(
+    let (mut swapchain, swapchain_images) = Swapchain::new(
         device.clone(),
         surface.clone(),
         SwapchainCreateInfo {
@@ -342,127 +484,6 @@ fn main() {
 
     let compute_pipeline = get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
 
-    const BVH_OBJECTS: [BVHNode; 9] = [
-        BVHNode {
-            center: Vec3::new(-100020.0, 0.0, 0.0),
-            radius: 1e5,
-            child: None,
-            next: None,
-            leaf: Some(1),
-            parent: None,
-        },
-        BVHNode {
-            center: Vec3::new(100020.0, 0.0, 0.0),
-            radius: 1e5,
-            child: None,
-            next: None,
-            leaf: Some(2),
-            parent: None,
-        },
-        BVHNode {
-            center: Vec3::new(0.0, -100020.0, 0.0),
-            radius: 1e5,
-            child: None,
-            next: None,
-            leaf: Some(3),
-            parent: None,
-        },
-        BVHNode {
-            center: Vec3::new(0.0, 100020.0, 0.0),
-            radius: 1e5,
-            child: None,
-            next: None,
-            leaf: Some(3),
-            parent: None,
-        },
-        BVHNode {
-            center: Vec3::new(0.0, 0.0, -100020.0),
-            radius: 1e5,
-            child: None,
-            next: None,
-            leaf: Some(3),
-            parent: None,
-        },
-        BVHNode {
-            center: Vec3::new(1.0, 0.0, 100020.0),
-            radius: 1e5,
-            child: None,
-            next: None,
-            leaf: Some(3),
-            parent: None,
-        },
-        BVHNode {
-            center: Vec3::new(0.0, 0.0, 119.7),
-            radius: 100.0,
-            child: None,
-            next: None,
-            leaf: Some(4),
-            parent: None,
-        },
-        BVHNode {
-            center: Vec3::new(-3.0, 1.0, -16.0),
-            radius: 4.0,
-            child: None,
-            next: None,
-            leaf: Some(5),
-            parent: None,
-        },
-        BVHNode {
-            center: Vec3::new(4.0, 3.0, -11.0),
-            radius: 2.0,
-            child: None,
-            next: None,
-            leaf: Some(6),
-            parent: None,
-        },
-    ];
-
-    let materials = [
-        // dummy material
-        shaders::ty::Material {
-            reflectance: [0.0; 3],
-            emittance: [0.0; 3],
-            _dummy0: [0u8; 4],
-            _dummy1: [0u8; 4],
-        },
-        shaders::ty::Material {
-            reflectance: [0.95, 0.1, 0.1],
-            emittance: [0.0; 3],
-            _dummy0: [0u8; 4],
-            _dummy1: [0u8; 4],
-        },
-        shaders::ty::Material {
-            reflectance: [0.1, 0.95, 0.1],
-            emittance: [0.0; 3],
-            _dummy0: [0u8; 4],
-            _dummy1: [0u8; 4],
-        },
-        shaders::ty::Material {
-            reflectance: [0.95; 3],
-            emittance: [0.0; 3],
-            _dummy0: [0u8; 4],
-            _dummy1: [0u8; 4],
-        },
-        shaders::ty::Material {
-            reflectance: [0.0; 3],
-            emittance: [2.0; 3],
-            _dummy0: [0u8; 4],
-            _dummy1: [0u8; 4],
-        },
-        shaders::ty::Material {
-            reflectance: [0.7; 3],
-            emittance: [0.0; 3],
-            _dummy0: [0u8; 4],
-            _dummy1: [0u8; 4],
-        },
-        shaders::ty::Material {
-            reflectance: [0.5; 3],
-            emittance: [0.5, 0.0, 0.0],
-            _dummy0: [0u8; 4],
-            _dummy1: [0u8; 4],
-        },
-    ];
-
     let command_buffer_allocator = StandardCommandBufferAllocator::new(
         device.clone(),
         StandardCommandBufferAllocatorCreateInfo {
@@ -478,19 +499,16 @@ fn main() {
     )
     .unwrap();
 
-    let mut bvh = BVH {
-        head: 0,
-        nodes: vec![BVH_OBJECTS[0].clone()],
-    };
+    let mut bvh: CpuBVH = BVH_OBJECTS[0].clone().into();
 
-    for b in BVH_OBJECTS[1..].into_iter() {
-        bvh.merge_in_place(BVH {
-            head: 0,
-            nodes: vec![b.clone().into()],
-        });
+    for n in BVH_OBJECTS[1..].iter() {
+        bvh.merge_in_place(n.clone().into());
     }
 
-    let bvh_buffer = DeviceLocalBuffer::<shaders::ty::BoundingVolumeHierarchy>::from_data(
+    // DEBUG
+    bvh.graphify();
+
+    let bvh_buffer = DeviceLocalBuffer::<shaders::ty::GpuBVH>::from_data(
         &memory_allocator,
         bvh.into(),
         BufferUsage {
@@ -504,7 +522,7 @@ fn main() {
     let mut mutable_data = shaders::ty::MutableData {
         ..Default::default()
     };
-    mutable_data.mats[..materials.len()].copy_from_slice(&materials);
+    mutable_data.mats[..MATERIALS.len()].copy_from_slice(&MATERIALS);
 
     let mutable_buffer = DeviceLocalBuffer::from_data(
         &memory_allocator,
@@ -529,34 +547,6 @@ fn main() {
             uniform_buffer: true,
             ..BufferUsage::empty()
         },
-        &mut alloc_command_buffer_builder,
-    )
-    .unwrap();
-
-    let blue_noise_raw_image = ImageReader::open("blue_noise\\HDR_RGB_0_64x64.png")
-        .unwrap()
-        .decode()
-        .unwrap()
-        .to_rgba32f();
-
-    let blue_noise_data = blue_noise_raw_image
-        .chunks(2)
-        .map(|v| {
-            [v[0] * 2.0 * PI, (v[1] * 2.0 - 1.0).acos() - PI / 2.0] // maps v[1] to cosine distribution
-        })
-        .collect::<Vec<_>>();
-
-    let blue_noise_data_len = blue_noise_data.len();
-
-    let blue_noise_image = ImmutableImage::from_iter(
-        &memory_allocator,
-        blue_noise_data.into_iter(),
-        ImageDimensions::Dim1d {
-            width: blue_noise_data_len as u32,
-            array_layers: 1,
-        },
-        MipmapsCount::One,
-        Format::R32G32_SFLOAT,
         &mut alloc_command_buffer_builder,
     )
     .unwrap();
@@ -592,13 +582,7 @@ fn main() {
         .wait(None)
         .unwrap();
 
-    let sampler = Sampler::new(
-        device.clone(),
-        SamplerCreateInfo::simple_repeat_linear_no_mipmap(),
-    )
-    .unwrap();
-
-    let mut data_image = get_data_image(&memory_allocator, dimensions, queue_family_index);
+    let data_image = get_data_image(&memory_allocator, dimensions, queue_family_index);
 
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
     let descriptor_set = get_compute_descriptor_set(
@@ -609,17 +593,22 @@ fn main() {
         mutable_buffer.clone(),
         constant_buffer.clone(),
         data_image.clone(),
-        blue_noise_image.clone(),
-        sampler.clone(),
     );
 
-    let mut main_command_buffer = get_command_buffer(
+    let mut main_command_buffer = get_main_command_buffer(
         &command_buffer_allocator,
         queue.clone(),
         compute_pipeline.clone(),
         descriptor_set.clone(),
         dimensions,
         data_image.clone(),
+    );
+
+    let mut blit_command_buffers = get_blit_command_buffers(
+        &command_buffer_allocator,
+        queue.clone(),
+        data_image.clone(),
+        swapchain_images.clone(),
     );
 
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
@@ -635,67 +624,67 @@ fn main() {
         delta_position: Vec3::ZERO,
         rotation: Vec2::ZERO,
         quit: false,
-        speed_multiplier: 25.0,
+        movement_multiplier: 25.0,
         rotation_multiplier: 1.0,
     });
 
-    let exit = |data: &mut EventHelper<Data>| data.quit = true;
-    eh.window_close_requested(exit);
-    eh.window_keyboard_input(VirtualKeyCode::Escape, ElementState2::Pressed, exit);
+    let mut callbacks = Callbacks::<Data>::new();
 
-    eh.device_mouse_motion(|data, (dx, dy)| data.cursor_delta += DVec2::new(dx, dy).as_vec2());
+    callbacks.window.quit(|eh, _| eh.quit = true);
+    callbacks.window.inputs.just_pressed(KeyCode::Escape, |eh| {
+        eh.quit = true;
+    });
 
-    eh.window_focused(|data, focused| {
-        data.window_frozen = !focused;
+    callbacks
+        .device
+        .mouse_motion(|eh, (dx, dy)| eh.cursor_delta += DVec2::new(dx, dy).as_vec2());
+
+    callbacks.window.focused(|eh, focused| {
+        eh.window_frozen = !focused;
         if focused {
-            data.window
-                .set_cursor_grab(CursorGrabMode::Confined)
-                .unwrap();
+            eh.window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
         } else {
-            data.window.set_cursor_grab(CursorGrabMode::None).unwrap();
+            eh.window.set_cursor_grab(CursorGrabMode::None).unwrap();
         }
     });
 
-    eh.window_resized(|data, mut size| {
-        data.window_frozen = size.width == 0 || size.height == 0;
-        data.window_resized = true;
+    callbacks.window.resized(|eh, mut size| {
+        eh.window_frozen = size.width == 0 || size.height == 0;
+        eh.window_resized = true;
 
         if size.width < size.height {
             size.height = size.width;
-            data.window.set_inner_size(size);
+            eh.window.set_inner_size(size);
         }
 
-        data.dimensions = UVec2::new(size.width, size.height).as_vec2();
+        eh.dimensions = UVec2::new(size.width, size.height).as_vec2();
     });
 
-    eh.window_keyboard_input(
-        VirtualKeyCode::F11,
-        ElementState2::Pressed,
-        |data| match data.window.fullscreen() {
-            Some(_) => data.window.set_fullscreen(None),
-            None => data
-                .window
-                .set_fullscreen(Some(Fullscreen::Borderless(None))),
-        },
-    );
+    callbacks
+        .window
+        .inputs
+        .just_pressed(KeyCode::F11, |eh| eh.window.toggle_fullscreen());
 
     // DEBUG
-    eh.window_keyboard_input(VirtualKeyCode::Equals, ElementState2::Held, |data| {
-        if data.key_held(VirtualKeyCode::RAlt).is_some() {
-            data.rotation_multiplier *= 2.0;
+    callbacks.window.inputs.just_pressed(KeyCode::Equals, |eh| {
+        if eh.data.window.inputs.pressed(KeyCode::RAlt) {
+            eh.rotation_multiplier *= 2.0;
+            println!("{}", eh.rotation_multiplier);
         } else {
-            data.speed_multiplier *= 2.0;
+            eh.movement_multiplier *= 2.0;
+            println!("{}", eh.movement_multiplier);
         }
-        println!("{}", data.speed_multiplier);
     });
+
     // DEBUG
-    eh.window_keyboard_input(VirtualKeyCode::Minus, ElementState2::Held, |data| {
-        if data.key_held(VirtualKeyCode::RAlt).is_some() {
-            data.rotation_multiplier /= 2.0;
+    callbacks.window.inputs.just_pressed(KeyCode::Minus, |eh| {
+        if eh.data.window.inputs.pressed(KeyCode::RAlt) {
+            eh.rotation_multiplier /= 2.0;
+            println!("{}", eh.rotation_multiplier);
         } else {
-            data.speed_multiplier /= 2.0;
+            eh.movement_multiplier /= 2.0;
+            println!("{}", eh.movement_multiplier);
         }
-        println!("{}", data.speed_multiplier);
     });
 
     let mut fps_counter = FPSCounter::new();
@@ -707,8 +696,12 @@ fn main() {
             *control_flow = ControlFlow::Exit;
         }
 
-        if !eh.update(&event) || eh.window_frozen {
+        if !eh.update(&callbacks, &event) || eh.window_frozen {
             return;
+        }
+
+        if eh.update_count() == 0 {
+            eh.window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
         }
 
         println!("{}", fps_counter.tick());
@@ -718,38 +711,41 @@ fn main() {
 
         eh.cursor_delta = Vec2::ZERO;
 
-        // TODO: make movement independent of framerate
+        let inputs = eh.data.window.inputs.clone();
+        let delta_time = eh.time_since_previous_step().as_secs_f32();
+        let delta_rot = delta_time * eh.rotation_multiplier;
+        let delta_mov = delta_time * eh.movement_multiplier;
 
-        if eh.key_held(VirtualKeyCode::Left).is_some() {
-            eh.rotation.x -= eh.secs_since_last_update() as f32 * eh.rotation_multiplier;
+        if inputs.pressed(KeyCode::Left) {
+            eh.rotation.x -= delta_rot;
         }
-        if eh.key_held(VirtualKeyCode::Right).is_some() {
-            eh.rotation.x += eh.secs_since_last_update() as f32 * eh.rotation_multiplier;
+        if inputs.pressed(KeyCode::Right) {
+            eh.rotation.x += delta_rot;
         }
-        if eh.key_held(VirtualKeyCode::Up).is_some() {
-            eh.rotation.y += eh.secs_since_last_update() as f32 * eh.rotation_multiplier;
+        if inputs.pressed(KeyCode::Up) {
+            eh.rotation.y += delta_rot;
         }
-        if eh.key_held(VirtualKeyCode::Down).is_some() {
-            eh.rotation.y -= eh.secs_since_last_update() as f32 * eh.rotation_multiplier;
+        if inputs.pressed(KeyCode::Down) {
+            eh.rotation.y -= delta_rot;
         }
 
-        if eh.key_held(VirtualKeyCode::A).is_some() {
-            eh.delta_position.x -= eh.secs_since_last_update() as f32 * eh.speed_multiplier;
+        if inputs.pressed(KeyCode::A) {
+            eh.delta_position.x -= delta_mov;
         }
-        if eh.key_held(VirtualKeyCode::D).is_some() {
-            eh.delta_position.x += eh.secs_since_last_update() as f32 * eh.speed_multiplier;
+        if inputs.pressed(KeyCode::D) {
+            eh.delta_position.x += delta_mov;
         }
-        if eh.key_held(VirtualKeyCode::W).is_some() {
-            eh.delta_position.y += eh.secs_since_last_update() as f32 * eh.speed_multiplier;
+        if inputs.pressed(KeyCode::W) {
+            eh.delta_position.y += delta_mov;
         }
-        if eh.key_held(VirtualKeyCode::S).is_some() {
-            eh.delta_position.y -= eh.secs_since_last_update() as f32 * eh.speed_multiplier;
+        if inputs.pressed(KeyCode::S) {
+            eh.delta_position.y -= delta_mov;
         }
-        if eh.key_held(VirtualKeyCode::Q).is_some() {
-            eh.delta_position.z -= eh.secs_since_last_update() as f32 * eh.speed_multiplier;
+        if inputs.pressed(KeyCode::Q) {
+            eh.delta_position.z -= delta_mov;
         }
-        if eh.key_held(VirtualKeyCode::E).is_some() {
-            eh.delta_position.z += eh.secs_since_last_update() as f32 * eh.speed_multiplier;
+        if inputs.pressed(KeyCode::E) {
+            eh.delta_position.z += delta_mov;
         }
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
@@ -762,7 +758,7 @@ fn main() {
         real_time_data.position = (Vec3::from(real_time_data.position) + eh.position()).to_array();
         eh.delta_position = Vec3::ZERO;
 
-        real_time_data.time = eh.secs_since_start() as f32;
+        real_time_data.time = delta_time;
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {
@@ -780,7 +776,6 @@ fn main() {
                     Err(err) => panic!("{}", err),
                 };
             swapchain = new_swapchain;
-            swapchain_images = new_swapchain_images.clone();
 
             if eh.window_resized {
                 eh.window_resized = false;
@@ -811,6 +806,7 @@ fn main() {
                         .wait(None)
                         .unwrap();
                 }
+                
                 sync::now(device.clone())
                     .then_execute(queue.clone(), command_buffer)
                     .unwrap()
@@ -822,7 +818,7 @@ fn main() {
                 let pipeline =
                     get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
 
-                data_image = get_data_image(&memory_allocator, dimensions, queue_family_index);
+                let data_image = get_data_image(&memory_allocator, dimensions, queue_family_index);
 
                 let descriptor_sets = get_compute_descriptor_set(
                     &descriptor_set_allocator,
@@ -832,11 +828,9 @@ fn main() {
                     mutable_buffer.clone(),
                     constant_buffer.clone(),
                     data_image.clone(),
-                    blue_noise_image.clone(),
-                    sampler.clone(),
                 );
 
-                main_command_buffer = get_command_buffer(
+                main_command_buffer = get_main_command_buffer(
                     &command_buffer_allocator,
                     queue.clone(),
                     pipeline.clone(),
@@ -844,18 +838,15 @@ fn main() {
                     dimensions,
                     data_image.clone(),
                 );
+
+                blit_command_buffers = get_blit_command_buffers(
+                    &command_buffer_allocator,
+                    queue.clone(),
+                    data_image.clone(),
+                    new_swapchain_images.clone(),
+                );
             }
         }
-
-        let (image_index, suboptimal, image_future) =
-            match swapchain::acquire_next_image(swapchain.clone(), None) {
-                Ok(ok) => ok,
-                Err(AcquireError::OutOfDate) => {
-                    return eh.recreate_swapchain = true;
-                }
-                Err(err) => panic!("{}", err),
-            };
-        eh.recreate_swapchain |= suboptimal;
 
         let mut real_time_command_buffer_builder = AutoCommandBufferBuilder::primary(
             &command_buffer_allocator,
@@ -868,23 +859,15 @@ fn main() {
             .unwrap();
         let real_time_command_buffer = real_time_command_buffer_builder.build().unwrap();
 
-        let mut blit_command_buffer_builder = AutoCommandBufferBuilder::primary(
-            &command_buffer_allocator,
-            queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
-        blit_command_buffer_builder
-            .blit_image(BlitImageInfo::images(
-                data_image.clone(),
-                swapchain_images[image_index as usize].clone(),
-            ))
-            .unwrap();
-        let blit_command_buffer = blit_command_buffer_builder.build().unwrap();
-
-        if let Some(image_fence) = &fences[image_index as usize] {
-            image_fence.wait(None).unwrap();
-        }
+        let (image_index, suboptimal, image_future) =
+            match swapchain::acquire_next_image(swapchain.clone(), None) {
+                Ok(ok) => ok,
+                Err(AcquireError::OutOfDate) => {
+                    return eh.recreate_swapchain = true;
+                }
+                Err(err) => panic!("{}", err),
+            };
+        eh.recreate_swapchain |= suboptimal;
 
         let previous_future = match fences[previous_fence_index].clone() {
             Some(future) => future.boxed(),
@@ -895,13 +878,20 @@ fn main() {
             }
         };
 
+        if let Some(image_fence) = &fences[image_index as usize] {
+            image_fence.wait(None).unwrap();
+        }
+
         let future = previous_future
             .then_execute(queue.clone(), real_time_command_buffer)
             .unwrap()
             .then_execute(queue.clone(), main_command_buffer.clone())
             .unwrap()
             .join(image_future)
-            .then_execute(queue.clone(), blit_command_buffer)
+            .then_execute(
+                queue.clone(),
+                blit_command_buffers[image_index as usize].clone(),
+            )
             .unwrap()
             .then_swapchain_present(
                 queue.clone(),
@@ -923,3 +913,5 @@ fn main() {
         previous_fence_index = image_index as usize;
     })
 }
+
+// BUGS: Os(OsError { line: 1333, file: "{DIR}/winit-0.27.5/src/platform_impl/linux/x11/window.rs", error: XMisc("Cursor could not be confined: already confined by another client") })', src/main.rs:649:65
