@@ -3,20 +3,16 @@ mod bvh;
 use std::{f32::consts::PI, sync::Arc};
 
 use fps_counter::FPSCounter;
-use glam::{DVec2, Quat, UVec2, Vec2, Vec3};
+use glam::{DVec2, Quat, UVec2, UVec3, Vec2, Vec3};
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
-        allocator::{
-            CommandBufferAllocator, StandardCommandBufferAllocator,
-            StandardCommandBufferAllocatorCreateInfo,
-        },
-        AutoCommandBufferBuilder, BlitImageInfo, ClearColorImageInfo, CommandBufferUsage,
+        allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
+        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo,
         PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
     },
     descriptor_set::{
-        allocator::{DescriptorSetAllocator, StandardDescriptorSetAllocator},
-        DescriptorSetWithOffsets, PersistentDescriptorSet, WriteDescriptorSet,
+        allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
     },
     device::{
         physical::{PhysicalDevice, PhysicalDeviceType},
@@ -28,8 +24,11 @@ use vulkano::{
         SwapchainImage,
     },
     instance::{Instance, InstanceCreateInfo},
-    memory::allocator::{MemoryAllocator, StandardMemoryAllocator},
+    memory::allocator::{
+        FreeListAllocator, GenericMemoryAllocator, MemoryAllocator, StandardMemoryAllocator,
+    },
     pipeline::{graphics::viewport::Viewport, ComputePipeline, Pipeline, PipelineBindPoint},
+    sampler::Filter,
     shader::ShaderModule,
     swapchain::{
         self, AcquireError, Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
@@ -46,16 +45,19 @@ use winit::{
 use winit_event_helper::*;
 use winit_fullscreen::WindowFullScreen;
 
-use crate::bvh::{CpuNode, CpuBVH};
+use crate::bvh::{CpuBVH, CpuNode};
 
-// TODO: fix green showing up on image occasionally after switching resolution
 mod shaders {
     vulkano_shaders::shader! {
         shaders: {
-            PathtraceCompute: {
+            Pathtrace: {
                 ty: "compute",
-                path: "shaders/pathtrace_compute.glsl",
+                path: "shaders/pathtrace.glsl",
             },
+            Lightmap: {
+                ty: "compute",
+                path: "shaders/lightmap.glsl",
+            }
         },
         types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
         include: ["compute_includes.glsl"]
@@ -64,48 +66,48 @@ mod shaders {
 
 const BVH_OBJECTS: [CpuNode; 9] = [
     CpuNode {
-        position: Vec3::new(-10020.0, 0.0, 0.0),
-        radius: 1e4,
+        position: Vec3::new(-1000020.0, 0.0, 0.0),
+        radius: 1e6,
         child: None,
         next: None,
         leaf: Some(1),
         parent: None,
     },
     CpuNode {
-        position: Vec3::new(10020.0, 0.0, 0.0),
-        radius: 1e4,
+        position: Vec3::new(1000020.0, 0.0, 0.0),
+        radius: 1e6,
         child: None,
         next: None,
         leaf: Some(2),
         parent: None,
     },
     CpuNode {
-        position: Vec3::new(0.0, -10020.0, 0.0),
-        radius: 1e4,
+        position: Vec3::new(0.0, -1000020.0, 0.0),
+        radius: 1e6,
         child: None,
         next: None,
         leaf: Some(3),
         parent: None,
     },
     CpuNode {
-        position: Vec3::new(0.0, 10020.0, 0.0),
-        radius: 1e4,
+        position: Vec3::new(0.0, 1000020.0, 0.0),
+        radius: 1e6,
         child: None,
         next: None,
         leaf: Some(3),
         parent: None,
     },
     CpuNode {
-        position: Vec3::new(0.0, 0.0, -10020.0),
-        radius: 1e4,
+        position: Vec3::new(0.0, 0.0, -1000020.0),
+        radius: 1e6,
         child: None,
         next: None,
         leaf: Some(3),
         parent: None,
     },
     CpuNode {
-        position: Vec3::new(0.0, 0.0, 10020.0),
-        radius: 1e4,
+        position: Vec3::new(0.0, 0.0, 1000020.0),
+        radius: 1e6,
         child: None,
         next: None,
         leaf: Some(3),
@@ -183,6 +185,15 @@ const MATERIALS: [shaders::ty::Material; 7] = [
     },
 ];
 
+const COLOR_IMAGE_DIMENSION_DIV: f32 = 1.0;
+const LIGHTMAP_DIMENSIONS: UVec3 = UVec3::splat(100);
+
+#[derive(Clone)]
+struct DescriptorSetCollection {
+    pathtrace_set: Arc<PersistentDescriptorSet>,
+    lightmap_set: Arc<PersistentDescriptorSet>,
+}
+
 fn select_physical_device<'a>(
     instance: &'a Arc<Instance>,
     surface: &'a Surface,
@@ -214,13 +225,10 @@ fn select_physical_device<'a>(
         .unwrap()
 }
 
-fn get_compute_pipeline(
-    device: Arc<Device>,
-    pathtrace_shader: Arc<ShaderModule>,
-) -> Arc<ComputePipeline> {
+fn get_compute_pipeline(device: Arc<Device>, shader: Arc<ShaderModule>) -> Arc<ComputePipeline> {
     ComputePipeline::new(
         device.clone(),
-        pathtrace_shader.entry_point("main").unwrap(),
+        shader.entry_point("main").unwrap(),
         &(),
         None, // TODO: look into caches
         |_| {},
@@ -228,7 +236,7 @@ fn get_compute_pipeline(
     .unwrap()
 }
 
-fn get_data_image(
+fn get_color_image(
     allocator: &(impl MemoryAllocator + ?Sized),
     dimensions: PhysicalSize<u32>,
     queue_family_index: u32,
@@ -236,15 +244,14 @@ fn get_data_image(
     StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
-            width: dimensions.width,
-            height: dimensions.height,
+            width: (dimensions.width as f32 / COLOR_IMAGE_DIMENSION_DIV) as u32,
+            height: (dimensions.height as f32 / COLOR_IMAGE_DIMENSION_DIV) as u32,
             array_layers: 1,
         },
         Format::R16G16B16A16_SFLOAT, // TODO: loosely match format with swapchain image format
         ImageUsage {
             storage: true,
             transfer_src: true,
-            transfer_dst: true,
             ..ImageUsage::empty()
         },
         ImageCreateFlags::empty(),
@@ -253,103 +260,201 @@ fn get_data_image(
     .unwrap()
 }
 
-fn get_compute_descriptor_set<A>(
-    allocator: &A,
-    pipeline: Arc<ComputePipeline>,
+fn get_lightmap_images(
+    allocator: &(impl MemoryAllocator + ?Sized),
+    queue_family_index: u32,
+) -> Vec<Arc<StorageImage>> {
+    let dimensions = ImageDimensions::Dim3d {
+        width: LIGHTMAP_DIMENSIONS.x,
+        height: LIGHTMAP_DIMENSIONS.y,
+        depth: LIGHTMAP_DIMENSIONS.z,
+    };
+
+    let main = StorageImage::with_usage(
+        allocator,
+        dimensions,
+        Format::R16G16B16A16_SFLOAT,
+        ImageUsage {
+            storage: true,
+            transfer_dst: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
+
+    // FIXME:
+    // let staging = StorageImage::with_usage(
+    //     allocator,
+    //     dimensions,
+    //     Format::R16G16B16A16_SFLOAT,
+    //     ImageUsage {
+    //         storage: true,
+    //         transfer_src: true,
+    //         ..ImageUsage::empty()
+    //     },
+    //     ImageCreateFlags::empty(),
+    //     [queue_family_index],
+    // )
+    // .unwrap();
+
+    vec![main /*, staging*/]
+}
+
+fn get_compute_descriptor_sets(
+    allocator: &StandardDescriptorSetAllocator,
+    pathtrace_pipeline: Arc<ComputePipeline>,
+    //lightmap_pipeline: Arc<ComputePipeline>,
     real_time_buffer: Arc<dyn BufferAccess>,
     bvh_buffer: Arc<dyn BufferAccess>,
     mutable_buffer: Arc<dyn BufferAccess>,
     constant_buffer: Arc<dyn BufferAccess>,
-    data_image: Arc<StorageImage>,
-) -> Arc<PersistentDescriptorSet<A::Alloc>>
-where
-    A: DescriptorSetAllocator + ?Sized,
-{
-    let data_image_view = ImageView::new_default(data_image.clone()).unwrap();
+    color_image: Arc<StorageImage>,
+    lightmap_images: Vec<Arc<StorageImage>>,
+) -> Arc<PersistentDescriptorSet> {
+    let color_image_view = ImageView::new_default(color_image.clone()).unwrap();
+    let lightmap_views = lightmap_images
+        .iter()
+        .map(|vlm| ImageView::new_default(vlm.clone()).unwrap())
+        .collect::<Vec<_>>();
 
-    let pathtrace_descriptor_set = PersistentDescriptorSet::new(
+    let pathtrace_set = PersistentDescriptorSet::new(
         allocator,
-        pipeline.layout().set_layouts()[0].clone(),
+        pathtrace_pipeline.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
             WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
             WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
             WriteDescriptorSet::buffer(3, constant_buffer.clone()),
-            WriteDescriptorSet::image_view(4, data_image_view.clone()),
+            WriteDescriptorSet::image_view(4, color_image_view.clone()),
+            WriteDescriptorSet::image_view(5, lightmap_views[0].clone()),
         ],
     )
     .unwrap();
 
-    pathtrace_descriptor_set
+    // let lightmap_set = PersistentDescriptorSet::new(
+    //     allocator,
+    //     lightmap_pipeline.layout().set_layouts()[0].clone(),
+    //     [
+    //         WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
+    //         WriteDescriptorSet::image_view(1, lightmap_views[0].clone()),
+    //         WriteDescriptorSet::image_view(2, lightmap_views[/*1*/0].clone()),
+    //     ],
+    // )
+    // .unwrap();
+
+    pathtrace_set
+    // DescriptorSetCollection {
+    //     pathtrace_set,
+    //     lightmap_set,
+    // }
 }
 
-fn get_main_command_buffer<A, S>(
-    allocator: &A,
+fn get_main_command_buffers(
+    allocator: &StandardCommandBufferAllocator,
     queue: Arc<Queue>,
-    pipeline: Arc<ComputePipeline>,
-    descriptor_set: S,
+    pathtrace_pipeline: Arc<ComputePipeline>,
+    descriptor_sets: Arc<PersistentDescriptorSet>,
     dimensions: PhysicalSize<u32>,
-    render_image: Arc<StorageImage>,
-) -> Arc<PrimaryAutoCommandBuffer<A::Alloc>>
-where
-    A: CommandBufferAllocator,
-    S: Into<DescriptorSetWithOffsets> + Clone,
-{
-    let mut builder = AutoCommandBufferBuilder::primary(
-        allocator,
-        queue.queue_family_index(),
-        CommandBufferUsage::SimultaneousUse, // FIXME: supposed to be CommandBufferUsage::MultipleUse
-    )
-    .unwrap();
-
-    const SAMPLES_PER_PIXEL: u32 = 16;
-
-    let dispatch_groups = [
-        (dimensions.width as f32 / 8.0).ceil() as u32,
-        (dimensions.height as f32 / 8.0).ceil() as u32,
-        SAMPLES_PER_PIXEL,
+    color_image: Arc<StorageImage>,
+    swapchain_images: Vec<Arc<SwapchainImage>>,
+) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+    let dispatch_pathtrace = [
+        (dimensions.width as f32 / COLOR_IMAGE_DIMENSION_DIV).ceil() as u32,
+        (dimensions.height as f32 / COLOR_IMAGE_DIMENSION_DIV).ceil() as u32,
+        1,
     ];
 
-    builder
-        .clear_color_image(ClearColorImageInfo::image(render_image.clone()))
-        .unwrap()
-        .bind_pipeline_compute(pipeline.clone())
-        .bind_descriptor_sets(
-            PipelineBindPoint::Compute,
-            pipeline.layout().clone(),
-            0,
-            descriptor_set.clone(),
-        )
-        .dispatch(dispatch_groups)
-        .unwrap();
-
-    Arc::new(builder.build().unwrap())
-}
-
-fn get_blit_command_buffers<A>(
-    allocator: &A,
-    queue: Arc<Queue>,
-    data_image: Arc<StorageImage>,
-    swapchain_images: Vec<Arc<SwapchainImage>>,
-) -> Vec<Arc<PrimaryAutoCommandBuffer<A::Alloc>>>
-where
-    A: CommandBufferAllocator,
-{
     swapchain_images
+        .clone()
         .into_iter()
         .map(|swapchain_image| {
-            let mut blit_command_buffer_builder = AutoCommandBufferBuilder::primary(
+            let mut builder = AutoCommandBufferBuilder::primary(
                 allocator,
                 queue.queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
             .unwrap();
-            blit_command_buffer_builder
-                .blit_image(BlitImageInfo::images(data_image.clone(), swapchain_image))
+
+            builder
+                .blit_image(BlitImageInfo {
+                    filter: Filter::Linear,
+                    ..BlitImageInfo::images(color_image.clone(), swapchain_image.clone())
+                })
+                .unwrap()
+                .bind_pipeline_compute(pathtrace_pipeline.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pathtrace_pipeline.layout().clone(),
+                    0,
+                    descriptor_sets.clone(),
+                )
+                .dispatch(dispatch_pathtrace)
                 .unwrap();
-            Arc::new(blit_command_buffer_builder.build().unwrap())
+
+            Arc::new(builder.build().unwrap())
         })
         .collect()
+}
+
+fn get_lightmap_command_buffer(
+    allocator: &StandardCommandBufferAllocator,
+    queue: Arc<Queue>,
+    lightmap_pipeline: Arc<ComputePipeline>,
+    descriptor_sets: DescriptorSetCollection,
+    lightmap_images: Vec<Arc<StorageImage>>,
+) -> Arc<PrimaryAutoCommandBuffer> {
+    let dispatch_lightmap = (LIGHTMAP_DIMENSIONS / 4).to_array();
+    let mut builder = AutoCommandBufferBuilder::primary(
+        allocator,
+        queue.queue_family_index(),
+        CommandBufferUsage::MultipleSubmit,
+    )
+    .unwrap();
+
+    builder
+        .bind_pipeline_compute(lightmap_pipeline.clone())
+        .bind_descriptor_sets(
+            PipelineBindPoint::Compute,
+            lightmap_pipeline.layout().clone(),
+            0,
+            descriptor_sets.lightmap_set.clone(),
+        )
+        .dispatch(dispatch_lightmap)
+        .unwrap(); // FIXME:
+                   // .copy_image(CopyImageInfo::images(
+                   //     lightmap_images[1].clone(),
+                   //     lightmap_images[0].clone(),
+                   // ))
+                   // .unwrap();
+
+    Arc::new(builder.build().unwrap())
+}
+
+fn get_bvh_buffer(
+    memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
+    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>> {
+    let mut bvh: CpuBVH = BVH_OBJECTS[0].clone().into();
+
+    for n in BVH_OBJECTS[1..].iter() {
+        bvh.merge_in_place(n.clone().into());
+    }
+
+    // DEBUG
+    bvh.graphify();
+
+    DeviceLocalBuffer::<shaders::ty::GpuBVH>::from_data(
+        memory_allocator,
+        bvh.into(),
+        BufferUsage {
+            uniform_buffer: true,
+            ..BufferUsage::empty()
+        },
+        alloc_command_buffer_builder,
+    )
+    .unwrap()
 }
 
 mod rotation {
@@ -361,7 +466,7 @@ mod rotation {
 }
 
 // field of view
-const FOV: f32 = 1.0;
+const FOV: f32 = 0.5;
 
 struct Data {
     window: Arc<Window>,
@@ -413,7 +518,7 @@ fn main() {
     let event_loop = EventLoop::new();
     let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
     let surface = vulkano_win::create_surface_from_winit(window.clone(), instance.clone()).unwrap();
-    // BUG: spamming any key on application startup will make the window invisible
+    // FIXME: spamming any key on application startup will make the window invisible
     window.set_visible(true);
     window.set_cursor_visible(false);
     window.set_resizable(false);
@@ -462,7 +567,7 @@ fn main() {
         device.clone(),
         surface.clone(),
         SwapchainCreateInfo {
-            min_image_count: capabilities.min_image_count + 1,
+            min_image_count: capabilities.min_image_count + 1, // TODO: improve
             image_format: Some(image_format),
             image_extent: dimensions.into(),
             image_usage: ImageUsage {
@@ -474,7 +579,8 @@ fn main() {
     )
     .unwrap();
 
-    let pathtrace_compute_shader = shaders::load_PathtraceCompute(device.clone()).unwrap();
+    let pathtrace_shader = shaders::load_Pathtrace(device.clone()).unwrap();
+    //let lightmap_shader = shaders::load_Lightmap(device.clone()).unwrap();
 
     let mut viewport = Viewport {
         origin: [0.0, 0.0],
@@ -482,7 +588,8 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
-    let compute_pipeline = get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
+    let pathtrace_pipeline = get_compute_pipeline(device.clone(), pathtrace_shader.clone());
+    //let lightmap_pipeline = get_compute_pipeline(device.clone(), lightmap_shader.clone());
 
     let command_buffer_allocator = StandardCommandBufferAllocator::new(
         device.clone(),
@@ -499,25 +606,7 @@ fn main() {
     )
     .unwrap();
 
-    let mut bvh: CpuBVH = BVH_OBJECTS[0].clone().into();
-
-    for n in BVH_OBJECTS[1..].iter() {
-        bvh.merge_in_place(n.clone().into());
-    }
-
-    // DEBUG
-    bvh.graphify();
-
-    let bvh_buffer = DeviceLocalBuffer::<shaders::ty::GpuBVH>::from_data(
-        &memory_allocator,
-        bvh.into(),
-        BufferUsage {
-            uniform_buffer: true,
-            ..BufferUsage::empty()
-        },
-        &mut alloc_command_buffer_builder,
-    )
-    .unwrap();
+    let bvh_buffer = get_bvh_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
 
     let mut mutable_data = shaders::ty::MutableData {
         ..Default::default()
@@ -553,11 +642,13 @@ fn main() {
 
     let mut real_time_data = shaders::ty::RealTimeBuffer {
         rotation: [0.0; 4],
-        position: [0.0; 3],
-        time: 0.0,
         previousRotation: [0.0; 4],
-        inversePreviousRotation: [0.0; 4],
+        position: [0.0; 3],
         previousPosition: [0.0; 3],
+        deltaLightmapOrigin: [0; 3],
+        frame: 0,
+        _dummy0: [0; 4],
+        _dummy1: [0; 4],
     };
 
     let real_time_buffer = DeviceLocalBuffer::from_data(
@@ -582,34 +673,39 @@ fn main() {
         .wait(None)
         .unwrap();
 
-    let data_image = get_data_image(&memory_allocator, dimensions, queue_family_index);
+    let color_image = get_color_image(&memory_allocator, dimensions, queue_family_index);
+    let lightmap_images = get_lightmap_images(&memory_allocator, queue_family_index);
 
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
-    let descriptor_set = get_compute_descriptor_set(
+    let descriptor_sets = get_compute_descriptor_sets(
         &descriptor_set_allocator,
-        compute_pipeline.clone(),
+        pathtrace_pipeline.clone(),
+        //lightmap_pipeline.clone(),
         real_time_buffer.clone(),
         bvh_buffer.clone(),
         mutable_buffer.clone(),
         constant_buffer.clone(),
-        data_image.clone(),
+        color_image.clone(),
+        lightmap_images.clone(),
     );
 
-    let mut main_command_buffer = get_main_command_buffer(
+    let mut pathtrace_command_buffers = get_main_command_buffers(
         &command_buffer_allocator,
         queue.clone(),
-        compute_pipeline.clone(),
-        descriptor_set.clone(),
+        pathtrace_pipeline.clone(),
+        descriptor_sets.clone(),
         dimensions,
-        data_image.clone(),
-    );
-
-    let mut blit_command_buffers = get_blit_command_buffers(
-        &command_buffer_allocator,
-        queue.clone(),
-        data_image.clone(),
+        color_image.clone(),
         swapchain_images.clone(),
     );
+
+    // let lightmap_command_buffer = get_lightmap_command_buffer(
+    //     &command_buffer_allocator,
+    //     queue.clone(),
+    //     lightmap_pipeline.clone(),
+    //     descriptor_sets.clone(),
+    //     lightmap_images.clone(),
+    // );
 
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
     let mut previous_fence_index = 0;
@@ -689,7 +785,7 @@ fn main() {
 
     let mut fps_counter = FPSCounter::new();
 
-    // TODO: remove image data on swapchain recreation
+    // TODO: clear image data on swapchain recreation
 
     event_loop.run(move |event, _, control_flow| {
         if eh.quit {
@@ -748,17 +844,20 @@ fn main() {
             eh.delta_position.z += delta_mov;
         }
 
+        let new_position = Vec3::from_array(real_time_data.position) + eh.position();
+
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
         real_time_data.previousRotation = real_time_data.rotation;
-        real_time_data.inversePreviousRotation = Quat::from_array(real_time_data.rotation)
-            .conjugate()
-            .to_array();
         real_time_data.previousPosition = real_time_data.position;
         real_time_data.rotation = eh.rotation().to_array();
-        real_time_data.position = (Vec3::from(real_time_data.position) + eh.position()).to_array();
+        real_time_data.position = new_position.to_array();
         eh.delta_position = Vec3::ZERO;
 
-        real_time_data.time = delta_time;
+        real_time_data.frame += 1;
+
+        let delta_position =
+            new_position.as_ivec3() - Vec3::from_array(real_time_data.previousPosition).as_ivec3();
+        real_time_data.deltaLightmapOrigin = delta_position.to_array();
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {
@@ -806,7 +905,7 @@ fn main() {
                         .wait(None)
                         .unwrap();
                 }
-                
+
                 sync::now(device.clone())
                     .then_execute(queue.clone(), command_buffer)
                     .unwrap()
@@ -815,34 +914,31 @@ fn main() {
                     .wait(None)
                     .unwrap();
 
-                let pipeline =
-                    get_compute_pipeline(device.clone(), pathtrace_compute_shader.clone());
+                let pathtrace_pipeline =
+                    get_compute_pipeline(device.clone(), pathtrace_shader.clone());
 
-                let data_image = get_data_image(&memory_allocator, dimensions, queue_family_index);
+                let color_image =
+                    get_color_image(&memory_allocator, dimensions, queue_family_index);
 
-                let descriptor_sets = get_compute_descriptor_set(
+                let descriptor_sets = get_compute_descriptor_sets(
                     &descriptor_set_allocator,
-                    pipeline.clone(),
+                    pathtrace_pipeline.clone(),
+                    //lightmap_pipeline.clone(),
                     real_time_buffer.clone(),
                     bvh_buffer.clone(),
                     mutable_buffer.clone(),
                     constant_buffer.clone(),
-                    data_image.clone(),
+                    color_image.clone(),
+                    lightmap_images.clone(),
                 );
 
-                main_command_buffer = get_main_command_buffer(
+                pathtrace_command_buffers = get_main_command_buffers(
                     &command_buffer_allocator,
                     queue.clone(),
-                    pipeline.clone(),
+                    pathtrace_pipeline.clone(),
                     descriptor_sets.clone(),
                     dimensions,
-                    data_image.clone(),
-                );
-
-                blit_command_buffers = get_blit_command_buffers(
-                    &command_buffer_allocator,
-                    queue.clone(),
-                    data_image.clone(),
+                    color_image.clone(),
                     new_swapchain_images.clone(),
                 );
             }
@@ -856,7 +952,7 @@ fn main() {
         .unwrap();
         real_time_command_buffer_builder
             .update_buffer(Box::new(real_time_data), real_time_buffer.clone(), 0)
-            .unwrap();
+            .unwrap(); // TODO: push constants
         let real_time_command_buffer = real_time_command_buffer_builder.build().unwrap();
 
         let (image_index, suboptimal, image_future) =
@@ -885,19 +981,25 @@ fn main() {
         let future = previous_future
             .then_execute(queue.clone(), real_time_command_buffer)
             .unwrap()
-            .then_execute(queue.clone(), main_command_buffer.clone())
-            .unwrap()
-            .join(image_future)
             .then_execute(
                 queue.clone(),
-                blit_command_buffers[image_index as usize].clone(),
+                pathtrace_command_buffers[image_index as usize].clone(),
             )
             .unwrap()
+            .join(image_future)
             .then_swapchain_present(
                 queue.clone(),
                 SwapchainPresentInfo::swapchain_image_index(swapchain.clone(), image_index),
             )
             .then_signal_fence_and_flush();
+
+        // FIXME:
+        // if real_time_data.deltaLightmapOrigin != [0; 3] {
+        //     future = future
+        //         .then_execute(queue.clone(), lightmap_command_buffer.clone())
+        //         .unwrap()
+        //         .boxed();
+        // }
 
         fences[image_index as usize] = match future {
             Ok(ok) => Some(Arc::new(ok)),

@@ -2,18 +2,19 @@
 
 #include "compute_includes.glsl"
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 32) in;
 
 const uint MAX_OBJECTS = 16;
 const uint MAX_MATERIALS = 8;
-const uint RAYS_PER_SAMPLE = 6;
+const uint INDIRECT_RAYS_PER_SAMPLE = 3;
 
 struct Material {
     vec3 reflectance;
     vec3 emittance;
 };
 
-struct Bounds { // node of a bvh
+/// node of a bvh
+struct Bounds {
     vec3 position;
     float radiusSquared;
     uint child;
@@ -32,11 +33,11 @@ struct Ray {
 
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
-    vec3 position;
-    float time;
     vec4 previousRotation;
-    vec4 inversePreviousRotation; // inverse previous rotation
-    vec3 previousPosition; // previous position
+    vec3 position;
+    vec3 previousPosition;
+    ivec3 deltaLightmapOrigin;
+    uint frame;
 } rt;
 
 layout(binding = 1) uniform restrict readonly GpuBVH {
@@ -53,30 +54,28 @@ layout(binding = 3) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 4, rgba16f) uniform restrict image2D dataOutputImage;
+layout(binding = 4, rgba16f) uniform restrict image2D colorImage;
+
+layout(binding = 5, rgba16f) uniform restrict image3D volumetricLightmapImage;
 
 vec3 rotate(vec4 q, vec3 v) {
     vec3 t = q.w * v + cross(q.xyz, v);
     return 2.0 * cross(q.xyz, t) + v;
 }
 
-// FIXME: weird angles (visible with red light)
-// FIXME: inverse cosine distribution ???
 // generates a cosine-distributed random direction relative to the normal
 // the given normal does not need to be normalized
 vec3 randomDirection(vec3 normal, inout uvec4 seeds) {
     const float OFFSET_2_CORRECTION = 3.14159265 * 2.0 * HYBRID_TAUS_NORMALIZER;
-    // angle offsets
-    float o1 = HybridTaus(seeds);
-    float o2 = OFFSET_2_CORRECTION * HybridTausUnnormalized(seeds);
 
-    vec3 v = vec3(o1, normal.xz);
+    float r1 = HybridTaus(seeds); // longitude offset
+    float r2 = OFFSET_2_CORRECTION * HybridTausUnnormalized(seeds); // latitude offset
+
+    vec3 v = vec3(r1, normal.xz);
     vec3 sq = sqrt((-v * v) + 1.0);
 
-    // longitude
-    vec2 phi = vec2(normal.x, sq.y) * mat2x2(vec2(o1, sq.x), vec2(sq.x, -o1));
-    // latitude
-    vec2 theta = vec2(sq.z, normal.z) * mat2x2(vec2(sin(o2), cos(o2)), vec2(cos(o2), -sin(o2)));
+    vec2 phi = vec2(normal.x, sq.y) * mat2x2(vec2(sq.x, r1), vec2(r1, sq.x));
+    vec2 theta = vec2(sq.z, normal.z) * mat2x2(vec2(sin(r2), cos(r2)), vec2(cos(r2), -sin(r2))); // FIXME: weird angles (visible with red light)
 
     return vec3(phi.yx*theta.y, theta.x);
 }
@@ -125,28 +124,20 @@ void updateRay(inout Ray ray, inout uvec4 seeds) {
     ray.direction = randomDirection(ray.normalOfObject, seeds);
 }
 
-void shade(inout Ray ray, inout vec3 color) {
+vec3 shade(inout Ray ray) {
     Material material = buf.mats[bvh.nodes[ray.nodeHit].leaf];
-
-    color = (ray.colorLeft * material.emittance) + color;
-    // rays are fired according to brdf, negating the need to calculate it here
+    vec3 colorChange = ray.colorLeft * material.emittance;
     ray.colorLeft *= material.reflectance;
+    return colorChange / gl_WorkGroupSize.z;
 }
 
+shared vec3 SharedColors[gl_WorkGroupSize.z];
+
+shared Ray SharedDirectRay;
+
 void main() {
-    const ivec2 viewport = ivec2(imageSize(dataOutputImage).xy);
+    const ivec2 viewport = ivec2(imageSize(colorImage).xy);
     const ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
-
-    // maps FragCoord to xy range [-1.0, 1.0]
-    vec2 normCoord = ipos * (2.0 / viewport) - 1.0;
-    // maps normCoord to a different range (e.g. for FOV and non-square windows)
-    normCoord *= cs.ratio;
-
-    vec4 data = vec4(0.0);
-    vec3 viewDir = rotate(rt.rotation, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
-
-    // FIXME: weird edges in rendering caused by a change in angle (lighting in said edges changes based on position)
-    Ray ray = Ray(rt.position, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
     const uvec4 baked_seeds = uvec4(
         gl_GlobalInvocationID.x * gl_GlobalInvocationID.y * 43217 + gl_GlobalInvocationID.z * 10 + 128 * 1,
@@ -155,19 +146,48 @@ void main() {
         gl_GlobalInvocationID.x * gl_GlobalInvocationID.y * 11581 + gl_GlobalInvocationID.z * 12 + 128 * 11
     );
 
-    uvec4 seeds = baked_seeds;
+    uvec4 seeds = baked_seeds + rt.frame * 65423;
+
+    vec3 color = vec3(0.0);
+
+    // maps FragCoord to xy range [-1.0, 1.0]
+    vec2 normCoord = ipos * (2.0 / viewport) - 1.0;
+    // maps normCoord to a different range (e.g. for FOV and non-square windows)
+    normCoord *= cs.ratio;
+
+    vec3 viewDir = rotate(rt.rotation, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
+
+    // FIXME: weird edges in rendering caused by a change in angle (lighting in said edges changes based on position)
+    Ray ray = Ray(rt.position, viewDir, vec3(0.0), vec3(1.0), 0.0, 0);
 
     traceRayWithBVH(ray);
+    color += shade(ray);
     updateRay(ray, seeds);
-    shade(ray, data.rgb);
 
-    for (uint r = 0; r < RAYS_PER_SAMPLE; r++) {
+    for (uint r = 0; r < INDIRECT_RAYS_PER_SAMPLE; r++) {
+        const ivec3 IMAGE_OFFSET = imageSize(volumetricLightmapImage) >> 1; // TODO: center around player position
+
+        ivec3 indices = ivec3(ray.origin) + IMAGE_OFFSET;
+        vec4 data = imageLoad(volumetricLightmapImage, indices);
+
         traceRayWithBVH(ray);
+        vec3 colorChange = shade(ray);
         updateRay(ray, seeds);
-        shade(ray, data.rgb);
+
+        color += mix(data.rgb, colorChange, 0.01);
+        imageStore(volumetricLightmapImage, indices, vec4(mix(data.rgb, colorChange, 0.01), data.w + 1.0));
     }
 
-    const float ALPHA = 1.0 / 32.0;
-    vec4 loaded = imageLoad(dataOutputImage, ipos);
-    imageStore(dataOutputImage, ipos, vec4(data.rgb * ALPHA + loaded.rgb, 0.0));
+    SharedColors[gl_LocalInvocationID.z] = color;
+    memoryBarrierShared();
+    barrier();
+
+    if (gl_LocalInvocationID.z == 0) {
+        for (uint i = 1; i < gl_WorkGroupSize.z; i++) {
+            color += SharedColors[i];
+        }
+
+        vec4 loaded = imageLoad(colorImage, ipos);
+        imageStore(colorImage, ipos, vec4(mix(loaded.rgb, color, 0.4), 0.0));
+    }
 }
