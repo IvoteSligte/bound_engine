@@ -3,7 +3,7 @@ mod bvh;
 use std::{f32::consts::PI, sync::Arc};
 
 use fps_counter::FPSCounter;
-use glam::{DVec2, Quat, UVec2, UVec3, Vec2, Vec3};
+use glam::{DVec2, IVec3, Quat, UVec2, UVec3, Vec2, Vec3};
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
@@ -167,7 +167,7 @@ const MATERIALS: [shaders::ty::Material; 7] = [
     },
     shaders::ty::Material {
         reflectance: [0.0; 3],
-        emittance: [2.0; 3],
+        emittance: [0.2; 3],
         _dummy0: [0u8; 4],
         _dummy1: [0u8; 4],
     },
@@ -186,7 +186,7 @@ const MATERIALS: [shaders::ty::Material; 7] = [
 ];
 
 const COLOR_IMAGE_DIMENSION_DIV: f32 = 1.0;
-const LIGHTMAP_DIMENSIONS: UVec3 = UVec3::splat(100);
+const LIGHTMAP_DIMENSIONS: UVec3 = UVec3::splat(250);
 
 #[derive(Clone)]
 struct DescriptorSetCollection {
@@ -203,6 +203,7 @@ fn select_physical_device<'a>(
         .enumerate_physical_devices()
         .unwrap()
         .filter(|p| p.supported_extensions().contains(device_extensions))
+        .filter(|p| p.properties().device_type == PhysicalDeviceType::DiscreteGpu)
         .filter_map(|p| {
             p.queue_family_properties()
                 .iter()
@@ -215,13 +216,7 @@ fn select_physical_device<'a>(
                 .map(|q| (p, q as u32))
                 .filter(|(p, q)| p.surface_support(*q, surface).unwrap_or(false))
         })
-        .max_by_key(|(p, _)| match p.properties().device_type {
-            PhysicalDeviceType::DiscreteGpu => 4,
-            PhysicalDeviceType::IntegratedGpu => 3,
-            PhysicalDeviceType::VirtualGpu => 2,
-            PhysicalDeviceType::Cpu => 1,
-            _ => 0,
-        })
+        .next()
         .unwrap()
 }
 
@@ -284,35 +279,34 @@ fn get_lightmap_images(
     )
     .unwrap();
 
-    // FIXME:
-    // let staging = StorageImage::with_usage(
-    //     allocator,
-    //     dimensions,
-    //     Format::R16G16B16A16_SFLOAT,
-    //     ImageUsage {
-    //         storage: true,
-    //         transfer_src: true,
-    //         ..ImageUsage::empty()
-    //     },
-    //     ImageCreateFlags::empty(),
-    //     [queue_family_index],
-    // )
-    // .unwrap();
+    let staging = StorageImage::with_usage(
+        allocator,
+        dimensions,
+        Format::R16G16B16A16_SFLOAT,
+        ImageUsage {
+            storage: true,
+            transfer_src: true,
+            ..ImageUsage::empty()
+        },
+        ImageCreateFlags::empty(),
+        [queue_family_index],
+    )
+    .unwrap();
 
-    vec![main /*, staging*/]
+    vec![main, staging]
 }
 
 fn get_compute_descriptor_sets(
     allocator: &StandardDescriptorSetAllocator,
     pathtrace_pipeline: Arc<ComputePipeline>,
-    //lightmap_pipeline: Arc<ComputePipeline>,
+    lightmap_pipeline: Arc<ComputePipeline>,
     real_time_buffer: Arc<dyn BufferAccess>,
     bvh_buffer: Arc<dyn BufferAccess>,
     mutable_buffer: Arc<dyn BufferAccess>,
     constant_buffer: Arc<dyn BufferAccess>,
     color_image: Arc<StorageImage>,
     lightmap_images: Vec<Arc<StorageImage>>,
-) -> Arc<PersistentDescriptorSet> {
+) -> DescriptorSetCollection {
     let color_image_view = ImageView::new_default(color_image.clone()).unwrap();
     let lightmap_views = lightmap_images
         .iter()
@@ -333,29 +327,28 @@ fn get_compute_descriptor_sets(
     )
     .unwrap();
 
-    // let lightmap_set = PersistentDescriptorSet::new(
-    //     allocator,
-    //     lightmap_pipeline.layout().set_layouts()[0].clone(),
-    //     [
-    //         WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
-    //         WriteDescriptorSet::image_view(1, lightmap_views[0].clone()),
-    //         WriteDescriptorSet::image_view(2, lightmap_views[/*1*/0].clone()),
-    //     ],
-    // )
-    // .unwrap();
+    let lightmap_set = PersistentDescriptorSet::new(
+        allocator,
+        lightmap_pipeline.layout().set_layouts()[0].clone(),
+        [
+            WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
+            WriteDescriptorSet::image_view(1, lightmap_views[0].clone()),
+            WriteDescriptorSet::image_view(2, lightmap_views[1].clone()),
+        ],
+    )
+    .unwrap();
 
-    pathtrace_set
-    // DescriptorSetCollection {
-    //     pathtrace_set,
-    //     lightmap_set,
-    // }
+    DescriptorSetCollection {
+        pathtrace_set,
+        lightmap_set,
+    }
 }
 
 fn get_main_command_buffers(
     allocator: &StandardCommandBufferAllocator,
     queue: Arc<Queue>,
     pathtrace_pipeline: Arc<ComputePipeline>,
-    descriptor_sets: Arc<PersistentDescriptorSet>,
+    descriptor_sets: DescriptorSetCollection,
     dimensions: PhysicalSize<u32>,
     color_image: Arc<StorageImage>,
     swapchain_images: Vec<Arc<SwapchainImage>>,
@@ -388,7 +381,7 @@ fn get_main_command_buffers(
                     PipelineBindPoint::Compute,
                     pathtrace_pipeline.layout().clone(),
                     0,
-                    descriptor_sets.clone(),
+                    descriptor_sets.pathtrace_set.clone(),
                 )
                 .dispatch(dispatch_pathtrace)
                 .unwrap();
@@ -409,7 +402,7 @@ fn get_lightmap_command_buffer(
     let mut builder = AutoCommandBufferBuilder::primary(
         allocator,
         queue.queue_family_index(),
-        CommandBufferUsage::MultipleSubmit,
+        CommandBufferUsage::SimultaneousUse,
     )
     .unwrap();
 
@@ -422,12 +415,12 @@ fn get_lightmap_command_buffer(
             descriptor_sets.lightmap_set.clone(),
         )
         .dispatch(dispatch_lightmap)
-        .unwrap(); // FIXME:
-                   // .copy_image(CopyImageInfo::images(
-                   //     lightmap_images[1].clone(),
-                   //     lightmap_images[0].clone(),
-                   // ))
-                   // .unwrap();
+        .unwrap()
+        .copy_image(CopyImageInfo::images(
+            lightmap_images[1].clone(),
+            lightmap_images[0].clone(),
+        ))
+        .unwrap();
 
     Arc::new(builder.build().unwrap())
 }
@@ -580,7 +573,7 @@ fn main() {
     .unwrap();
 
     let pathtrace_shader = shaders::load_Pathtrace(device.clone()).unwrap();
-    //let lightmap_shader = shaders::load_Lightmap(device.clone()).unwrap();
+    let lightmap_shader = shaders::load_Lightmap(device.clone()).unwrap();
 
     let mut viewport = Viewport {
         origin: [0.0, 0.0],
@@ -589,7 +582,7 @@ fn main() {
     };
 
     let pathtrace_pipeline = get_compute_pipeline(device.clone(), pathtrace_shader.clone());
-    //let lightmap_pipeline = get_compute_pipeline(device.clone(), lightmap_shader.clone());
+    let lightmap_pipeline = get_compute_pipeline(device.clone(), lightmap_shader.clone());
 
     let command_buffer_allocator = StandardCommandBufferAllocator::new(
         device.clone(),
@@ -646,9 +639,11 @@ fn main() {
         position: [0.0; 3],
         previousPosition: [0.0; 3],
         deltaLightmapOrigin: [0; 3],
+        lightmapOrigin: [0; 3],
         frame: 0,
         _dummy0: [0; 4],
         _dummy1: [0; 4],
+        _dummy2: [0; 4],
     };
 
     let real_time_buffer = DeviceLocalBuffer::from_data(
@@ -680,7 +675,7 @@ fn main() {
     let descriptor_sets = get_compute_descriptor_sets(
         &descriptor_set_allocator,
         pathtrace_pipeline.clone(),
-        //lightmap_pipeline.clone(),
+        lightmap_pipeline.clone(),
         real_time_buffer.clone(),
         bvh_buffer.clone(),
         mutable_buffer.clone(),
@@ -699,13 +694,13 @@ fn main() {
         swapchain_images.clone(),
     );
 
-    // let lightmap_command_buffer = get_lightmap_command_buffer(
-    //     &command_buffer_allocator,
-    //     queue.clone(),
-    //     lightmap_pipeline.clone(),
-    //     descriptor_sets.clone(),
-    //     lightmap_images.clone(),
-    // );
+    let lightmap_command_buffer = get_lightmap_command_buffer(
+        &command_buffer_allocator,
+        queue.clone(),
+        lightmap_pipeline.clone(),
+        descriptor_sets.clone(),
+        lightmap_images.clone(),
+    );
 
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
     let mut previous_fence_index = 0;
@@ -855,9 +850,13 @@ fn main() {
 
         real_time_data.frame += 1;
 
-        let delta_position =
-            new_position.as_ivec3() - Vec3::from_array(real_time_data.previousPosition).as_ivec3();
-        real_time_data.deltaLightmapOrigin = delta_position.to_array();
+        let delta_position = new_position.as_ivec3() - IVec3::from_array(real_time_data.lightmapOrigin);
+        if delta_position.abs().cmpge(IVec3::splat(4)).any() {
+            real_time_data.lightmapOrigin = new_position.as_ivec3().to_array();
+            real_time_data.deltaLightmapOrigin = delta_position.to_array();
+        } else {
+            real_time_data.deltaLightmapOrigin = [0; 3];
+        }
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {
@@ -923,7 +922,7 @@ fn main() {
                 let descriptor_sets = get_compute_descriptor_sets(
                     &descriptor_set_allocator,
                     pathtrace_pipeline.clone(),
-                    //lightmap_pipeline.clone(),
+                    lightmap_pipeline.clone(),
                     real_time_buffer.clone(),
                     bvh_buffer.clone(),
                     mutable_buffer.clone(),
@@ -978,9 +977,19 @@ fn main() {
             image_fence.wait(None).unwrap();
         }
 
-        let future = previous_future
+        let mut future = previous_future
             .then_execute(queue.clone(), real_time_command_buffer)
             .unwrap()
+            .boxed();
+
+        if real_time_data.deltaLightmapOrigin != [0; 3] {
+            future = future
+                .then_execute(queue.clone(), lightmap_command_buffer.clone())
+                .unwrap()
+                .boxed();
+        }
+
+        let future = future
             .then_execute(
                 queue.clone(),
                 pathtrace_command_buffers[image_index as usize].clone(),
@@ -992,14 +1001,6 @@ fn main() {
                 SwapchainPresentInfo::swapchain_image_index(swapchain.clone(), image_index),
             )
             .then_signal_fence_and_flush();
-
-        // FIXME:
-        // if real_time_data.deltaLightmapOrigin != [0; 3] {
-        //     future = future
-        //         .then_execute(queue.clone(), lightmap_command_buffer.clone())
-        //         .unwrap()
-        //         .boxed();
-        // }
 
         fences[image_index as usize] = match future {
             Ok(ok) => Some(Arc::new(ok)),
