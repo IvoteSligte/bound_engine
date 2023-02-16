@@ -1,12 +1,12 @@
 #version 460
 
-#include "compute_includes.glsl"
+#include "includes.glsl"
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 32) in;
 
 const uint MAX_OBJECTS = 16;
 const uint MAX_MATERIALS = 8;
-const uint INDIRECT_RAYS_PER_SAMPLE = 3;
+const uint RAYS = 3;
 
 struct Material {
     vec3 reflectance;
@@ -22,18 +22,10 @@ struct Bounds {
     uint leaf;
 };
 
-struct RayColorInfo {
-    vec3 colorLeft;
-    uint material;
-};
-
 struct Ray {
-    RayColorInfo colorInfo;
+    uint material;
     vec3 origin;
     vec3 direction;
-    vec3 normalOfObject;
-    float distanceToObject;
-    uint nodeHit;
 };
 
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
@@ -41,7 +33,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 previousRotation;
     vec3 position;
     vec3 previousPosition;
-    ivec3 lightmapOrigin;
+    ivec4 lightmapOrigins[LIGHTMAP_CASCADES];
     ivec3 deltaLightmapOrigin;
     uint frame;
 } rt;
@@ -60,43 +52,35 @@ layout(binding = 3) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 4, rgba16f) uniform restrict image2D colorImage;
+layout(binding = 4, rgba16f) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 5, rgba16f) uniform restrict image3D lightmapImage;
+layout(binding = 5, rgba32f) uniform restrict image3D[LIGHTMAP_CASCADES] lightmapImages;
 
-vec3 rotate(vec4 q, vec3 v) {
+vec3 rotateWithQuat(vec4 q, vec3 v) {
     vec3 t = q.w * v + cross(q.xyz, v);
     return 2.0 * cross(q.xyz, t) + v;
 }
 
+vec4 quatTowardsNormalFromUp(vec3 n) {
+    vec4 q = vec4(-n.y, n.x, 0.0, 1.0 + n.z);
+    return normalize(q);
+    // The following should be equivalent to normalize(q): q * inversesqrt((2.0 * n.z) + 2.0 + very_small_value)
+    // using the identity length(n) == 1 but does not produce the same results for unknown reasons
+}
+
 /// generates a cosine-distributed random direction relative to the normal
-// vec3 randomDirection(vec3 normal, inout uvec4 seeds) {
-//     const float OFFSET_2_CORRECTION = 3.14159265 * 2.0 * HYBRID_TAUS_NORMALIZER;
-
-//     float r1 = HybridTaus(seeds); // longitude offset
-//     float r2 = OFFSET_2_CORRECTION * HybridTausUnnormalized(seeds); // latitude offset
-
-//     vec3 v = vec3(r1, normal.xz);
-//     vec3 sq = sqrt((-v * v) + 1.0);
-
-//     vec2 phi = vec2(normal.x, sq.y) * mat2x2(vec2(sq.x, r1), vec2(r1, sq.x));
-//     vec2 theta = vec2(sq.z, normal.z) * mat2x2(vec2(sin(r2), cos(r2)), vec2(cos(r2), -sin(r2))); // FIXME: weird angles (visible with red light)
-
-//     return vec3(phi.yx*theta.y, theta.x);
-// }
-
 vec3 randomDirection(vec3 normal, inout uvec4 seeds) {
-    const float OFFSET_2_CORRECTION = 3.14159265 * 2.0 * HYBRID_TAUS_NORMALIZER;
+    const float OFFSET_1_CORRECTION = 3.14159265 * 2.0 * HYBRID_TAUS_NORMALIZER;
 
-    float r1 = HybridTaus(seeds); // longitude offset
-    float r2 = OFFSET_2_CORRECTION * HybridTausUnnormalized(seeds); // latitude offset
+    float r1 = OFFSET_1_CORRECTION * HybridTausUnnormalized(seeds);
+    float r2 = HybridTaus(seeds);
 
-    vec2 a = vec2(r2, r1) + asin(normal.xz);
+    vec3 rand;
+    rand.xy = vec2(cos(r1), sin(r1)) * cos(r2);
+    rand.z = r2;
 
-    vec2 s = sin(a);
-    vec2 c = cos(a);
-
-    return vec3(c.x*c.y, s.x*c.y, s.y);
+    vec4 quat = quatTowardsNormalFromUp(normal);
+    return rotateWithQuat(quat, rand);
 }
 
 float distanceToObject(Ray ray, Bounds bnd, out bool is_inside) {
@@ -107,10 +91,11 @@ float distanceToObject(Ray ray, Bounds bnd, out bool is_inside) {
     return d < 0.0 ? 0.0 : m.x - sqrt(d);
 }
 
-void traceRayWithBVH(inout Ray ray) {
-    ray.distanceToObject = 1e20;
-    ray.nodeHit = 0;
-    ray.colorInfo.material = 0;
+void traceRayWithBVH(inout Ray ray, inout uvec4 seeds) {
+    ray.material = 0;
+    float distanceToHit = 1e20;
+    vec3 nodeHitPosition = vec3(0.0);
+    uint nodeHit = 0;
 
     uint curr_idx = bvh.root;
 
@@ -119,7 +104,7 @@ void traceRayWithBVH(inout Ray ray) {
 
         bool is_inside;
         float d = distanceToObject(ray, curr, is_inside);
-        bool is_hit = d > 0.0 && d < ray.distanceToObject;
+        bool is_hit = d > 0.0 && d < distanceToHit;
 
         // not a leaf, move to child
         if (curr.leaf == 0 && (is_inside || is_hit)) {
@@ -129,45 +114,39 @@ void traceRayWithBVH(inout Ray ray) {
 
         if (is_hit) {
             // is a leaf, store data
-            ray.distanceToObject = d;
-            ray.nodeHit = curr_idx;
-            ray.colorInfo.material = curr.leaf;
+            distanceToHit = d;
+            nodeHit = curr_idx;
+            nodeHitPosition = curr.position;
+            ray.material = curr.leaf;
         }
 
         // move to next node
         curr_idx = curr.next;
     }
+
+    ray.origin = (ray.direction * distanceToHit) + ray.origin;
+    vec3 normal = normalize(ray.origin - nodeHitPosition); // TODO: do not do this after the last ray, it's unnecessary
+    ray.direction = randomDirection(normal, seeds); // TODO: do not do this after the last ray, it's unnecessary
 }
 
-void updateRay(inout Ray ray, inout uvec4 seeds) {
-    ray.origin = (ray.direction * ray.distanceToObject) + ray.origin;
-    ray.normalOfObject = normalize(ray.origin - bvh.nodes[ray.nodeHit].position); // TODO: move bvh.nodes[ray.nodeHit].position to ray data
-    ray.direction = randomDirection(ray.normalOfObject, seeds);
+float maximum(vec3 v) {
+    return max(max(v.x, v.y), v.z);
 }
 
-vec3 shadeDirect(inout RayColorInfo rayColor) {
-    Material material = buf.mats[rayColor.material];
-    vec3 colorChange = rayColor.colorLeft * material.emittance / gl_WorkGroupSize.z;
-    rayColor.colorLeft *= material.reflectance;
-    return colorChange;
-}
+/// returns an index into a lightmap image in xyz, and the image index in w
+ivec4 lightmapIndexAtPos(vec3 v) {
+    const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
+    const float INV_HALF_IMAGE_SIZE = 1.0 / float(HALF_IMAGE_SIZE);
 
-vec3 shadeIndirect(inout RayColorInfo rayColor, inout vec3 lightmapColor) {
-    Material material = buf.mats[rayColor.material];
-    lightmapColor = mix(lightmapColor, material.emittance / gl_WorkGroupSize.z, 0.01);
-    vec3 colorChange = rayColor.colorLeft * lightmapColor;
-    rayColor.colorLeft *= material.reflectance;
-    return colorChange;
-}
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_IMAGE_SIZE, 0.5001)) + 1.0);
+    int unitSize = 1 << lightmapNum;
 
-ivec3 lightmapIndices(vec3 v) {
-    const ivec3 IMAGE_OFFSET = imageSize(lightmapImage) >> 1;
-    return ivec3(v) - rt.lightmapOrigin + IMAGE_OFFSET;
+    ivec3 index = ivec3(floor(v)) / unitSize - rt.lightmapOrigins[lightmapNum].xyz + HALF_IMAGE_SIZE;
+
+    return ivec4(index, lightmapNum);
 }
 
 shared vec3 SharedColors[gl_WorkGroupSize.z];
-
-shared Ray SharedDirectRay;
 
 void main() {
     const ivec2 viewport = ivec2(imageSize(colorImage).xy);
@@ -182,48 +161,50 @@ void main() {
 
     uvec4 seeds = baked_seeds + rt.frame * 65423;
 
-    vec3 color = vec3(0.0);
-
     // maps FragCoord to xy range [-1.0, 1.0]
     vec2 normCoord = ipos * (2.0 / viewport) - 1.0;
     // maps normCoord to a different range (e.g. for FOV and non-square windows)
     normCoord *= cs.ratio;
 
-    vec3 viewDir = rotate(rt.rotation, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
+    vec3 viewDir = rotateWithQuat(rt.rotation, normalize(vec3(normCoord.x, 1.0, normCoord.y)));
 
-    // FIXME: weird edges in rendering caused by a change in angle (lighting in said edges changes based on position)
-    Ray ray = Ray(RayColorInfo(vec3(1.0), 0), rt.position, viewDir, vec3(0.0), 0.0, 0);
+    Ray ray = Ray(0, rt.position, viewDir);
 
-    traceRayWithBVH(ray);
-    updateRay(ray, seeds);
+    ivec4 indices[RAYS];
+    Material materials[RAYS];
+    vec4 loads[RAYS];
 
-    color += shadeDirect(ray.colorInfo);
+    vec3 outColor = vec3(0.0);
+    vec3 colorLeft = vec3(1.0);
+    for (uint r = 0; r < RAYS; r++) {
+        traceRayWithBVH(ray, seeds);
 
-    for (uint r = 0; r < INDIRECT_RAYS_PER_SAMPLE; r++) {
-        // position of previous hit
-        ivec3 indices = lightmapIndices(ray.origin);
+        indices[r] = lightmapIndexAtPos(ray.origin);
+        materials[r] = buf.mats[ray.material];
+        loads[r] = imageLoad(lightmapImages[indices[r].w], indices[r].xyz);
 
-        traceRayWithBVH(ray);
-        updateRay(ray, seeds);
-
-        vec4 data = imageLoad(lightmapImage, indices); // TODO: multiply by the material reflectance
-        vec3 colorChange = shadeIndirect(ray.colorInfo, data.rgb);
-        imageStore(lightmapImage, indices, vec4(data.rgb, data.w + 1.0));
-        color += colorChange;
+        outColor += loads[r].rgb * colorLeft;
+        colorLeft *= materials[r].reflectance;
     }
 
-    color += imageLoad(lightmapImage, lightmapIndices(ray.origin)).rgb;
+    for (uint i = 0; i < RAYS; i++) {
+        vec3 outLMColor = materials[i].emittance;
 
-    SharedColors[gl_LocalInvocationID.z] = color;
+        outLMColor += i != 0 ? loads[i-1].rgb * materials[i-1].reflectance : vec3(0.0);
+        outLMColor += i != RAYS-1 ? loads[i+1].rgb * materials[i+1].reflectance : vec3(0.0);
+
+        imageStore(lightmapImages[indices[i].w], indices[i].xyz, vec4(mix(loads[i].rgb, outLMColor * 0.3333, exp2(-16)), 0.0));
+    }
+
+    SharedColors[gl_LocalInvocationID.z] = outColor;
     memoryBarrierShared();
     barrier();
 
     if (gl_LocalInvocationID.z == 0) {
         for (uint i = 1; i < gl_WorkGroupSize.z; i++) {
-            color += SharedColors[i];
+            outColor += SharedColors[i];
         }
 
-        vec4 loaded = imageLoad(colorImage, ipos);
-        imageStore(colorImage, ipos, vec4(mix(loaded.rgb, color, 0.4), 0.0));
+        imageStore(colorImage, ipos, vec4(outColor, 0.0));
     }
 }

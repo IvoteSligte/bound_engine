@@ -5,16 +5,14 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies.winit_event_helper]
-path = "/home/ivo/Code/winit_event_helper"
-
 [dependencies]
 vulkano = "0.32.3"
 vulkano-shaders = "0.32.0"
 vulkano-win = "0.32.0"
-bytemuck = "1.12.3"
+bytemuck = "1.13.0"
 winit = "0.27.5"
 winit-fullscreen = "1.0.0"
+winit_event_helper = "0.4.2"
 glam = "0.22.0"
 fps_counter = "2.0.0"
 image = "0.24.5"
