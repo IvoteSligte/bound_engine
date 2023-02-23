@@ -1,4 +1,4 @@
-const uint LIGHTMAP_CASCADES = 4;
+const uint LIGHTMAP_COUNT = 6;
 
 ivec3 nSigns(vec3 v) {
     return ivec3(v.x >= 0.0 ? 1 : -1, v.y >= 0.0 ? 1 : -1, v.z >= 0.0 ? 1 : -1);

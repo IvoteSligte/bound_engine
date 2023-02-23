@@ -2,11 +2,11 @@
 
 #include "includes.glsl"
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 32) in;
+layout(local_size_x = 8, local_size_y = 4, local_size_z = 1) in;
 
 const uint MAX_OBJECTS = 16;
 const uint MAX_MATERIALS = 8;
-const uint RAYS = 3;
+const uint RAYS_INDIRECT = 4;
 
 struct Material {
     vec3 reflectance;
@@ -33,8 +33,8 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 previousRotation;
     vec3 position;
     vec3 previousPosition;
-    ivec4 lightmapOrigins[LIGHTMAP_CASCADES];
-    ivec3 deltaLightmapOrigin;
+    ivec3 lightmapOrigin;
+    ivec4 deltaLightmapOrigins[LIGHTMAP_COUNT];
     uint frame;
 } rt;
 
@@ -54,7 +54,7 @@ layout(binding = 3) uniform restrict readonly ConstantBuffer {
 
 layout(binding = 4, rgba16f) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 5, rgba32f) uniform restrict image3D[LIGHTMAP_CASCADES] lightmapImages;
+layout(binding = 5, rgba32f) uniform restrict image3D[LIGHTMAP_COUNT] lightmapImages;
 
 vec3 rotateWithQuat(vec4 q, vec3 v) {
     vec3 t = q.w * v + cross(q.xyz, v);
@@ -62,7 +62,7 @@ vec3 rotateWithQuat(vec4 q, vec3 v) {
 }
 
 vec4 quatTowardsNormalFromUp(vec3 n) {
-    vec4 q = vec4(-n.y, n.x, 0.0, 1.0 + n.z);
+    vec4 q = vec4(-n.y, n.x, 0.0, n.z + 1.0);
     return normalize(q);
     // The following should be equivalent to normalize(q): q * inversesqrt((2.0 * n.z) + 2.0 + very_small_value)
     // using the identity length(n) == 1 but does not produce the same results for unknown reasons
@@ -71,13 +71,14 @@ vec4 quatTowardsNormalFromUp(vec3 n) {
 /// generates a cosine-distributed random direction relative to the normal
 vec3 randomDirection(vec3 normal, inout uvec4 seeds) {
     const float OFFSET_1_CORRECTION = 3.14159265 * 2.0 * HYBRID_TAUS_NORMALIZER;
+    const float OFFSET_2_CORRECTION = 3.14159265 * 0.5 * HYBRID_TAUS_NORMALIZER;
 
     float r1 = OFFSET_1_CORRECTION * HybridTausUnnormalized(seeds);
-    float r2 = HybridTaus(seeds);
+    float r2 = OFFSET_2_CORRECTION * HybridTausUnnormalized(seeds);
 
     vec3 rand;
     rand.xy = vec2(cos(r1), sin(r1)) * cos(r2);
-    rand.z = r2;
+    rand.z = sin(r2);
 
     vec4 quat = quatTowardsNormalFromUp(normal);
     return rotateWithQuat(quat, rand);
@@ -91,10 +92,10 @@ float distanceToObject(Ray ray, Bounds bnd, out bool is_inside) {
     return d < 0.0 ? 0.0 : m.x - sqrt(d);
 }
 
-void traceRayWithBVH(inout Ray ray, inout uvec4 seeds) {
+void traceRayWithBVH(inout Ray ray, out vec3 hitPosition, inout uvec4 seeds) {
     ray.material = 0;
+    hitPosition = vec3(0.0);
     float distanceToHit = 1e20;
-    vec3 nodeHitPosition = vec3(0.0);
     uint nodeHit = 0;
 
     uint curr_idx = bvh.root;
@@ -116,7 +117,7 @@ void traceRayWithBVH(inout Ray ray, inout uvec4 seeds) {
             // is a leaf, store data
             distanceToHit = d;
             nodeHit = curr_idx;
-            nodeHitPosition = curr.position;
+            hitPosition = curr.position;
             ray.material = curr.leaf;
         }
 
@@ -125,8 +126,6 @@ void traceRayWithBVH(inout Ray ray, inout uvec4 seeds) {
     }
 
     ray.origin = (ray.direction * distanceToHit) + ray.origin;
-    vec3 normal = normalize(ray.origin - nodeHitPosition); // TODO: do not do this after the last ray, it's unnecessary
-    ray.direction = randomDirection(normal, seeds); // TODO: do not do this after the last ray, it's unnecessary
 }
 
 float maximum(vec3 v) {
@@ -136,17 +135,17 @@ float maximum(vec3 v) {
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
     const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
-    const float INV_HALF_IMAGE_SIZE = 1.0 / float(HALF_IMAGE_SIZE);
+    const float BASE_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
+    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * BASE_UNIT_SIZE);
 
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_IMAGE_SIZE, 0.5001)) + 1.0);
-    int unitSize = 1 << lightmapNum;
+    v -= rt.lightmapOrigin.xyz;
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
+    float unitSize = (1 << lightmapNum) * BASE_UNIT_SIZE;
 
-    ivec3 index = ivec3(floor(v)) / unitSize - rt.lightmapOrigins[lightmapNum].xyz + HALF_IMAGE_SIZE;
+    ivec3 index = ivec3(floor(v / unitSize)) + HALF_IMAGE_SIZE;
 
     return ivec4(index, lightmapNum);
 }
-
-shared vec3 SharedColors[gl_WorkGroupSize.z];
 
 void main() {
     const ivec2 viewport = ivec2(imageSize(colorImage).xy);
@@ -170,41 +169,53 @@ void main() {
 
     Ray ray = Ray(0, rt.position, viewDir);
 
-    ivec4 indices[RAYS];
-    Material materials[RAYS];
-    vec4 loads[RAYS];
+    vec3 hitPosition;
+    traceRayWithBVH(ray, hitPosition, seeds);
+    vec3 normal = normalize(ray.origin - hitPosition);
+    ray.direction = randomDirection(normal, seeds);
 
-    vec3 outColor = vec3(0.0);
-    vec3 colorLeft = vec3(1.0);
-    for (uint r = 0; r < RAYS; r++) {
-        traceRayWithBVH(ray, seeds);
+    Material material = buf.mats[ray.material];
 
-        indices[r] = lightmapIndexAtPos(ray.origin);
-        materials[r] = buf.mats[ray.material];
-        loads[r] = imageLoad(lightmapImages[indices[r].w], indices[r].xyz);
+    ivec4 index = lightmapIndexAtPos(ray.origin);
+    vec4 data = imageLoad(lightmapImages[index.w], index.xyz);
 
-        outColor += loads[r].rgb * colorLeft;
-        colorLeft *= materials[r].reflectance;
-    }
+    if (data.w < 1e4) {
+        const uint MAX_RAYS_PARALLEL = 2 << RAYS_INDIRECT;
 
-    for (uint i = 0; i < RAYS; i++) {
-        vec3 outLMColor = materials[i].emittance;
+        data.rgb += material.emittance;
+        Ray rays[MAX_RAYS_PARALLEL];
+        rays[0] = ray;
+        vec3 colorsLeft[MAX_RAYS_PARALLEL >> 1];
+        colorsLeft[0] = material.reflectance;
+        
+        for (uint i = 0; i < RAYS_INDIRECT; i++) {
+            for (uint j = 0; j < (2 << i); j++) {
+                rays[j] = rays[j >> 1];
 
-        outLMColor += i != 0 ? loads[i-1].rgb * materials[i-1].reflectance : vec3(0.0);
-        outLMColor += i != RAYS-1 ? loads[i+1].rgb * materials[i+1].reflectance : vec3(0.0);
+                vec3 hitPosition;
+                traceRayWithBVH(rays[j], hitPosition, seeds);
+                if (i < RAYS_INDIRECT - 1) {
+                    vec3 normal = normalize(rays[j].origin - hitPosition);
+                    rays[j].direction = randomDirection(normal, seeds);
+                }
 
-        imageStore(lightmapImages[indices[i].w], indices[i].xyz, vec4(mix(loads[i].rgb, outLMColor * 0.3333, exp2(-16)), 0.0));
-    }
+                ivec4 indices = lightmapIndexAtPos(rays[j].origin);
+                vec4 loadData = imageLoad(lightmapImages[indices.w], indices.xyz); // FIXME:
 
-    SharedColors[gl_LocalInvocationID.z] = outColor;
-    memoryBarrierShared();
-    barrier();
+                Material material = buf.mats[rays[j].material];
 
-    if (gl_LocalInvocationID.z == 0) {
-        for (uint i = 1; i < gl_WorkGroupSize.z; i++) {
-            outColor += SharedColors[i];
+                data.rgb += (material.emittance + loadData.rgb) / (1.0 + 2.0 * loadData.w) * colorsLeft[j >> 1];
+                if (i < RAYS_INDIRECT - 1) {
+                    colorsLeft[j] *= material.reflectance;
+                }
+            }
         }
 
-        imageStore(colorImage, ipos, vec4(outColor, 0.0));
+        data.w += 1.0;
+        imageStore(lightmapImages[index.w], index.xyz, data);
+    }
+
+    if (gl_LocalInvocationID.z == 0) {
+        imageStore(colorImage, ipos, vec4(data.rgb / data.w, 0.0));
     }
 }

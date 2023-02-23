@@ -4,20 +4,22 @@
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
+layout(constant_id = 0) const uint LIGHTMAP_INDEX = 0;
+
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
     vec4 previousRotation;
     vec3 position;
     vec3 previousPosition;
-    ivec4 lightmapOrigins[LIGHTMAP_CASCADES];
-    ivec3 deltaLightmapOrigin;
+    ivec3 lightmapOrigin;
+    ivec4 deltaLightmapOrigins[LIGHTMAP_COUNT];
     uint frame;
 } rt;
 
 layout(binding = 1, rgba32f) uniform restrict readonly image3D lightmapImageIn;
 layout(binding = 2, rgba32f) uniform restrict writeonly image3D lightmapImageOut;
 
-void main() { // TODO: cascades
+void main() { // FIXME:
     vec4 data = imageLoad(lightmapImageIn, ivec3(gl_GlobalInvocationID));
-    imageStore(lightmapImageOut, ivec3(gl_GlobalInvocationID) - rt.deltaLightmapOrigin, data);
+    imageStore(lightmapImageOut, ivec3(gl_GlobalInvocationID) - rt.deltaLightmapOrigins[LIGHTMAP_INDEX].xyz, data);
 }
