@@ -1,9 +1,3 @@
-const uint LIGHTMAP_COUNT = 6;
-
-ivec3 nSigns(vec3 v) {
-    return ivec3(v.x >= 0.0 ? 1 : -1, v.y >= 0.0 ? 1 : -1, v.z >= 0.0 ? 1 : -1);
-}
-
 // adapted from: https://developer.nvidia.com/gpugems/gpugems3/part-vi-gpu-computing/chapter-37-efficient-random-number-generation-and-application
 
 // S1, S2, S3, and M are all constants, and z is part of the

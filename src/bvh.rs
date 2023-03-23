@@ -56,7 +56,6 @@ impl From<(Vec3, f32)> for Sphere {
 struct BestFitReplace {
     index: usize,
     sphere: Sphere,
-    added_area: f32,
 }
 
 type InsertIndex = usize;
@@ -119,13 +118,6 @@ impl CpuBVH {
 
         self.resize_parents_recursive(self.nodes.len() - 1);
 
-        // let new_node = self.nodes.last().unwrap();
-        // if new_node.parent.is_some()
-        //     && self.nodes[new_node.parent.unwrap()].sphere() == new_node.sphere()
-        // {
-        //     self.merge_node_with_parent(self.nodes.len() - 1);
-        // }
-
         let new_node_surrounds_all = self.nodes[self.nodes.len() - 1].parent.is_none();
         let other_surrounds_all = self.nodes[other_root_idx].parent.is_none();
 
@@ -136,20 +128,20 @@ impl CpuBVH {
         }
     }
 
-    #[allow(dead_code)]
-    fn merge_node_with_parent(&mut self, target_idx: usize) {
-        let CpuNodePtr { index, ptr_type } = self.pointer_to_node(target_idx);
+    // #[allow(dead_code)]
+    // fn merge_node_with_parent(&mut self, target_idx: usize) {
+    //     let CpuNodePtr { index, ptr_type } = self.pointer_to_node(target_idx);
 
-        match ptr_type {
-            CpuNodePtrType::Parent => self.nodes[index].child = self.nodes[target_idx].next,
-            CpuNodePtrType::Previous => self.nodes[index].next = self.nodes[target_idx].next,
-        }
+    //     match ptr_type {
+    //         CpuNodePtrType::Parent => self.nodes[index].child = self.nodes[target_idx].next,
+    //         CpuNodePtrType::Previous => self.nodes[index].next = self.nodes[target_idx].next,
+    //     }
 
-        let children = self.children_of_node(target_idx);
-        for c in children {
-            self.insert_node_as_child(c, self.nodes[target_idx].parent.unwrap());
-        }
-    }
+    //     let children = self.children_of_node(target_idx);
+    //     for c in children {
+    //         self.insert_node_as_child(c, self.nodes[target_idx].parent.unwrap());
+    //     }
+    // }
 
     fn insert_node_as_child(&mut self, insert_target_idx: usize, target_idx: usize) {
         let prev_child_idx = self.nodes[target_idx].child;
@@ -198,14 +190,11 @@ impl CpuBVH {
 
             let surrounding_sphere = current.sphere().calculate_sphere(&target);
 
-            let added_area = self.added_area_with_sphere(surrounding_sphere, current_idx);
-
             // if it makes the surface area of the BVH smaller (SAH)...
-            if best_fit.is_err() || added_area < best_fit.unwrap().added_area {
+            if best_fit.is_err() || surrounding_sphere.radius < best_fit.unwrap().sphere.radius {
                 best_fit = Ok(BestFitReplace {
                     index: current_idx,
                     sphere: surrounding_sphere,
-                    added_area,
                 });
             }
 
@@ -218,37 +207,37 @@ impl CpuBVH {
         best_fit
     }
 
-    fn added_area_with_sphere(&self, mut sphere: Sphere, mut idx: usize) -> f32 {
-        let mut parent_idx = self.nodes[idx].parent;
-        let mut added_area = sphere.radius * sphere.radius;
+    // fn added_area_with_sphere(&self, mut sphere: Sphere, mut idx: usize) -> f32 {
+    //     let mut parent_idx = self.nodes[idx].parent;
+    //     let mut added_area = sphere.radius * sphere.radius;
 
-        while let Some(p) = parent_idx {
-            let mut spheres = self
-                .children_of_node(p)
-                .into_iter()
-                .filter(|&i| i != idx)
-                .map(|child| self.nodes[child].sphere())
-                .collect::<Vec<Sphere>>();
-            spheres.push(sphere);
+    //     while let Some(p) = parent_idx {
+    //         let mut spheres = self
+    //             .children_of_node(p)
+    //             .into_iter()
+    //             .filter(|&i| i != idx)
+    //             .map(|child| self.nodes[child].sphere())
+    //             .collect::<Vec<Sphere>>();
+    //         spheres.push(sphere);
 
-            let surrounding_sphere = Sphere::largest_surrounding_sphere(spheres);
-            let surrounding_radius = surrounding_sphere.radius;
-            let area_diff = surrounding_radius * surrounding_radius
-                - self.nodes[p].radius * self.nodes[p].radius;
+    //         let surrounding_sphere = Sphere::largest_surrounding_sphere(spheres);
+    //         let surrounding_radius = surrounding_sphere.radius;
+    //         let area_diff = surrounding_radius * surrounding_radius
+    //             - self.nodes[p].radius * self.nodes[p].radius;
 
-            if area_diff == 0.0 {
-                break;
-            }
+    //         if area_diff == 0.0 {
+    //             break;
+    //         }
 
-            added_area += area_diff;
+    //         added_area += area_diff;
 
-            parent_idx = self.nodes[p].parent;
-            idx = p;
-            sphere = surrounding_sphere;
-        }
+    //         parent_idx = self.nodes[p].parent;
+    //         idx = p;
+    //         sphere = surrounding_sphere;
+    //     }
 
-        added_area
-    }
+    //     added_area
+    // }
 
     fn children_of_node(&self, target_idx: usize) -> Vec<usize> {
         let mut children = vec![];
@@ -319,6 +308,7 @@ impl CpuBVH {
         }
     }
 
+    #[allow(dead_code)]
     pub fn graphify(&self) {
         let mut graph = petgraph::graph::Graph::<usize, &str>::new();
         let mut vertices = HashSet::new();

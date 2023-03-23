@@ -8,8 +8,8 @@ use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
-        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo,
-        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage,
+        CopyImageInfo, FillBufferInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
     },
     descriptor_set::{
         allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
@@ -50,9 +50,17 @@ use crate::bvh::{CpuBVH, CpuNode};
 mod shaders {
     vulkano_shaders::shader! {
         shaders: {
-            Pathtrace: {
+            Direct: {
                 ty: "compute",
-                path: "shaders/pathtrace.glsl",
+                path: "shaders/direct.glsl",
+            },
+            IndirectFinal: {
+                ty: "compute",
+                path: "shaders/indirect_final.glsl",
+            },
+            IndirectTrue: {
+                ty: "compute",
+                path: "shaders/indirect_true.glsl",
             },
             Lightmap: {
                 ty: "compute",
@@ -60,11 +68,14 @@ mod shaders {
             }
         },
         types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
-        include: ["includes.glsl"]
+        include: ["includes_trace_ray.glsl", "includes_general.glsl", "includes_random.glsl"],
+        define: [("INDIRECT_FINAL_COUNT", "65536"), ("INDIRECT_TRUE_COUNT", "65536")] // TODO: sync defines with consts
     }
 }
 
-// FIXME: index 3 doesn't show up in final bvh in renders?
+const INDIRECT_FINAL_COUNT: u32 = 65536;
+const INDIRECT_TRUE_COUNT: u32 = 65536;
+
 const BVH_OBJECTS: [CpuNode; 9] = [
     CpuNode {
         position: Vec3::new(-1000020.0, 0.0, 0.0),
@@ -186,14 +197,58 @@ const MATERIALS: [shaders::ty::Material; 7] = [
     },
 ];
 
-const COLOR_IMAGE_DIMENSION_DIV: f32 = 1.0;
 const LIGHTMAP_SIZE: u32 = 128;
 const LIGHTMAP_COUNT: usize = 6;
 
 #[derive(Clone)]
 struct DescriptorSetCollection {
-    pathtrace_set: Arc<PersistentDescriptorSet>,
-    lightmap_sets: Vec<Arc<PersistentDescriptorSet>>,
+    direct: Arc<PersistentDescriptorSet>,
+    indirect_final: Arc<PersistentDescriptorSet>,
+    indirect_true: Arc<PersistentDescriptorSet>,
+    move_indirect_finals: Vec<Arc<PersistentDescriptorSet>>,
+    move_indirect_trues: Vec<Arc<PersistentDescriptorSet>>,
+}
+
+#[derive(Clone)]
+struct Shaders {
+    direct: Arc<ShaderModule>,
+    indirect_final: Arc<ShaderModule>,
+    indirect_true: Arc<ShaderModule>,
+    lightmap: Arc<ShaderModule>,
+}
+
+impl Shaders {
+    fn load(device: Arc<Device>) -> Self {
+        Self {
+            direct: shaders::load_Direct(device.clone()).unwrap(),
+            indirect_final: shaders::load_IndirectFinal(device.clone()).unwrap(),
+            indirect_true: shaders::load_IndirectTrue(device.clone()).unwrap(),
+            lightmap: shaders::load_Lightmap(device.clone()).unwrap(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PathtracePipelines {
+    direct: Arc<ComputePipeline>,
+    indirect_final: Arc<ComputePipeline>,
+    indirect_true: Arc<ComputePipeline>,
+}
+
+impl PathtracePipelines {
+    fn from_shaders(device: Arc<Device>, shaders: Shaders) -> Self {
+        let direct = get_compute_pipeline(device.clone(), shaders.direct.clone(), &());
+        let indirect_final =
+            get_compute_pipeline(device.clone(), shaders.indirect_final.clone(), &());
+        let indirect_true =
+            get_compute_pipeline(device.clone(), shaders.indirect_true.clone(), &());
+
+        Self {
+            direct,
+            indirect_final,
+            indirect_true,
+        }
+    }
 }
 
 fn select_physical_device<'a>(
@@ -234,7 +289,7 @@ where
         device.clone(),
         shader.entry_point("main").unwrap(),
         specialization_constants,
-        None, // TODO: look into caches
+        None,
         |_| {},
     )
     .unwrap()
@@ -248,11 +303,11 @@ fn get_color_image(
     StorageImage::with_usage(
         allocator,
         ImageDimensions::Dim2d {
-            width: (dimensions.width as f32 / COLOR_IMAGE_DIMENSION_DIV) as u32,
-            height: (dimensions.height as f32 / COLOR_IMAGE_DIMENSION_DIV) as u32,
+            width: dimensions.width,
+            height: dimensions.height,
             array_layers: 1,
         },
-        Format::R16G16B16A16_SFLOAT, // TODO: loosely match format with swapchain image format
+        Format::R8G8B8A8_UNORM,
         ImageUsage {
             storage: true,
             transfer_src: true,
@@ -264,122 +319,272 @@ fn get_color_image(
     .unwrap()
 }
 
-fn get_lightmap_images(
-    allocator: &(impl MemoryAllocator + ?Sized),
-    queue_family_index: u32,
-    main_count: usize,
-) -> (Vec<Arc<StorageImage>>, Arc<StorageImage>) {
-    let dimensions = ImageDimensions::Dim3d {
-        width: LIGHTMAP_SIZE,
-        height: LIGHTMAP_SIZE,
-        depth: LIGHTMAP_SIZE,
-    };
+#[derive(Clone)]
+struct LightmapImages {
+    indirect_finals: Vec<Arc<StorageImage>>,
+    indirect_trues: Vec<Arc<StorageImage>>,
+    staging: Arc<StorageImage>,
+}
 
-    let mains = (0..main_count)
-        .map(|_| {
+#[derive(Clone)]
+struct LightmapImageViews {
+    indirect_finals: Vec<Arc<dyn ImageViewAbstract>>,
+    indirect_trues: Vec<Arc<dyn ImageViewAbstract>>,
+    staging: Arc<dyn ImageViewAbstract>,
+}
+
+impl LightmapImages {
+    fn new(
+        allocator: &(impl MemoryAllocator + ?Sized),
+        queue_family_index: u32,
+        count_per_set: usize,
+    ) -> Self {
+        let dimensions = ImageDimensions::Dim3d {
+            width: LIGHTMAP_SIZE,
+            height: LIGHTMAP_SIZE,
+            depth: LIGHTMAP_SIZE,
+        };
+
+        let create_storage_image = |usage| {
             StorageImage::with_usage(
                 allocator,
                 dimensions,
-                Format::R32G32B32A32_SFLOAT,
+                Format::R8G8B8A8_UNORM,
                 ImageUsage {
                     storage: true,
-                    transfer_dst: true,
-                    ..ImageUsage::empty()
+                    ..usage
                 },
                 ImageCreateFlags::empty(),
                 [queue_family_index],
             )
             .unwrap()
-        })
-        .collect::<Vec<_>>();
+        };
 
-    let staging = StorageImage::with_usage(
-        allocator,
-        dimensions,
-        Format::R32G32B32A32_SFLOAT,
-        ImageUsage {
-            storage: true,
+        let indirect_finals = (0..count_per_set)
+            .map(|_| {
+                create_storage_image(ImageUsage {
+                    transfer_dst: true,
+                    ..ImageUsage::default()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let indirect_trues = (0..count_per_set)
+            .map(|_| {
+                create_storage_image(ImageUsage {
+                    transfer_dst: true,
+                    ..ImageUsage::default()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let staging = create_storage_image(ImageUsage {
             transfer_src: true,
-            ..ImageUsage::empty()
-        },
-        ImageCreateFlags::empty(),
-        [queue_family_index],
-    )
-    .unwrap();
+            ..ImageUsage::default()
+        });
 
-    (mains, staging)
+        Self {
+            indirect_finals,
+            indirect_trues,
+            staging,
+        }
+    }
+
+    fn image_views(&self) -> LightmapImageViews {
+        LightmapImageViews {
+            indirect_finals: self
+                .indirect_finals
+                .iter()
+                .map(|vlm| {
+                    ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
+                })
+                .collect::<Vec<_>>(),
+            indirect_trues: self
+                .indirect_trues
+                .iter()
+                .map(|vlm| {
+                    ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
+                })
+                .collect::<Vec<_>>(),
+            staging: ImageView::new_default(self.staging.clone()).unwrap(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct LightmapBuffers {
+    indirect_final_buffer: Arc<DeviceLocalBuffer<shaders::ty::IndirectFinalBuffer>>,
+    indirect_final_counters: Arc<DeviceLocalBuffer<shaders::ty::IndirectFinalCounters>>,
+    indirect_true_buffer: Arc<DeviceLocalBuffer<shaders::ty::IndirectTrueBuffer>>,
+    indirect_true_counters: Arc<DeviceLocalBuffer<shaders::ty::IndirectTrueCounters>>,
+}
+
+impl LightmapBuffers {
+    fn new(
+        memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
+        queue_family_index: u32,
+    ) -> Self {
+        const BUFFER_USAGE: BufferUsage = BufferUsage {
+            storage_buffer: true,
+            uniform_buffer: true,
+            ..BufferUsage::empty()
+        };
+
+        const COUNTER_USAGE: BufferUsage = BufferUsage {
+            storage_buffer: true,
+            uniform_buffer: true,
+            transfer_dst: true,
+            ..BufferUsage::empty()
+        };
+
+        Self {
+            indirect_final_buffer: DeviceLocalBuffer::new(
+                memory_allocator,
+                BUFFER_USAGE,
+                [queue_family_index],
+            )
+            .unwrap(),
+            indirect_true_buffer: DeviceLocalBuffer::new(
+                memory_allocator,
+                BUFFER_USAGE,
+                [queue_family_index],
+            )
+            .unwrap(),
+            indirect_final_counters: DeviceLocalBuffer::new(
+                memory_allocator,
+                COUNTER_USAGE,
+                [queue_family_index],
+            )
+            .unwrap(),
+            indirect_true_counters: DeviceLocalBuffer::new(
+                memory_allocator,
+                COUNTER_USAGE,
+                [queue_family_index],
+            )
+            .unwrap(),
+        }
+    }
 }
 
 fn get_compute_descriptor_sets(
     allocator: &StandardDescriptorSetAllocator,
-    pathtrace_pipeline: Arc<ComputePipeline>,
+    pathtrace_pipelines: PathtracePipelines,
     lightmap_pipelines: Vec<Arc<ComputePipeline>>,
     real_time_buffer: Arc<dyn BufferAccess>,
     bvh_buffer: Arc<dyn BufferAccess>,
     mutable_buffer: Arc<dyn BufferAccess>,
     constant_buffer: Arc<dyn BufferAccess>,
     color_image: Arc<StorageImage>,
-    (lightmap_images, lightmap_staging_image): (Vec<Arc<StorageImage>>, Arc<StorageImage>),
+    lightmap_images: LightmapImages,
+    lightmap_buffers: LightmapBuffers,
 ) -> DescriptorSetCollection {
     let color_image_view = ImageView::new_default(color_image.clone()).unwrap();
 
-    let lightmap_views = lightmap_images
-        .iter()
-        .map(|vlm| ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>)
-        .collect::<Vec<_>>();
-    let lightmap_staging_view = ImageView::new_default(lightmap_staging_image.clone()).unwrap();
+    let lightmap_image_views = lightmap_images.image_views();
 
-    let pathtrace_set = PersistentDescriptorSet::new(
+    let direct = PersistentDescriptorSet::new(
         allocator,
-        pathtrace_pipeline.layout().set_layouts()[0].clone(),
+        pathtrace_pipelines.direct.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
             WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
-            WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
-            WriteDescriptorSet::buffer(3, constant_buffer.clone()),
-            WriteDescriptorSet::image_view(4, color_image_view.clone()),
-            WriteDescriptorSet::image_view_array(5, 0, lightmap_views.clone()),
+            WriteDescriptorSet::buffer(2, constant_buffer.clone()),
+            WriteDescriptorSet::image_view(3, color_image_view.clone()),
+            WriteDescriptorSet::image_view_array(
+                4,
+                0,
+                lightmap_image_views.indirect_finals.clone(),
+            ),
+            WriteDescriptorSet::buffer(5, lightmap_buffers.indirect_final_buffer.clone()),
+            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_final_counters.clone()),
         ],
     )
     .unwrap();
 
-    let lightmap_sets = lightmap_views
-        .iter()
-        .zip(lightmap_pipelines.iter())
-        .map(|(lm_view, lm_pipeline)| {
-            PersistentDescriptorSet::new(
-                allocator,
-                lm_pipeline.layout().set_layouts()[0].clone(),
-                [
-                    WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
-                    WriteDescriptorSet::image_view(1, lm_view.clone()),
-                    WriteDescriptorSet::image_view(2, lightmap_staging_view.clone()),
-                ],
-            )
-            .unwrap()
-        })
-        .collect::<Vec<_>>();
+    let indirect_final = PersistentDescriptorSet::new(
+        allocator,
+        pathtrace_pipelines.indirect_final.layout().set_layouts()[0].clone(),
+        [
+            WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
+            WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
+            WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
+            WriteDescriptorSet::image_view_array(
+                3,
+                0,
+                lightmap_image_views.indirect_finals.clone(),
+            ),
+            WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.indirect_trues.clone()),
+            WriteDescriptorSet::buffer(5, lightmap_buffers.indirect_final_buffer.clone()),
+            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_final_counters.clone()),
+            WriteDescriptorSet::buffer(7, lightmap_buffers.indirect_true_buffer.clone()),
+            WriteDescriptorSet::buffer(8, lightmap_buffers.indirect_true_counters.clone()),
+        ],
+    )
+    .unwrap();
+
+    let indirect_true = PersistentDescriptorSet::new(
+        allocator,
+        pathtrace_pipelines.indirect_true.layout().set_layouts()[0].clone(),
+        [
+            WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
+            WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
+            WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
+            WriteDescriptorSet::image_view_array(3, 0, lightmap_image_views.indirect_trues.clone()),
+            WriteDescriptorSet::buffer(4, lightmap_buffers.indirect_true_buffer.clone()),
+            WriteDescriptorSet::buffer(5, lightmap_buffers.indirect_true_counters.clone()),
+        ],
+    )
+    .unwrap();
+
+    let move_lightmaps = |lightmaps: Vec<Arc<dyn ImageViewAbstract>>| {
+        lightmaps
+            .iter()
+            .zip(lightmap_pipelines.iter())
+            .map(|(lm_view, lm_pipeline)| {
+                PersistentDescriptorSet::new(
+                    allocator,
+                    lm_pipeline.layout().set_layouts()[0].clone(),
+                    [
+                        WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
+                        WriteDescriptorSet::image_view(1, lm_view.clone()),
+                        WriteDescriptorSet::image_view(2, lightmap_image_views.staging.clone()),
+                    ],
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let move_indirect_finals = move_lightmaps(lightmap_image_views.indirect_finals);
+    let move_indirect_trues = move_lightmaps(lightmap_image_views.indirect_trues);
 
     DescriptorSetCollection {
-        pathtrace_set,
-        lightmap_sets,
+        direct,
+        indirect_final,
+        indirect_true,
+        move_indirect_finals,
+        move_indirect_trues,
     }
 }
 
-fn get_main_command_buffers(
+fn get_pathtrace_command_buffers(
     allocator: &StandardCommandBufferAllocator,
     queue: Arc<Queue>,
-    pathtrace_pipeline: Arc<ComputePipeline>,
+    pipelines: PathtracePipelines,
     descriptor_sets: DescriptorSetCollection,
     dimensions: PhysicalSize<u32>,
     color_image: Arc<StorageImage>,
     swapchain_images: Vec<Arc<SwapchainImage>>,
+    lightmap_buffers: LightmapBuffers,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-    let dispatch_pathtrace = [
-        (dimensions.width as f32 / 8.0 / COLOR_IMAGE_DIMENSION_DIV).ceil() as u32,
-        (dimensions.height as f32 / 4.0 / COLOR_IMAGE_DIMENSION_DIV).ceil() as u32,
+    let dispatch_direct = [
+        (dimensions.width as f32 / 8.0).ceil() as u32,
+        (dimensions.height as f32 / 8.0).ceil() as u32,
         1,
     ];
+
+    let dispatch_indirect_final = [INDIRECT_FINAL_COUNT / 64, 1, 1];
+    let dispatch_indirect_true = [INDIRECT_TRUE_COUNT / 64, 1, 1];
 
     swapchain_images
         .clone()
@@ -398,14 +603,40 @@ fn get_main_command_buffers(
                     ..BlitImageInfo::images(color_image.clone(), swapchain_image.clone())
                 })
                 .unwrap()
-                .bind_pipeline_compute(pathtrace_pipeline.clone())
+                .bind_pipeline_compute(pipelines.direct.clone())
                 .bind_descriptor_sets(
                     PipelineBindPoint::Compute,
-                    pathtrace_pipeline.layout().clone(),
+                    pipelines.direct.layout().clone(),
                     0,
-                    descriptor_sets.pathtrace_set.clone(),
+                    descriptor_sets.direct.clone(),
                 )
-                .dispatch(dispatch_pathtrace)
+                .dispatch(dispatch_direct)
+                .unwrap()
+                .fill_buffer(FillBufferInfo::dst_buffer(
+                    lightmap_buffers.indirect_true_counters.clone(),
+                )) // clear buffer
+                .unwrap()
+                .bind_pipeline_compute(pipelines.indirect_final.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.indirect_final.layout().clone(),
+                    0,
+                    descriptor_sets.indirect_final.clone(),
+                )
+                .dispatch(dispatch_indirect_final)
+                .unwrap()
+                .bind_pipeline_compute(pipelines.indirect_true.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.indirect_true.layout().clone(),
+                    0,
+                    descriptor_sets.indirect_true.clone(),
+                )
+                .dispatch(dispatch_indirect_true)
+                .unwrap()
+                .fill_buffer(FillBufferInfo::dst_buffer(
+                    lightmap_buffers.indirect_final_counters.clone(),
+                )) // clear buffer
                 .unwrap();
 
             Arc::new(builder.build().unwrap())
@@ -418,7 +649,7 @@ fn get_lightmap_command_buffer(
     queue: Arc<Queue>,
     lightmap_pipelines: Vec<Arc<ComputePipeline>>,
     descriptor_sets: DescriptorSetCollection,
-    (lightmap_images, lightmap_staging_image): (Vec<Arc<StorageImage>>, Arc<StorageImage>),
+    lightmap_images: LightmapImages,
 ) -> Arc<PrimaryAutoCommandBuffer> {
     let dispatch_lightmap = UVec3::splat(LIGHTMAP_SIZE / 4).to_array();
 
@@ -429,20 +660,38 @@ fn get_lightmap_command_buffer(
     )
     .unwrap();
 
-    for i in 0..lightmap_images.len() {
+    for i in 0..LIGHTMAP_COUNT {
         builder
             .bind_pipeline_compute(lightmap_pipelines[i].clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
                 lightmap_pipelines[i].layout().clone(),
                 0,
-                descriptor_sets.lightmap_sets[i].clone(),
+                descriptor_sets.move_indirect_finals[i].clone(),
             )
             .dispatch(dispatch_lightmap)
             .unwrap()
             .copy_image(CopyImageInfo::images(
-                lightmap_staging_image.clone(),
-                lightmap_images[i].clone(),
+                lightmap_images.staging.clone(),
+                lightmap_images.indirect_finals[i].clone(),
+            ))
+            .unwrap();
+    }
+
+    for i in 0..LIGHTMAP_COUNT {
+        builder
+            .bind_pipeline_compute(lightmap_pipelines[i].clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                lightmap_pipelines[i].layout().clone(),
+                0,
+                descriptor_sets.move_indirect_trues[i].clone(),
+            )
+            .dispatch(dispatch_lightmap)
+            .unwrap()
+            .copy_image(CopyImageInfo::images(
+                lightmap_images.staging.clone(),
+                lightmap_images.indirect_trues[i].clone(),
             ))
             .unwrap();
     }
@@ -461,7 +710,7 @@ fn get_bvh_buffer(
     }
 
     // DEBUG
-    bvh.graphify();
+    //bvh.graphify();
 
     DeviceLocalBuffer::<shaders::ty::GpuBVH>::from_data(
         memory_allocator,
@@ -596,8 +845,7 @@ fn main() {
     )
     .unwrap();
 
-    let pathtrace_shader = shaders::load_Pathtrace(device.clone()).unwrap();
-    let lightmap_shader = shaders::load_Lightmap(device.clone()).unwrap();
+    let shaders = Shaders::load(device.clone());
 
     let mut viewport = Viewport {
         origin: [0.0, 0.0],
@@ -605,12 +853,12 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
-    let pathtrace_pipeline = get_compute_pipeline(device.clone(), pathtrace_shader.clone(), &());
+    let mut pathtrace_pipelines = PathtracePipelines::from_shaders(device.clone(), shaders.clone());
     let lightmap_pipelines = (0..LIGHTMAP_COUNT)
         .map(|i| {
             get_compute_pipeline(
                 device.clone(),
-                lightmap_shader.clone(),
+                shaders.lightmap.clone(),
                 &shaders::LightmapSpecializationConstants {
                     LIGHTMAP_INDEX: i as u32,
                 },
@@ -692,6 +940,8 @@ fn main() {
     )
     .unwrap();
 
+    let lightmap_buffers = LightmapBuffers::new(&memory_allocator, queue_family_index);
+
     alloc_command_buffer_builder
         .build()
         .unwrap()
@@ -704,12 +954,12 @@ fn main() {
 
     let color_image = get_color_image(&memory_allocator, dimensions, queue_family_index);
     let lightmap_images =
-        get_lightmap_images(&memory_allocator, queue_family_index, LIGHTMAP_COUNT);
+        LightmapImages::new(&memory_allocator, queue_family_index, LIGHTMAP_COUNT);
 
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
     let descriptor_sets = get_compute_descriptor_sets(
         &descriptor_set_allocator,
-        pathtrace_pipeline.clone(),
+        pathtrace_pipelines.clone(),
         lightmap_pipelines.clone(),
         real_time_buffer.clone(),
         bvh_buffer.clone(),
@@ -717,16 +967,18 @@ fn main() {
         constant_buffer.clone(),
         color_image.clone(),
         lightmap_images.clone(),
+        lightmap_buffers.clone(),
     );
 
-    let mut pathtrace_command_buffers = get_main_command_buffers(
+    let mut pathtrace_command_buffers = get_pathtrace_command_buffers(
         &command_buffer_allocator,
         queue.clone(),
-        pathtrace_pipeline.clone(),
+        pathtrace_pipelines.clone(),
         descriptor_sets.clone(),
         dimensions,
         color_image.clone(),
         swapchain_images.clone(),
+        lightmap_buffers.clone(),
     );
 
     let lightmap_command_buffer = get_lightmap_command_buffer(
@@ -956,15 +1208,15 @@ fn main() {
                     .wait(None)
                     .unwrap();
 
-                let pathtrace_pipeline =
-                    get_compute_pipeline(device.clone(), pathtrace_shader.clone(), &());
+                pathtrace_pipelines.direct =
+                    get_compute_pipeline(device.clone(), shaders.direct.clone(), &());
 
                 let color_image =
                     get_color_image(&memory_allocator, dimensions, queue_family_index);
 
                 let descriptor_sets = get_compute_descriptor_sets(
                     &descriptor_set_allocator,
-                    pathtrace_pipeline.clone(),
+                    pathtrace_pipelines.clone(),
                     lightmap_pipelines.clone(),
                     real_time_buffer.clone(),
                     bvh_buffer.clone(),
@@ -972,16 +1224,18 @@ fn main() {
                     constant_buffer.clone(),
                     color_image.clone(),
                     lightmap_images.clone(),
+                    lightmap_buffers.clone(),
                 );
 
-                pathtrace_command_buffers = get_main_command_buffers(
+                pathtrace_command_buffers = get_pathtrace_command_buffers(
                     &command_buffer_allocator,
                     queue.clone(),
-                    pathtrace_pipeline.clone(),
+                    pathtrace_pipelines.clone(),
                     descriptor_sets.clone(),
                     dimensions,
                     color_image.clone(),
                     new_swapchain_images.clone(),
+                    lightmap_buffers.clone(),
                 );
             }
         }
@@ -1049,6 +1303,7 @@ fn main() {
             )
             .then_signal_fence_and_flush();
 
+        // TODO: remove pointless double/triple buffering (in general, not just here)
         fences[image_index as usize] = match future {
             Ok(ok) => Some(Arc::new(ok)),
             Err(FlushError::OutOfDate) => {
@@ -1064,4 +1319,6 @@ fn main() {
     })
 }
 
-// BUGS: Os(OsError { line: 1333, file: "{DIR}/winit-0.27.5/src/platform_impl/linux/x11/window.rs", error: XMisc("Cursor could not be confined: already confined by another client") })', src/main.rs:649:65
+// FIXME: BUG |||| Os(OsError { line: 1333, file: "{DIR}/winit-0.27.5/src/platform_impl/linux/x11/window.rs", error: XMisc("Cursor could not be confined: already confined by another client") })', src/main.rs:649:65
+
+// TODO: sort things into different files
