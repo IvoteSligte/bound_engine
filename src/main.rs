@@ -8,8 +8,8 @@ use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
-        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage,
-        CopyImageInfo, FillBufferInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo, FillBufferInfo,
+        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
     },
     descriptor_set::{
         allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
@@ -69,12 +69,12 @@ mod shaders {
         },
         types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
         include: ["includes_trace_ray.glsl", "includes_general.glsl", "includes_random.glsl"],
-        define: [("INDIRECT_FINAL_COUNT", "65536"), ("INDIRECT_TRUE_COUNT", "65536")] // TODO: sync defines with consts
+        define: [("INDIRECT_FINAL_COUNT", "65536"), ("INDIRECT_TRUE_COUNT", "524288")] // TODO: sync defines with consts
     }
 }
 
 const INDIRECT_FINAL_COUNT: u32 = 65536;
-const INDIRECT_TRUE_COUNT: u32 = 65536;
+const INDIRECT_TRUE_COUNT: u32 = 524288;
 
 const BVH_OBJECTS: [CpuNode; 9] = [
     CpuNode {
@@ -191,7 +191,7 @@ const MATERIALS: [shaders::ty::Material; 7] = [
     },
     shaders::ty::Material {
         reflectance: [0.5; 3],
-        emittance: [0.2, 0.0, 0.0],
+        emittance: [0.7, 0.0, 0.0],
         _dummy0: [0u8; 4],
         _dummy1: [0u8; 4],
     },
@@ -307,7 +307,7 @@ fn get_color_image(
             height: dimensions.height,
             array_layers: 1,
         },
-        Format::R8G8B8A8_UNORM,
+        Format::R16G16B16A16_UNORM, // double precision for copying to srgb
         ImageUsage {
             storage: true,
             transfer_src: true,
@@ -324,6 +324,7 @@ struct LightmapImages {
     indirect_finals: Vec<Arc<StorageImage>>,
     indirect_trues: Vec<Arc<StorageImage>>,
     staging: Arc<StorageImage>,
+    indirect_syncs: Vec<Arc<StorageImage>>,
 }
 
 #[derive(Clone)]
@@ -331,6 +332,7 @@ struct LightmapImageViews {
     indirect_finals: Vec<Arc<dyn ImageViewAbstract>>,
     indirect_trues: Vec<Arc<dyn ImageViewAbstract>>,
     staging: Arc<dyn ImageViewAbstract>,
+    indirect_syncs: Vec<Arc<dyn ImageViewAbstract>>,
 }
 
 impl LightmapImages {
@@ -345,11 +347,11 @@ impl LightmapImages {
             depth: LIGHTMAP_SIZE,
         };
 
-        let create_storage_image = |usage| {
+        let create_storage_image = |usage, format| {
             StorageImage::with_usage(
                 allocator,
                 dimensions,
-                Format::R8G8B8A8_UNORM,
+                format,
                 ImageUsage {
                     storage: true,
                     ..usage
@@ -362,31 +364,45 @@ impl LightmapImages {
 
         let indirect_finals = (0..count_per_set)
             .map(|_| {
-                create_storage_image(ImageUsage {
-                    transfer_dst: true,
-                    ..ImageUsage::default()
-                })
+                create_storage_image(
+                    ImageUsage {
+                        transfer_dst: true,
+                        ..ImageUsage::default()
+                    },
+                    Format::R8G8B8A8_UNORM,
+                )
             })
-            .collect::<Vec<_>>();
+            .collect();
 
         let indirect_trues = (0..count_per_set)
             .map(|_| {
-                create_storage_image(ImageUsage {
-                    transfer_dst: true,
-                    ..ImageUsage::default()
-                })
+                create_storage_image(
+                    ImageUsage {
+                        transfer_dst: true,
+                        ..ImageUsage::default()
+                    },
+                    Format::R8G8B8A8_UNORM,
+                )
             })
-            .collect::<Vec<_>>();
+            .collect();
 
-        let staging = create_storage_image(ImageUsage {
-            transfer_src: true,
-            ..ImageUsage::default()
-        });
+        let staging = create_storage_image(
+            ImageUsage {
+                transfer_src: true,
+                ..ImageUsage::default()
+            },
+            Format::R8G8B8A8_UNORM,
+        );
+        
+        let indirect_syncs = (0..count_per_set)
+            .map(|_| create_storage_image(ImageUsage::default(), Format::R32_UINT))
+            .collect();
 
         Self {
             indirect_finals,
             indirect_trues,
             staging,
+            indirect_syncs,
         }
     }
 
@@ -398,15 +414,22 @@ impl LightmapImages {
                 .map(|vlm| {
                     ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
                 })
-                .collect::<Vec<_>>(),
+                .collect(),
             indirect_trues: self
                 .indirect_trues
                 .iter()
                 .map(|vlm| {
                     ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
                 })
-                .collect::<Vec<_>>(),
+                .collect(),
             staging: ImageView::new_default(self.staging.clone()).unwrap(),
+            indirect_syncs: self
+                .indirect_syncs
+                .iter()
+                .map(|vlm| {
+                    ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
+                })
+                .collect(),
         }
     }
 }
@@ -495,8 +518,9 @@ fn get_compute_descriptor_sets(
                 0,
                 lightmap_image_views.indirect_finals.clone(),
             ),
-            WriteDescriptorSet::buffer(5, lightmap_buffers.indirect_final_buffer.clone()),
-            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_final_counters.clone()),
+            WriteDescriptorSet::image_view_array(5, 0, lightmap_image_views.indirect_syncs.clone()),
+            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_final_buffer.clone()),
+            WriteDescriptorSet::buffer(7, lightmap_buffers.indirect_final_counters.clone()),
         ],
     )
     .unwrap();
@@ -514,10 +538,11 @@ fn get_compute_descriptor_sets(
                 lightmap_image_views.indirect_finals.clone(),
             ),
             WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.indirect_trues.clone()),
-            WriteDescriptorSet::buffer(5, lightmap_buffers.indirect_final_buffer.clone()),
-            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_final_counters.clone()),
-            WriteDescriptorSet::buffer(7, lightmap_buffers.indirect_true_buffer.clone()),
-            WriteDescriptorSet::buffer(8, lightmap_buffers.indirect_true_counters.clone()),
+            WriteDescriptorSet::image_view_array(5, 0, lightmap_image_views.indirect_syncs.clone()),
+            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_final_buffer.clone()),
+            WriteDescriptorSet::buffer(7, lightmap_buffers.indirect_final_counters.clone()),
+            WriteDescriptorSet::buffer(8, lightmap_buffers.indirect_true_buffer.clone()),
+            WriteDescriptorSet::buffer(9, lightmap_buffers.indirect_true_counters.clone()),
         ],
     )
     .unwrap();
@@ -530,8 +555,9 @@ fn get_compute_descriptor_sets(
             WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
             WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
             WriteDescriptorSet::image_view_array(3, 0, lightmap_image_views.indirect_trues.clone()),
-            WriteDescriptorSet::buffer(4, lightmap_buffers.indirect_true_buffer.clone()),
-            WriteDescriptorSet::buffer(5, lightmap_buffers.indirect_true_counters.clone()),
+            WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.indirect_syncs.clone()),
+            WriteDescriptorSet::buffer(5, lightmap_buffers.indirect_true_buffer.clone()),
+            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_true_counters.clone()),
         ],
     )
     .unwrap();

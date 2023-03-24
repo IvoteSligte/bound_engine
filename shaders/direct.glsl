@@ -24,15 +24,17 @@ layout(binding = 2) uniform restrict readonly ConstantBuffer {
     vec2 ratio; // window height / width * fov
 } cs;
 
-layout(binding = 3, rgba8) uniform restrict writeonly image2D colorImage;
+layout(binding = 3, rgba16) uniform restrict writeonly image2D colorImage;
 
 layout(binding = 4, rgba8) uniform restrict readonly image3D[LIGHTMAP_COUNT] lightmapFinalImages;
 
-layout(binding = 5) buffer restrict IndirectFinalBuffer {
+layout(binding = 5, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
+
+layout(binding = 6) buffer restrict IndirectFinalBuffer {
     HitItem items[INDIRECT_FINAL_COUNTER_COUNT][INDIRECT_FINAL_ITEMS_PER_COUNTER];
 } indirectFinalBuffer;
 
-layout(binding = 6) buffer restrict IndirectFinalCounters {
+layout(binding = 7) buffer restrict IndirectFinalCounters {
     uint counters[INDIRECT_FINAL_COUNTER_COUNT];
 } indirectFinalCounters;
 
@@ -72,11 +74,10 @@ void main() {
     vec3 hitObjPosition;
     traceRayWithBVH(ray, hitObjPosition);
 
-    ivec4 index = lightmapIndexAtPos(ray.origin);
-    vec4 data = imageLoad(lightmapFinalImages[index.w], index.xyz);
+    ivec4 lmIndex = lightmapIndexAtPos(ray.origin);
 
-    // FIXME: only 1/INDIRECT_FINAL_COUNTER_COUNT of the image gets rendered
-    if (data.w == 0.0) {
+    uint syncValue = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, 1);
+    if ((syncValue & 1) == 0) {
         const uvec3 TOTAL_SIZE = gl_NumWorkGroups * gl_WorkGroupSize;
         const uint TOTAL_LENGTH = TOTAL_SIZE.x * TOTAL_SIZE.y; // only two dimensions are used
 
@@ -89,7 +90,8 @@ void main() {
         if (bufIdx < INDIRECT_FINAL_ITEMS_PER_COUNTER) {
             indirectFinalBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit);
         }
+    } else {
+        vec3 color = imageLoad(lightmapFinalImages[lmIndex.w], lmIndex.xyz).rgb;
+        imageStore(colorImage, ipos, vec4(color, 0.0));
     }
-
-    imageStore(colorImage, ipos, vec4(data.rgb, 0.0));
 }

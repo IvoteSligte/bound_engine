@@ -25,11 +25,13 @@ layout(binding = 2) uniform restrict readonly MutableData {
 
 layout(binding = 3, rgba8) uniform restrict writeonly image3D[LIGHTMAP_COUNT] lightmapTrueImages;
 
-layout(binding = 4) buffer restrict readonly IndirectTrueBuffer {
+layout(binding = 4, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
+
+layout(binding = 5) buffer restrict readonly IndirectTrueBuffer {
     HitItem items[INDIRECT_TRUE_COUNTER_COUNT][INDIRECT_TRUE_ITEMS_PER_COUNTER];
 } indirectTrueBuffer;
 
-layout(binding = 5) buffer restrict IndirectTrueCounters {
+layout(binding = 6) buffer restrict IndirectTrueCounters {
     uint counters[INDIRECT_TRUE_COUNTER_COUNT];
 } indirectTrueCounters;
 
@@ -71,6 +73,7 @@ void main() {
     }
 
     HitItem hitItem = indirectTrueBuffer.items[COUNTER_INDEX][BUFFER_INDEX];
+    ivec4 lmIndex = lightmapIndexAtPos(hitItem.position);
 
     vec3 normal = normalize(hitItem.position - bvh.nodes[hitItem.objectHit].position);
     
@@ -102,6 +105,6 @@ void main() {
     Material material = buf.mats[hitItem.objectHit];
     color = (color * (1.0 / INDIRECT_TRUE_SAMPLES)) * material.reflectance + material.emittance;
 
-    ivec4 index = lightmapIndexAtPos(hitItem.position);
-    imageStore(lightmapTrueImages[index.w], index.xyz, vec4(color, 1.0));
+    imageStore(lightmapTrueImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
+    imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, 4);
 }

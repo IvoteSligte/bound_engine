@@ -27,19 +27,21 @@ layout(binding = 3, rgba8) uniform restrict writeonly image3D[LIGHTMAP_COUNT] li
 
 layout(binding = 4, rgba8) uniform restrict readonly image3D[LIGHTMAP_COUNT] lightmapTrueImages;
 
-layout(binding = 5) buffer restrict readonly IndirectFinalBuffer {
+layout(binding = 5, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
+
+layout(binding = 6) buffer restrict readonly IndirectFinalBuffer {
     HitItem items[INDIRECT_FINAL_COUNTER_COUNT][INDIRECT_FINAL_ITEMS_PER_COUNTER];
 } indirectFinalBuffer;
 
-layout(binding = 6) buffer restrict IndirectFinalCounters {
+layout(binding = 7) buffer restrict IndirectFinalCounters {
     uint counters[INDIRECT_FINAL_COUNTER_COUNT];
 } indirectFinalCounters;
 
-layout(binding = 7) buffer restrict IndirectTrueBuffer {
+layout(binding = 8) buffer restrict IndirectTrueBuffer {
     HitItem items[INDIRECT_TRUE_COUNTER_COUNT][INDIRECT_TRUE_ITEMS_PER_COUNTER];
 } indirectTrueBuffer;
 
-layout(binding = 8) buffer restrict IndirectTrueCounters {
+layout(binding = 9) buffer restrict IndirectTrueCounters {
     uint counters[INDIRECT_TRUE_COUNTER_COUNT];
 } indirectTrueCounters;
 
@@ -82,6 +84,7 @@ void main() {
     }
 
     HitItem hitItem = indirectFinalBuffer.items[COUNTER_INDEX_FINAL][BUFFER_INDEX];
+    ivec4 lmIndex = lightmapIndexAtPos(hitItem.position);
 
     vec3 normal = normalize(hitItem.position - bvh.nodes[hitItem.objectHit].position);
 
@@ -95,29 +98,40 @@ void main() {
         vec3 hitObjPosition;
         traceRayWithBVH(ray, hitObjPosition);
 
-        ivec4 index = lightmapIndexAtPos(ray.origin);
-        vec4 data = imageLoad(lightmapTrueImages[index.w], index.xyz);
+        ivec4 lmIndex = lightmapIndexAtPos(ray.origin);
 
-        if (data.w == 0.0) {
+        uint syncValue = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, 2);
+        // there is a sample
+        if ((syncValue & 4) != 0) { // FIXME: (syncValue & (4 | 2)) != 0 gives a better result (but not correct either)
+            color += imageLoad(lightmapTrueImages[lmIndex.w], lmIndex.xyz).rgb;
+            continue;
+        }
+
+        // there is no sample (4)
+        isValid = false;
+
+        // no sample (4), and not being calculated (2)
+        if ((syncValue & (2 | 4)) == 0) {
+            const uint TOTAL_LENGTH = gl_NumWorkGroups.x * gl_WorkGroupSize.y;
+            const uint INVOCATIONS_PER_COUNTER = TOTAL_LENGTH / INDIRECT_TRUE_COUNTER_COUNT;
             const uint COUNTER_INDEX_TRUE = gl_GlobalInvocationID.x / INDIRECT_TRUE_ITEMS_PER_COUNTER;
 
             uint bufIdx = atomicAdd(indirectTrueCounters.counters[COUNTER_INDEX_TRUE], 1);
             if (bufIdx < INDIRECT_TRUE_ITEMS_PER_COUNTER) {
                 indirectTrueBuffer.items[COUNTER_INDEX_TRUE][bufIdx] = HitItem(ray.origin, ray.objectHit);
+            } else {
+                imageAtomicAnd(lightmapSyncImages[lmIndex.w], lmIndex.xyz, 1);
             }
-
-            isValid = false;
-        } else {
-            color += data.rgb;
         }
     }
 
     if (isValid) {
         Material material = buf.mats[hitItem.objectHit];
         color = (color * (1.0 / INDIRECT_FINAL_SAMPLES)) * material.reflectance + material.emittance;
-        
-        ivec4 index = lightmapIndexAtPos(hitItem.position);
 
-        imageStore(lightmapFinalImages[index.w], index.xyz, vec4(color, 1.0));
+        imageStore(lightmapFinalImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
+    } else {
+        // set bit 1 to false, indicating there are no 'final' samples
+        imageAtomicAnd(lightmapSyncImages[lmIndex.w], lmIndex.xyz, 2 | 4);
     }
 }

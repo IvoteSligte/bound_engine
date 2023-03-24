@@ -1,34 +1,53 @@
+float distanceToObject(Ray ray, Bounds bnd, out bool isInside) {
+    vec3 v = bnd.position - ray.origin;
+    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    isInside = m.y < bnd.radiusSquared;
+    float d = (m.x * m.x - m.y) + bnd.radiusSquared;
+    return d < 0.0 ? 0.0 : m.x - sqrt(d);
+}
+
+bool hitsObject(Ray ray, Bounds bnd, out bool isInside, out vec2 m) {
+    vec3 v = bnd.position - ray.origin;
+    m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    isInside = m.y < bnd.radiusSquared;
+    return ((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > 0.0;
+}
+
 void traceRayWithBVH(inout Ray ray, out vec3 hitObjPosition) {
     ray.objectHit = 0;
     hitObjPosition = vec3(0.0);
     float distanceToHit = 1e20;
     uint nodeHit = 0;
 
-    uint curr_idx = bvh.root;
+    uint currIdx = bvh.root;
 
-    while (curr_idx != 0) {
-        Bounds curr = bvh.nodes[curr_idx];
+    while (currIdx != 0) {
+        Bounds curr = bvh.nodes[currIdx];
 
-        bool is_inside;
-        float d = distanceToObject(ray, curr, is_inside);
-        bool is_hit = d > 0.0 && d < distanceToHit;
+        bool isInside;
+        vec2 m;
+        bool isHit = hitsObject(ray, curr, isInside, m);
 
         // not a leaf, move to child
-        if (curr.leaf == 0 && (is_inside || is_hit)) {
-            curr_idx = curr.child;
+        if (curr.leaf == 0 && (isInside || isHit)) {
+            currIdx = curr.child;
             continue;
         }
 
-        if (is_hit) {
-            // is a leaf, store data
-            distanceToHit = d;
-            nodeHit = curr_idx;
-            hitObjPosition = curr.position;
-            ray.objectHit = curr.leaf;
+        // is a leaf and is hit
+        if (isHit) {
+            float dist = m.x - sqrt((m.x * m.x - m.y) + curr.radiusSquared);
+            if (dist < distanceToHit) {
+                // is a leaf, store data
+                distanceToHit = dist;
+                nodeHit = currIdx;
+                hitObjPosition = curr.position;
+                ray.objectHit = curr.leaf;
+            }
         }
 
         // move to next node
-        curr_idx = curr.next;
+        currIdx = curr.next;
     }
 
     ray.origin = (ray.direction * distanceToHit) + ray.origin;

@@ -6,8 +6,8 @@ const uint RAYS_INDIRECT = 4;
 
 const uint LIGHTMAP_COUNT = 6;
 
-const uint INDIRECT_FINAL_SAMPLES = 256;
-const uint INDIRECT_TRUE_SAMPLES = 256;
+const uint INDIRECT_FINAL_SAMPLES = 1024;
+const uint INDIRECT_TRUE_SAMPLES = 1024;
 
 const uint INDIRECT_FINAL_COUNTER_COUNT = 256;
 const uint INDIRECT_TRUE_COUNTER_COUNT = 256;
@@ -66,14 +66,6 @@ vec3 randomDirection(vec3 normal, inout uvec4 seeds) {
 
     vec4 quat = quatTowardsNormalFromUp(normal);
     return rotateWithQuat(quat, rand);
-}
-
-float distanceToObject(Ray ray, Bounds bnd, out bool is_inside) {
-    vec3 v = bnd.position - ray.origin;
-    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
-    is_inside = m.y < bnd.radiusSquared;
-    float d = dot(vec3((m.x * m.x), -m.y, bnd.radiusSquared), vec3(1.0));
-    return d < 0.0 ? 0.0 : m.x - sqrt(d);
 }
 
 float maximum(vec3 v) {
