@@ -23,23 +23,23 @@ layout(binding = 2) uniform restrict readonly MutableData {
     Material mats[MAX_MATERIALS];
 } buf;
 
-layout(binding = 3, rgba8) uniform restrict writeonly image3D[LIGHTMAP_COUNT] lightmapTrueImages;
+layout(binding = 3, rgba8) uniform restrict writeonly image3D[LIGHTMAP_COUNT] lightmapLastImages;
 
 layout(binding = 4, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
 
-layout(binding = 5) buffer restrict readonly IndirectTrueBuffer {
-    HitItem items[INDIRECT_TRUE_COUNTER_COUNT][INDIRECT_TRUE_ITEMS_PER_COUNTER];
-} indirectTrueBuffer;
+layout(binding = 5) buffer restrict readonly LastBuffer {
+    HitItem items[LAST_SUBBUFFER_COUNT][LAST_SUBBUFFER_LENGTH];
+} lastBuffer;
 
-layout(binding = 6) buffer restrict IndirectTrueCounters {
-    uint counters[INDIRECT_TRUE_COUNTER_COUNT];
-} indirectTrueCounters;
+layout(binding = 6) buffer restrict LastCounters {
+    uint counters[LAST_SUBBUFFER_COUNT];
+} lastCounters;
 
 #include "includes_trace_ray.glsl"
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
-    const int HALF_IMAGE_SIZE = imageSize(lightmapTrueImages[0]).x >> 1;
+    const int HALF_IMAGE_SIZE = imageSize(lightmapLastImages[0]).x >> 1;
     const float BASE_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * BASE_UNIT_SIZE);
 
@@ -52,7 +52,7 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     return ivec4(index, lightmapNum);
 }
 
-shared vec3 SharedColors[INDIRECT_TRUE_SAMPLES];
+shared vec3 SharedColors[LAST_SAMPLES];
 
 void main() {
     const uvec4 BAKED_SEEDS = uvec4(
@@ -64,22 +64,22 @@ void main() {
 
     uvec4 seeds = BAKED_SEEDS;
 
-    const uint COUNTER_INDEX = gl_GlobalInvocationID.x / INDIRECT_TRUE_ITEMS_PER_COUNTER;
-    const uint BUFFER_INDEX = gl_GlobalInvocationID.x % INDIRECT_TRUE_ITEMS_PER_COUNTER;
+    const uint COUNTER_INDEX = gl_GlobalInvocationID.x / LAST_SUBBUFFER_LENGTH;
+    const uint BUFFER_INDEX = gl_GlobalInvocationID.x % LAST_SUBBUFFER_LENGTH;
 
     // if buffer slot is empty
-    if (BUFFER_INDEX >= indirectTrueCounters.counters[COUNTER_INDEX]) {
+    if (BUFFER_INDEX >= lastCounters.counters[COUNTER_INDEX]) {
         return;
     }
 
-    HitItem hitItem = indirectTrueBuffer.items[COUNTER_INDEX][BUFFER_INDEX];
+    HitItem hitItem = lastBuffer.items[COUNTER_INDEX][BUFFER_INDEX];
     ivec4 lmIndex = lightmapIndexAtPos(hitItem.position);
 
     vec3 normal = normalize(hitItem.position - bvh.nodes[hitItem.objectHit].position);
     
     vec3 color = vec3(0.0);
 
-    for (uint r = 0; r < INDIRECT_TRUE_SAMPLES; r++) {
+    for (uint r = 0; r < LAST_SAMPLES; r++) {
         vec3 randDir = randomDirection(normal, seeds);
         Ray ray = Ray(0, hitItem.position, randDir);
         
@@ -103,8 +103,8 @@ void main() {
     }
 
     Material material = buf.mats[hitItem.objectHit];
-    color = (color * (1.0 / INDIRECT_TRUE_SAMPLES)) * material.reflectance + material.emittance;
+    color = (color * (1.0 / LAST_SAMPLES)) * material.reflectance + material.emittance;
 
-    imageStore(lightmapTrueImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
+    imageStore(lightmapLastImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
     imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, 4);
 }

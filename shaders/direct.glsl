@@ -26,23 +26,31 @@ layout(binding = 2) uniform restrict readonly ConstantBuffer {
 
 layout(binding = 3, rgba16) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 4, rgba8) uniform restrict readonly image3D[LIGHTMAP_COUNT] lightmapFinalImages;
+layout(binding = 4, rgba8) uniform restrict readonly image3D[LIGHTMAP_COUNT] lightmapMidImages;
 
 layout(binding = 5, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
 
-layout(binding = 6) buffer restrict IndirectFinalBuffer {
-    HitItem items[INDIRECT_FINAL_COUNTER_COUNT][INDIRECT_FINAL_ITEMS_PER_COUNTER];
-} indirectFinalBuffer;
+layout(binding = 6) buffer restrict MidBuffer {
+    HitItem items[MID_SUBBUFFER_COUNT][MID_SUBBUFFER_LENGTH];
+} midBuffer;
 
-layout(binding = 7) buffer restrict IndirectFinalCounters {
-    uint counters[INDIRECT_FINAL_COUNTER_COUNT];
-} indirectFinalCounters;
+layout(binding = 7) buffer restrict MidCounters {
+    uint counters[MID_SUBBUFFER_COUNT];
+} midCounters;
+
+layout(binding = 8) buffer restrict LastBuffer {
+    HitItem items[LAST_SUBBUFFER_COUNT][LAST_SUBBUFFER_LENGTH];
+} lastBuffer;
+
+layout(binding = 9) buffer restrict LastCounters {
+    uint counters[LAST_SUBBUFFER_COUNT];
+} lastCounters;
 
 #include "includes_trace_ray.glsl"
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
-    const int HALF_IMAGE_SIZE = imageSize(lightmapFinalImages[0]).x >> 1;
+    const int HALF_IMAGE_SIZE = imageSize(lightmapMidImages[0]).x >> 1;
     const float BASE_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * BASE_UNIT_SIZE);
 
@@ -56,8 +64,13 @@ ivec4 lightmapIndexAtPos(vec3 v) {
 }
 
 void main() {
-    // FIXME: the binding is not recognised when 'indirectFinalBuffer' is only written to and not read from
-    HitItem useless = indirectFinalBuffer.items[0][0];
+    const uvec3 TOTAL_SIZE = gl_NumWorkGroups * gl_WorkGroupSize;
+    const uint TOTAL_LENGTH = TOTAL_SIZE.x * TOTAL_SIZE.y; // only two dimensions are used
+    const uint GLOBAL_INVOCATION_INDEX = TOTAL_SIZE.x * gl_GlobalInvocationID.y + gl_GlobalInvocationID.x; // only two dimensions are used
+
+    // FIXME: the binding is not recognised when buffers are only written to and not read from
+    HitItem useless = midBuffer.items[0][0];
+    HitItem useless2 = lastBuffer.items[0][0];
 
     const ivec2 viewport = ivec2(imageSize(colorImage).xy);
     const ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
@@ -76,22 +89,27 @@ void main() {
 
     ivec4 lmIndex = lightmapIndexAtPos(ray.origin);
 
-    uint syncValue = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, 1);
+    uint syncValue = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, (1 | 2));
     if ((syncValue & 1) == 0) {
-        const uvec3 TOTAL_SIZE = gl_NumWorkGroups * gl_WorkGroupSize;
-        const uint TOTAL_LENGTH = TOTAL_SIZE.x * TOTAL_SIZE.y; // only two dimensions are used
-
-        const uint INVOCATIONS_PER_COUNTER = TOTAL_LENGTH / INDIRECT_FINAL_COUNTER_COUNT;
-        const uint GLOBAL_INVOCATION_INDEX = TOTAL_SIZE.x * gl_GlobalInvocationID.y + gl_GlobalInvocationID.x; // only two dimensions are used
-
+        const uint INVOCATIONS_PER_COUNTER = TOTAL_LENGTH / MID_SUBBUFFER_COUNT;
         const uint COUNTER_INDEX = GLOBAL_INVOCATION_INDEX / INVOCATIONS_PER_COUNTER;
 
-        uint bufIdx = atomicAdd(indirectFinalCounters.counters[COUNTER_INDEX], 1);
-        if (bufIdx < INDIRECT_FINAL_ITEMS_PER_COUNTER) {
-            indirectFinalBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit);
+        uint bufIdx = atomicAdd(midCounters.counters[COUNTER_INDEX], 1);
+        if (bufIdx < MID_SUBBUFFER_LENGTH) {
+            midBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit);
         }
     } else {
-        vec3 color = imageLoad(lightmapFinalImages[lmIndex.w], lmIndex.xyz).rgb;
+        vec3 color = imageLoad(lightmapMidImages[lmIndex.w], lmIndex.xyz).rgb;
         imageStore(colorImage, ipos, vec4(color, 0.0));
+    }
+
+    if ((syncValue & 2) == 0) {
+        const uint INVOCATIONS_PER_COUNTER = TOTAL_LENGTH / LAST_SUBBUFFER_COUNT;
+        const uint COUNTER_INDEX = GLOBAL_INVOCATION_INDEX / INVOCATIONS_PER_COUNTER;
+
+        uint bufIdx = atomicAdd(lastCounters.counters[COUNTER_INDEX], 1);
+        if (bufIdx < LAST_SUBBUFFER_LENGTH) {
+            lastBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit);
+        }
     }
 }

@@ -54,27 +54,30 @@ mod shaders {
                 ty: "compute",
                 path: "shaders/direct.glsl",
             },
-            IndirectFinal: {
+            Mid: {
                 ty: "compute",
-                path: "shaders/indirect_final.glsl",
+                path: "shaders/mid.glsl",
             },
-            IndirectTrue: {
+            Last: {
                 ty: "compute",
-                path: "shaders/indirect_true.glsl",
+                path: "shaders/last.glsl",
             },
-            Lightmap: {
+            MoveLightmap: {
                 ty: "compute",
-                path: "shaders/lightmap.glsl",
+                path: "shaders/move_lightmap.glsl",
             }
         },
         types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
         include: ["includes_trace_ray.glsl", "includes_general.glsl", "includes_random.glsl"],
-        define: [("INDIRECT_FINAL_COUNT", "65536"), ("INDIRECT_TRUE_COUNT", "524288")] // TODO: sync defines with consts
+        define: [
+            ("MID_COUNT", "65536"),
+            ("LAST_COUNT", "65536*8")
+        ] // TODO: sync defines with consts
     }
 }
 
-const INDIRECT_FINAL_COUNT: u32 = 65536;
-const INDIRECT_TRUE_COUNT: u32 = 524288;
+const MID_COUNT: u32 = 65536;
+const LAST_COUNT: u32 = 65536*8;
 
 const BVH_OBJECTS: [CpuNode; 9] = [
     CpuNode {
@@ -203,17 +206,17 @@ const LIGHTMAP_COUNT: usize = 6;
 #[derive(Clone)]
 struct DescriptorSetCollection {
     direct: Arc<PersistentDescriptorSet>,
-    indirect_final: Arc<PersistentDescriptorSet>,
-    indirect_true: Arc<PersistentDescriptorSet>,
-    move_indirect_finals: Vec<Arc<PersistentDescriptorSet>>,
-    move_indirect_trues: Vec<Arc<PersistentDescriptorSet>>,
+    mid: Arc<PersistentDescriptorSet>,
+    last: Arc<PersistentDescriptorSet>,
+    move_mids: Vec<Arc<PersistentDescriptorSet>>,
+    move_lasts: Vec<Arc<PersistentDescriptorSet>>,
 }
 
 #[derive(Clone)]
 struct Shaders {
     direct: Arc<ShaderModule>,
-    indirect_final: Arc<ShaderModule>,
-    indirect_true: Arc<ShaderModule>,
+    mid: Arc<ShaderModule>,
+    last: Arc<ShaderModule>,
     lightmap: Arc<ShaderModule>,
 }
 
@@ -221,9 +224,9 @@ impl Shaders {
     fn load(device: Arc<Device>) -> Self {
         Self {
             direct: shaders::load_Direct(device.clone()).unwrap(),
-            indirect_final: shaders::load_IndirectFinal(device.clone()).unwrap(),
-            indirect_true: shaders::load_IndirectTrue(device.clone()).unwrap(),
-            lightmap: shaders::load_Lightmap(device.clone()).unwrap(),
+            mid: shaders::load_Mid(device.clone()).unwrap(),
+            last: shaders::load_Last(device.clone()).unwrap(),
+            lightmap: shaders::load_MoveLightmap(device.clone()).unwrap(),
         }
     }
 }
@@ -231,22 +234,22 @@ impl Shaders {
 #[derive(Clone)]
 struct PathtracePipelines {
     direct: Arc<ComputePipeline>,
-    indirect_final: Arc<ComputePipeline>,
-    indirect_true: Arc<ComputePipeline>,
+    mid: Arc<ComputePipeline>,
+    last: Arc<ComputePipeline>,
 }
 
 impl PathtracePipelines {
     fn from_shaders(device: Arc<Device>, shaders: Shaders) -> Self {
         let direct = get_compute_pipeline(device.clone(), shaders.direct.clone(), &());
-        let indirect_final =
-            get_compute_pipeline(device.clone(), shaders.indirect_final.clone(), &());
-        let indirect_true =
-            get_compute_pipeline(device.clone(), shaders.indirect_true.clone(), &());
+        let mid =
+            get_compute_pipeline(device.clone(), shaders.mid.clone(), &());
+        let last =
+            get_compute_pipeline(device.clone(), shaders.last.clone(), &());
 
         Self {
             direct,
-            indirect_final,
-            indirect_true,
+            mid,
+            last,
         }
     }
 }
@@ -321,16 +324,16 @@ fn get_color_image(
 
 #[derive(Clone)]
 struct LightmapImages {
-    indirect_finals: Vec<Arc<StorageImage>>,
-    indirect_trues: Vec<Arc<StorageImage>>,
+    mids: Vec<Arc<StorageImage>>,
+    lasts: Vec<Arc<StorageImage>>,
     staging: Arc<StorageImage>,
     indirect_syncs: Vec<Arc<StorageImage>>,
 }
 
 #[derive(Clone)]
 struct LightmapImageViews {
-    indirect_finals: Vec<Arc<dyn ImageViewAbstract>>,
-    indirect_trues: Vec<Arc<dyn ImageViewAbstract>>,
+    mids: Vec<Arc<dyn ImageViewAbstract>>,
+    lasts: Vec<Arc<dyn ImageViewAbstract>>,
     staging: Arc<dyn ImageViewAbstract>,
     indirect_syncs: Vec<Arc<dyn ImageViewAbstract>>,
 }
@@ -362,7 +365,7 @@ impl LightmapImages {
             .unwrap()
         };
 
-        let indirect_finals = (0..count_per_set)
+        let mids = (0..count_per_set)
             .map(|_| {
                 create_storage_image(
                     ImageUsage {
@@ -374,7 +377,7 @@ impl LightmapImages {
             })
             .collect();
 
-        let indirect_trues = (0..count_per_set)
+        let lasts = (0..count_per_set)
             .map(|_| {
                 create_storage_image(
                     ImageUsage {
@@ -399,8 +402,8 @@ impl LightmapImages {
             .collect();
 
         Self {
-            indirect_finals,
-            indirect_trues,
+            mids,
+            lasts,
             staging,
             indirect_syncs,
         }
@@ -408,15 +411,15 @@ impl LightmapImages {
 
     fn image_views(&self) -> LightmapImageViews {
         LightmapImageViews {
-            indirect_finals: self
-                .indirect_finals
+            mids: self
+                .mids
                 .iter()
                 .map(|vlm| {
                     ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
                 })
                 .collect(),
-            indirect_trues: self
-                .indirect_trues
+            lasts: self
+                .lasts
                 .iter()
                 .map(|vlm| {
                     ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
@@ -436,10 +439,10 @@ impl LightmapImages {
 
 #[derive(Clone)]
 struct LightmapBuffers {
-    indirect_final_buffer: Arc<DeviceLocalBuffer<shaders::ty::IndirectFinalBuffer>>,
-    indirect_final_counters: Arc<DeviceLocalBuffer<shaders::ty::IndirectFinalCounters>>,
-    indirect_true_buffer: Arc<DeviceLocalBuffer<shaders::ty::IndirectTrueBuffer>>,
-    indirect_true_counters: Arc<DeviceLocalBuffer<shaders::ty::IndirectTrueCounters>>,
+    mid_buffer: Arc<DeviceLocalBuffer<shaders::ty::MidBuffer>>,
+    mid_counters: Arc<DeviceLocalBuffer<shaders::ty::MidCounters>>,
+    last_buffer: Arc<DeviceLocalBuffer<shaders::ty::LastBuffer>>,
+    last_counters: Arc<DeviceLocalBuffer<shaders::ty::LastCounters>>,
 }
 
 impl LightmapBuffers {
@@ -461,25 +464,25 @@ impl LightmapBuffers {
         };
 
         Self {
-            indirect_final_buffer: DeviceLocalBuffer::new(
+            mid_buffer: DeviceLocalBuffer::new(
                 memory_allocator,
                 BUFFER_USAGE,
                 [queue_family_index],
             )
             .unwrap(),
-            indirect_true_buffer: DeviceLocalBuffer::new(
+            last_buffer: DeviceLocalBuffer::new(
                 memory_allocator,
                 BUFFER_USAGE,
                 [queue_family_index],
             )
             .unwrap(),
-            indirect_final_counters: DeviceLocalBuffer::new(
+            mid_counters: DeviceLocalBuffer::new(
                 memory_allocator,
                 COUNTER_USAGE,
                 [queue_family_index],
             )
             .unwrap(),
-            indirect_true_counters: DeviceLocalBuffer::new(
+            last_counters: DeviceLocalBuffer::new(
                 memory_allocator,
                 COUNTER_USAGE,
                 [queue_family_index],
@@ -516,18 +519,20 @@ fn get_compute_descriptor_sets(
             WriteDescriptorSet::image_view_array(
                 4,
                 0,
-                lightmap_image_views.indirect_finals.clone(),
+                lightmap_image_views.mids.clone(),
             ),
             WriteDescriptorSet::image_view_array(5, 0, lightmap_image_views.indirect_syncs.clone()),
-            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_final_buffer.clone()),
-            WriteDescriptorSet::buffer(7, lightmap_buffers.indirect_final_counters.clone()),
+            WriteDescriptorSet::buffer(6, lightmap_buffers.mid_buffer.clone()),
+            WriteDescriptorSet::buffer(7, lightmap_buffers.mid_counters.clone()),
+            WriteDescriptorSet::buffer(8, lightmap_buffers.last_buffer.clone()),
+            WriteDescriptorSet::buffer(9, lightmap_buffers.last_counters.clone()),
         ],
     )
     .unwrap();
 
-    let indirect_final = PersistentDescriptorSet::new(
+    let mid = PersistentDescriptorSet::new(
         allocator,
-        pathtrace_pipelines.indirect_final.layout().set_layouts()[0].clone(),
+        pathtrace_pipelines.mid.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
             WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
@@ -535,29 +540,29 @@ fn get_compute_descriptor_sets(
             WriteDescriptorSet::image_view_array(
                 3,
                 0,
-                lightmap_image_views.indirect_finals.clone(),
+                lightmap_image_views.mids.clone(),
             ),
-            WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.indirect_trues.clone()),
+            WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.lasts.clone()),
             WriteDescriptorSet::image_view_array(5, 0, lightmap_image_views.indirect_syncs.clone()),
-            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_final_buffer.clone()),
-            WriteDescriptorSet::buffer(7, lightmap_buffers.indirect_final_counters.clone()),
-            WriteDescriptorSet::buffer(8, lightmap_buffers.indirect_true_buffer.clone()),
-            WriteDescriptorSet::buffer(9, lightmap_buffers.indirect_true_counters.clone()),
+            WriteDescriptorSet::buffer(6, lightmap_buffers.mid_buffer.clone()),
+            WriteDescriptorSet::buffer(7, lightmap_buffers.mid_counters.clone()),
+            WriteDescriptorSet::buffer(8, lightmap_buffers.last_buffer.clone()),
+            WriteDescriptorSet::buffer(9, lightmap_buffers.last_counters.clone()),
         ],
     )
     .unwrap();
 
-    let indirect_true = PersistentDescriptorSet::new(
+    let last = PersistentDescriptorSet::new(
         allocator,
-        pathtrace_pipelines.indirect_true.layout().set_layouts()[0].clone(),
+        pathtrace_pipelines.last.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
             WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
             WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
-            WriteDescriptorSet::image_view_array(3, 0, lightmap_image_views.indirect_trues.clone()),
+            WriteDescriptorSet::image_view_array(3, 0, lightmap_image_views.lasts.clone()),
             WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.indirect_syncs.clone()),
-            WriteDescriptorSet::buffer(5, lightmap_buffers.indirect_true_buffer.clone()),
-            WriteDescriptorSet::buffer(6, lightmap_buffers.indirect_true_counters.clone()),
+            WriteDescriptorSet::buffer(5, lightmap_buffers.last_buffer.clone()),
+            WriteDescriptorSet::buffer(6, lightmap_buffers.last_counters.clone()),
         ],
     )
     .unwrap();
@@ -581,15 +586,15 @@ fn get_compute_descriptor_sets(
             .collect::<Vec<_>>()
     };
 
-    let move_indirect_finals = move_lightmaps(lightmap_image_views.indirect_finals);
-    let move_indirect_trues = move_lightmaps(lightmap_image_views.indirect_trues);
+    let move_mids = move_lightmaps(lightmap_image_views.mids);
+    let move_lasts = move_lightmaps(lightmap_image_views.lasts);
 
     DescriptorSetCollection {
         direct,
-        indirect_final,
-        indirect_true,
-        move_indirect_finals,
-        move_indirect_trues,
+        mid,
+        last,
+        move_mids,
+        move_lasts,
     }
 }
 
@@ -609,8 +614,8 @@ fn get_pathtrace_command_buffers(
         1,
     ];
 
-    let dispatch_indirect_final = [INDIRECT_FINAL_COUNT / 64, 1, 1];
-    let dispatch_indirect_true = [INDIRECT_TRUE_COUNT / 64, 1, 1];
+    let dispatch_mid = [MID_COUNT / 64, 1, 1];
+    let dispatch_last = [LAST_COUNT / 64, 1, 1];
 
     swapchain_images
         .clone()
@@ -638,30 +643,30 @@ fn get_pathtrace_command_buffers(
                 )
                 .dispatch(dispatch_direct)
                 .unwrap()
+                .bind_pipeline_compute(pipelines.mid.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.mid.layout().clone(),
+                    0,
+                    descriptor_sets.mid.clone(),
+                )
+                .dispatch(dispatch_mid)
+                .unwrap()
+                .bind_pipeline_compute(pipelines.last.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.last.layout().clone(),
+                    0,
+                    descriptor_sets.last.clone(),
+                )
+                .dispatch(dispatch_last)
+                .unwrap()
                 .fill_buffer(FillBufferInfo::dst_buffer(
-                    lightmap_buffers.indirect_true_counters.clone(),
+                    lightmap_buffers.mid_counters.clone(),
                 )) // clear buffer
                 .unwrap()
-                .bind_pipeline_compute(pipelines.indirect_final.clone())
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Compute,
-                    pipelines.indirect_final.layout().clone(),
-                    0,
-                    descriptor_sets.indirect_final.clone(),
-                )
-                .dispatch(dispatch_indirect_final)
-                .unwrap()
-                .bind_pipeline_compute(pipelines.indirect_true.clone())
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Compute,
-                    pipelines.indirect_true.layout().clone(),
-                    0,
-                    descriptor_sets.indirect_true.clone(),
-                )
-                .dispatch(dispatch_indirect_true)
-                .unwrap()
                 .fill_buffer(FillBufferInfo::dst_buffer(
-                    lightmap_buffers.indirect_final_counters.clone(),
+                    lightmap_buffers.last_counters.clone(),
                 )) // clear buffer
                 .unwrap();
 
@@ -693,13 +698,13 @@ fn get_lightmap_command_buffer(
                 PipelineBindPoint::Compute,
                 lightmap_pipelines[i].layout().clone(),
                 0,
-                descriptor_sets.move_indirect_finals[i].clone(),
+                descriptor_sets.move_mids[i].clone(),
             )
             .dispatch(dispatch_lightmap)
             .unwrap()
             .copy_image(CopyImageInfo::images(
                 lightmap_images.staging.clone(),
-                lightmap_images.indirect_finals[i].clone(),
+                lightmap_images.mids[i].clone(),
             ))
             .unwrap();
     }
@@ -711,13 +716,13 @@ fn get_lightmap_command_buffer(
                 PipelineBindPoint::Compute,
                 lightmap_pipelines[i].layout().clone(),
                 0,
-                descriptor_sets.move_indirect_trues[i].clone(),
+                descriptor_sets.move_lasts[i].clone(),
             )
             .dispatch(dispatch_lightmap)
             .unwrap()
             .copy_image(CopyImageInfo::images(
                 lightmap_images.staging.clone(),
-                lightmap_images.indirect_trues[i].clone(),
+                lightmap_images.lasts[i].clone(),
             ))
             .unwrap();
     }
@@ -885,7 +890,7 @@ fn main() {
             get_compute_pipeline(
                 device.clone(),
                 shaders.lightmap.clone(),
-                &shaders::LightmapSpecializationConstants {
+                &shaders::MoveLightmapSpecializationConstants {
                     LIGHTMAP_INDEX: i as u32,
                 },
             )
