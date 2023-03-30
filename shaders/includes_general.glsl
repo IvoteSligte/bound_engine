@@ -2,18 +2,15 @@
 
 const uint MAX_OBJECTS = 16;
 const uint MAX_MATERIALS = 8;
-const uint RAYS_INDIRECT = 4;
 
-const uint LIGHTMAP_COUNT = 6;
+const uint SAMPLES = 1024;
 
-const uint MID_SAMPLES = 1024;
-const uint LAST_SAMPLES = 1024;
+const uint SUBBUFFER_COUNT = 256;
+const uint SUBBUFFER_LENGTH = ITEM_COUNT / SUBBUFFER_COUNT; // even division
 
-const uint MID_SUBBUFFER_COUNT = 256;
-const uint LAST_SUBBUFFER_COUNT = 256;
-
-const uint MID_SUBBUFFER_LENGTH = MID_COUNT / MID_SUBBUFFER_COUNT; // even division
-const uint LAST_SUBBUFFER_LENGTH = LAST_COUNT / LAST_SUBBUFFER_COUNT; // even division
+const uint ALL_ONES = 4294967295;
+const uint BIT_CALC = 1 << 31;
+const uint NOT_BIT_CALC = ALL_ONES ^ BIT_CALC;
 
 struct Material {
     vec3 reflectance;
