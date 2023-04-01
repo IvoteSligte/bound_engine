@@ -71,15 +71,6 @@ void main() {
     const uint COUNTER_INDEX = gl_GlobalInvocationID.x / SUBBUFFER_LENGTH;
     const uint BUFFER_INDEX = gl_GlobalInvocationID.x % SUBBUFFER_LENGTH;
 
-    // const uvec4 BAKED_SEEDS = uvec4(
-    //     COUNTER_INDEX * 43265 + 785324,
-    //     BUFFER_INDEX * 735674 + 65934,
-    //     gl_GlobalInvocationID.x * 578432 + 91328,
-    //     BUFFER_INDEX * 1123 + 530645
-    // );
-
-    // uvec4 seeds = BAKED_SEEDS;
-
     // if buffer slot is empty
     if (BUFFER_INDEX >= currCounters.counters[COUNTER_INDEX]) {
         return;
