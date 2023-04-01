@@ -16,8 +16,8 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     uint frame;
 } rt;
 
-layout(binding = 1, rgba8) uniform restrict readonly image3D lightmapImageIn;
-layout(binding = 2, rgba8) uniform restrict writeonly image3D lightmapImageOut;
+layout(binding = 1, rgba16) uniform restrict readonly image3D lightmapImageIn;
+layout(binding = 2, rgba16) uniform restrict writeonly image3D lightmapImageOut;
 
 void main() { // FIXME:
     vec4 data = imageLoad(lightmapImageIn, ivec3(gl_GlobalInvocationID));

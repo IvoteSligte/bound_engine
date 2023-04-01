@@ -83,7 +83,7 @@ impl LightmapImages {
                         transfer_dst: true,
                         ..ImageUsage::default()
                     },
-                    Format::R8G8B8A8_UNORM,
+                    Format::R16G16B16A16_UNORM,
                 )
             })
             .collect();
@@ -93,7 +93,7 @@ impl LightmapImages {
                 transfer_src: true,
                 ..ImageUsage::default()
             },
-            Format::R8G8B8A8_UNORM,
+            Format::R16G16B16A16_UNORM,
         );
 
         let syncs = (0..LIGHTMAP_COUNT)

@@ -18,7 +18,7 @@ use winit::dpi::PhysicalSize;
 use crate::{
     descriptor_sets::DescriptorSetCollection,
     lightmap::{LightmapBufferSet, LightmapImages},
-    pipelines::PathtracePipelines,
+    pipelines::Pipelines,
     shaders::{self, ITEM_COUNT, LIGHTMAP_SIZE},
     LIGHTMAP_COUNT,
 };
@@ -27,26 +27,25 @@ use crate::{
 pub(crate) struct CommandBufferCollection {
     pub(crate) pathtraces: VecCycle<Arc<PrimaryAutoCommandBuffer>>,
     pub(crate) swapchains: Vec<Arc<PrimaryAutoCommandBuffer>>,
-    pub(crate) lightmap: Arc<PrimaryAutoCommandBuffer>,
+    pub(crate) move_lightmap: Arc<PrimaryAutoCommandBuffer>,
 }
 
 impl CommandBufferCollection {
     pub(crate) fn new(
         command_buffer_allocator: &StandardCommandBufferAllocator,
         queue: &Arc<vulkano::device::Queue>,
-        pathtrace_pipelines: &PathtracePipelines,
+        pipelines: &Pipelines,
         dimensions: PhysicalSize<u32>,
         descriptor_sets: DescriptorSetCollection,
         lightmap_buffers: &LightmapBufferSet,
         color_image: Arc<StorageImage>,
         swapchain_images: &Vec<Arc<vulkano::image::SwapchainImage>>,
-        lightmap_pipelines: &Vec<Arc<ComputePipeline>>,
         lightmap_images: &LightmapImages,
     ) -> CommandBufferCollection {
         let pathtraces = get_pathtrace_command_buffers(
             command_buffer_allocator,
             queue.clone(),
-            pathtrace_pipelines.clone(),
+            pipelines.clone(),
             dimensions,
             descriptor_sets.clone(),
             lightmap_buffers.clone(),
@@ -62,7 +61,7 @@ impl CommandBufferCollection {
         let lightmap = get_lightmap_command_buffer(
             command_buffer_allocator,
             queue.clone(),
-            lightmap_pipelines.clone(),
+            pipelines.move_lightmaps.clone(),
             descriptor_sets.clone(),
             lightmap_images.clone(),
         );
@@ -70,7 +69,7 @@ impl CommandBufferCollection {
         CommandBufferCollection {
             pathtraces,
             swapchains,
-            lightmap,
+            move_lightmap: lightmap,
         }
     }
 }
@@ -78,7 +77,7 @@ impl CommandBufferCollection {
 pub(crate) fn get_pathtrace_command_buffers(
     allocator: &StandardCommandBufferAllocator,
     queue: Arc<Queue>,
-    pipelines: PathtracePipelines,
+    pipelines: Pipelines,
     dimensions: PhysicalSize<u32>,
     mut descriptor_sets: DescriptorSetCollection,
     mut lightmap_buffers: LightmapBufferSet,

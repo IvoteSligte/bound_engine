@@ -1,10 +1,10 @@
-float distanceToObject(Ray ray, Bounds bnd, out bool isInside) {
-    vec3 v = bnd.position - ray.origin;
-    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
-    isInside = m.y < bnd.radiusSquared;
-    float d = (m.x * m.x - m.y) + bnd.radiusSquared;
-    return d < 0.0 ? 0.0 : m.x - sqrt(d);
-}
+// float distanceToObject(Ray ray, Bounds bnd, out bool isInside) {
+//     vec3 v = bnd.position - ray.origin;
+//     vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+//     isInside = m.y < bnd.radiusSquared;
+//     float d = (m.x * m.x - m.y) + bnd.radiusSquared;
+//     return d < 0.0 ? 0.0 : m.x - sqrt(d);
+// }
 
 bool hitsObject(Ray ray, Bounds bnd, out bool isInside, out vec2 m) {
     vec3 v = bnd.position - ray.origin;

@@ -2,7 +2,7 @@ mod bvh;
 
 use std::{f32::consts::PI, sync::Arc};
 
-use buffers::{get_bvh_buffer, get_constant_buffer, get_mutable_buffer};
+use buffers::{get_bvh_buffer, get_mutable_buffer, get_blue_noise_buffer};
 use descriptor_sets::get_compute_descriptor_sets;
 use device::{get_device, select_physical_device};
 use event_helper::get_callbacks;
@@ -11,7 +11,7 @@ use glam::*;
 use images::get_color_image;
 use instance::get_instance;
 use lightmap::{LightmapBufferSet, LightmapImages};
-use pipelines::{get_move_lightmap_pipelines, PathtracePipelines};
+use pipelines::Pipelines;
 use shaders::{Shaders, LIGHTMAP_COUNT};
 use vulkano::{
     buffer::{BufferUsage, DeviceLocalBuffer},
@@ -23,7 +23,6 @@ use vulkano::{
     device::DeviceExtensions,
     format::Format,
     memory::allocator::StandardMemoryAllocator,
-    pipeline::graphics::viewport::Viewport,
     swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
     sync::{self, FenceSignalFuture, FlushError, GpuFuture},
 };
@@ -91,14 +90,7 @@ fn main() {
 
     let shaders = Shaders::load(device.clone());
 
-    let mut viewport = Viewport {
-        origin: [0.0, 0.0],
-        dimensions: window.inner_size().into(),
-        depth_range: 0.0..1.0,
-    };
-
-    let mut pathtrace_pipelines = PathtracePipelines::from_shaders(device.clone(), shaders.clone());
-    let move_lightmap_pipelines = get_move_lightmap_pipelines(&device, &shaders);
+    let mut pipelines = Pipelines::from_shaders(device.clone(), shaders.clone(), dimensions.cast());
 
     let command_buffer_allocator = StandardCommandBufferAllocator::new(
         device.clone(),
@@ -114,13 +106,6 @@ fn main() {
     let bvh_buffer = get_bvh_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
 
     let mutable_buffer = get_mutable_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
-
-    // near constant data
-    let constant_buffer = get_constant_buffer(
-        &viewport,
-        &memory_allocator,
-        &mut alloc_command_buffer_builder,
-    );
 
     // TODO: abstraction using struct
     let mut real_time_data = shaders::ty::RealTimeBuffer {
@@ -148,6 +133,8 @@ fn main() {
     )
     .unwrap();
 
+    let blue_noise_buffer = get_blue_noise_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
+
     let lightmap_buffers = LightmapBufferSet::new(&memory_allocator, queue_family_index, 2);
 
     alloc_command_buffer_builder
@@ -166,27 +153,25 @@ fn main() {
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
     let descriptor_sets = get_compute_descriptor_sets(
         &descriptor_set_allocator,
-        pathtrace_pipelines.clone(),
-        move_lightmap_pipelines.clone(),
+        pipelines.clone(),
         real_time_buffer.clone(),
         bvh_buffer.clone(),
         mutable_buffer.clone(),
-        constant_buffer.clone(),
         color_image.clone(),
         lightmap_images.clone(),
         lightmap_buffers.clone(),
+        blue_noise_buffer.clone(),
     );
 
     let mut command_buffers = CommandBufferCollection::new(
         &command_buffer_allocator,
         &queue,
-        &pathtrace_pipelines,
+        &pipelines,
         dimensions,
         descriptor_sets,
         &lightmap_buffers,
         color_image,
         &swapchain_images,
-        &move_lightmap_pipelines,
         &lightmap_images,
     );
 
@@ -195,7 +180,7 @@ fn main() {
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
     let mut previous_fence_index = 0;
 
-    let mut eh = get_event_helper(window, Vec2::from_array(viewport.dimensions));
+    let mut eh = get_event_helper(window);
 
     let callbacks = get_callbacks();
 
@@ -216,7 +201,7 @@ fn main() {
 
         println!("{}", fps_counter.tick());
 
-        let cursor_mov = eh.cursor_delta / eh.dimensions.x * eh.rotation_multiplier;
+        let cursor_mov = eh.cursor_delta / eh.dimensions().x * eh.rotation_multiplier;
         eh.rotation += cursor_mov * Vec2::new(1.0, -1.0);
 
         eh.cursor_delta = Vec2::ZERO;
@@ -288,24 +273,22 @@ fn main() {
             let success = recreate_swapchain(
                 &mut eh,
                 &mut swapchain,
-                &mut viewport,
                 &command_buffer_allocator,
                 queue.clone(),
-                constant_buffer.clone(),
                 fences.clone(),
                 previous_fence_index,
                 device.clone(),
-                &mut pathtrace_pipelines,
+                &mut pipelines,
                 shaders.clone(),
                 &memory_allocator,
                 queue_family_index,
                 &descriptor_set_allocator,
-                move_lightmap_pipelines.clone(),
                 real_time_buffer.clone(),
                 bvh_buffer.clone(),
                 mutable_buffer.clone(),
                 lightmap_images.clone(),
                 lightmap_buffers.clone(),
+                blue_noise_buffer.clone(),
                 &mut command_buffers,
             );
 
@@ -350,7 +333,7 @@ fn main() {
             lightmap_update = false;
 
             future = future
-                .then_execute(queue.clone(), command_buffers.lightmap.clone())
+                .then_execute(queue.clone(), command_buffers.move_lightmap.clone())
                 .unwrap()
                 .boxed();
         }

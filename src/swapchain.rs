@@ -1,19 +1,20 @@
 use std::sync::Arc;
 
 use vulkano::{
-    buffer::DeviceLocalBuffer,
+    buffer::{DeviceLocalBuffer, BufferAccess},
     command_buffer::{
-        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
+        allocator::StandardCommandBufferAllocator,
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
-    device::{Device, physical::PhysicalDevice},
+    device::{physical::PhysicalDevice, Device},
+    format::Format,
+    image::{ImageUsage, SwapchainImage},
     memory::allocator::{FreeListAllocator, GenericMemoryAllocator},
-    pipeline::{graphics::viewport::Viewport, ComputePipeline},
     swapchain::{
-        PresentFuture, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
-        SwapchainCreationError, Surface,
+        PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+        SwapchainCreationError,
     },
-    sync::{self, FenceSignalFuture, GpuFuture, JoinFuture}, image::{ImageUsage, SwapchainImage}, format::Format,
+    sync::{FenceSignalFuture, GpuFuture, JoinFuture},
 };
 use winit::dpi::PhysicalSize;
 use winit_event_helper::EventHelper;
@@ -26,7 +27,9 @@ use crate::{
     event_helper::Data,
     get_color_image,
     lightmap::{LightmapBufferSet, LightmapImages},
-    shaders::{self, Shaders}, pipelines::{PathtracePipelines, get_compute_pipeline}, FOV,
+    pipelines::{get_compute_pipeline, Pipelines},
+    shaders::{self, Shaders},
+    FOV,
 };
 
 pub(crate) fn get_swapchain(
@@ -60,10 +63,8 @@ pub(crate) fn get_swapchain(
 pub(crate) fn recreate_swapchain(
     eh: &mut EventHelper<Data>,
     swapchain: &mut Arc<Swapchain>,
-    viewport: &mut Viewport,
     command_buffer_allocator: &StandardCommandBufferAllocator,
     queue: Arc<vulkano::device::Queue>,
-    constant_buffer: Arc<DeviceLocalBuffer<shaders::ty::ConstantBuffer>>,
     fences: Vec<
         Option<
             Arc<
@@ -84,17 +85,17 @@ pub(crate) fn recreate_swapchain(
     >,
     previous_fence_index: usize,
     device: Arc<Device>,
-    pathtrace_pipelines: &mut PathtracePipelines,
+    pipelines: &mut Pipelines,
     shaders: Shaders,
     memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
     queue_family_index: u32,
     descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    lightmap_pipelines: Vec<Arc<ComputePipeline>>,
     real_time_buffer: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
     bvh_buffer: Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>>,
     mutable_buffer: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>,
     lightmap_images: LightmapImages,
     lightmap_buffers: LightmapBufferSet,
+    blue_noise_buffer: Arc<dyn BufferAccess>,
     command_buffers: &mut CommandBufferCollection,
 ) -> bool {
     eh.recreate_swapchain = false;
@@ -114,25 +115,6 @@ pub(crate) fn recreate_swapchain(
     if eh.window_resized {
         eh.window_resized = false;
 
-        viewport.dimensions = eh.dimensions.to_array();
-
-        let constant_data = shaders::ty::ConstantBuffer {
-            ratio: [FOV, -FOV * viewport.dimensions[1] / viewport.dimensions[0]],
-        };
-
-        // TODO: make this a lot cleaner
-        let mut builder = AutoCommandBufferBuilder::primary(
-            command_buffer_allocator,
-            queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
-
-        builder
-            .update_buffer(Box::new(constant_data), constant_buffer.clone(), 0)
-            .unwrap();
-        let command_buffer = builder.build().unwrap();
-
         if let Some(future) = fences[previous_fence_index].clone() {
             future
                 .then_signal_fence_and_flush()
@@ -141,30 +123,27 @@ pub(crate) fn recreate_swapchain(
                 .unwrap();
         }
 
-        sync::now(device.clone())
-            .then_execute(queue.clone(), command_buffer)
-            .unwrap()
-            .then_signal_fence_and_flush()
-            .unwrap()
-            .wait(None)
-            .unwrap();
-
-        pathtrace_pipelines.direct =
-            get_compute_pipeline(device.clone(), shaders.direct.clone(), &());
+        pipelines.direct = get_compute_pipeline(
+            device.clone(),
+            shaders.direct.clone(),
+            &shaders::DirectSpecializationConstants {
+                RATIO_X: FOV,
+                RATIO_Y: -FOV * (dimensions.height as f32) / (dimensions.width as f32),
+            },
+        );
 
         let color_image = get_color_image(memory_allocator, dimensions, queue_family_index);
 
         let descriptor_sets = get_compute_descriptor_sets(
             &descriptor_set_allocator,
-            pathtrace_pipelines.clone(),
-            lightmap_pipelines.clone(),
+            pipelines.clone(),
             real_time_buffer.clone(),
             bvh_buffer.clone(),
             mutable_buffer.clone(),
-            constant_buffer.clone(),
             color_image.clone(),
             lightmap_images.clone(),
             lightmap_buffers.clone(),
+            blue_noise_buffer.clone(),
         );
 
         command_buffers.swapchains = get_swapchain_command_buffers(
@@ -177,7 +156,7 @@ pub(crate) fn recreate_swapchain(
         command_buffers.pathtraces = get_pathtrace_command_buffers(
             command_buffer_allocator,
             queue.clone(),
-            pathtrace_pipelines.clone(),
+            pipelines.clone(),
             dimensions,
             descriptor_sets.clone(),
             lightmap_buffers.clone(),

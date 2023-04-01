@@ -19,7 +19,8 @@ vulkano_shaders::shader! {
         ("ITEM_COUNT", "65536"),
         ("RAYS_INDIRECT", "4"),
         ("LIGHTMAP_COUNT", "6"),
-        ("LIGHTMAP_SIZE", "128")
+        ("LIGHTMAP_SIZE", "128"),
+        ("SAMPLES", "1024")
     ] // TODO: sync defines with consts
 }
 
@@ -27,6 +28,7 @@ pub(crate) const ITEM_COUNT: u32 = 65536;
 pub(crate) const RAYS_INDIRECT: usize = 4;
 pub(crate) const LIGHTMAP_COUNT: usize = 6; // TODO: rename to LIGHTMAP_LAYERS
 pub(crate) const LIGHTMAP_SIZE: u32 = 128;
+pub(crate) const SAMPLES: u32 = 1024;
 
 use vulkano::device::Device;
 

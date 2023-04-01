@@ -3,14 +3,16 @@
 const uint MAX_OBJECTS = 16;
 const uint MAX_MATERIALS = 8;
 
-const uint SAMPLES = 1024;
-
 const uint SUBBUFFER_COUNT = 256;
 const uint SUBBUFFER_LENGTH = ITEM_COUNT / SUBBUFFER_COUNT; // even division
 
 const uint ALL_ONES = 4294967295;
-const uint BIT_CALC = 1 << 31;
-const uint NOT_BIT_CALC = ALL_ONES ^ BIT_CALC;
+const uint BIT_USED = 1 << 30; // bit 31
+const uint BIT_FINISHED = 1 << 31; // bit 32 // TODO: implement spatial sampling pass using this bit to check if it's finished
+const uint BITS_SAMPLES = 262080; // bits [7, 18]
+const uint BITS_LEVEL = 63; // bits [0, 6]
+
+#define FLT_MAX 3.402823466e+38
 
 struct Material {
     vec3 reflectance;
@@ -50,7 +52,7 @@ vec4 quatTowardsNormalFromUp(vec3 n) {
 }
 
 /// generates a cosine-distributed random direction relative to the normal
-vec3 randomDirection(vec3 normal, inout uvec4 seeds) {
+vec3 randomDirectionCos(vec3 normal, inout uvec4 seeds) {
     const float OFFSET_1_CORRECTION = 3.14159265 * 2.0 * HYBRID_TAUS_NORMALIZER;
     const float OFFSET_2_CORRECTION = 3.14159265 * 0.5 * HYBRID_TAUS_NORMALIZER;
 

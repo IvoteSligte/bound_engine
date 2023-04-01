@@ -13,13 +13,12 @@ mod rotation {
     pub const RIGHT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
 }
 
-pub(crate) fn get_event_helper(window: Arc<Window>, dimensions: Vec2) -> EventHelper<Data> {
+pub(crate) fn get_event_helper(window: Arc<Window>) -> EventHelper<Data> {
     EventHelper::new(Data {
         window: window,
         window_frozen: false,
         window_resized: false,
         recreate_swapchain: false,
-        dimensions,
         cursor_delta: Vec2::ZERO,
         delta_position: Vec3::ZERO,
         rotation: Vec2::ZERO,
@@ -34,8 +33,6 @@ pub(crate) struct Data {
     pub(crate) window_frozen: bool,
     pub(crate) window_resized: bool,
     pub(crate) recreate_swapchain: bool,
-    /// viewport dimensions
-    pub(crate) dimensions: Vec2,
     /// change in cursor position
     pub(crate) cursor_delta: Vec2,
     /// change in position relative to the rotation axes
@@ -60,6 +57,10 @@ impl Data {
         let up = rotation.mul_vec3(rotation::UP);
 
         self.delta_position.x * right + self.delta_position.y * forward + self.delta_position.z * up
+    }
+
+    pub(crate) fn dimensions(&self) -> Vec2 {
+        Vec2::from_array(self.window.inner_size().into())
     }
 }
 
@@ -92,8 +93,6 @@ pub(crate) fn get_callbacks() -> Callbacks<Data> {
             size.height = size.width;
             eh.window.set_inner_size(size);
         }
-
-        eh.dimensions = UVec2::new(size.width, size.height).as_vec2();
     });
 
     callbacks
