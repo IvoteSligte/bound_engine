@@ -59,10 +59,14 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
     float unitSize = (1 << lightmapNum) * BASE_UNIT_SIZE;
 
-    ivec3 index = ivec3(floor(v / unitSize)) + HALF_IMAGE_SIZE;
+    ivec3 index = ivec3(round(v / unitSize)) + HALF_IMAGE_SIZE;
 
     return ivec4(index, lightmapNum);
 }
+
+// vec3 posAtLightmapIndex(ivec4 lmIndex) {
+
+// }
 
 void main() {
     // FIXME: binding is invalid when the buffer is not read from
@@ -87,7 +91,7 @@ void main() {
     // TODO: consistent direction sampling
 
     for (uint r = 0; r < SAMPLES; r++) {
-        vec3 randDir = rotateWithQuat(bn.items[r], normal);
+        vec3 randDir = normalize(normal + bn.items[r].xyz);
         Ray ray = Ray(0, hitItem.position, randDir);
 
         vec3 hitObjPosition;
@@ -127,35 +131,6 @@ void main() {
 
     Material material = buf.mats[hitItem.objectHit];
     color = color * (material.reflectance * (1.0 / SAMPLES)) + material.emittance;
-
-    // const ivec3 OFFSETS[18] = ivec3[18](
-    //     ivec3(-1, 0, -1), ivec3(1, 0, -1),
-    //     ivec3(0, -1, -1), ivec3(0, 1, -1),
-    //     ivec3(0, 0, -1),
-    //     ivec3(-1, -1, 0), ivec3(-1, 0, 0),
-    //     ivec3(-1, 1, 0), ivec3(0, -1, 0),
-    //     ivec3(0, 1, 0), ivec3(1, -1, 0),
-    //     ivec3(1, 0, 0), ivec3(1, 1, 0),
-    //     ivec3(-1, 0, 1), ivec3(1, 0, 1),
-    //     ivec3(0, -1, 1), ivec3(0, 1, 1),
-    //     ivec3(0, 0, 1)
-    // );
-
-    // // TODO: improve
-    // uint spatialSamples = 1;
-    // for (uint i = 0; i < OFFSETS.length(); i++) {
-    //     ivec3 offset = OFFSETS[i];
-    //     ivec3 lmIndexSpatial = lmIndex.xyz + offset;
-
-    //     uint syncSpatial = imageLoad(lightmapSyncImages[lmIndex.w], lmIndexSpatial).x;
-    //     uint levelSpatial = syncSpatial & BITS_LEVEL;
-
-    //     if (levelSpatial == level + 1) {
-    //         spatialSamples += 1;
-    //         color += imageLoad(lightmapImages[LIGHTMAP_COUNT * level + lmIndex.w], lmIndexSpatial).rgb;
-    //     }
-    // }
-    // color /= float(spatialSamples);
 
     imageStore(lightmapImages[LIGHTMAP_COUNT * level + lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
 

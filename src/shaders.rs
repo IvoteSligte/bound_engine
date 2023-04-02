@@ -24,7 +24,7 @@ vulkano_shaders::shader! {
     ] // TODO: sync defines with consts
 }
 
-pub(crate) const ITEM_COUNT: u32 = 65536;
+pub(crate) const ITEM_COUNT: u32 = 65536; // TODO: reconsider the ITEM_COUNT, lower might be better
 pub(crate) const RAYS_INDIRECT: usize = 4;
 pub(crate) const LIGHTMAP_COUNT: usize = 6; // TODO: rename to LIGHTMAP_LAYERS
 pub(crate) const LIGHTMAP_SIZE: u32 = 128;

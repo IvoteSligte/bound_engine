@@ -1,9 +1,17 @@
-use std::{sync::Arc, f32::consts::PI};
+use std::sync::Arc;
 
-use glam::{Vec3, Quat};
-use vulkano::{memory::allocator::{GenericMemoryAllocator, FreeListAllocator}, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{DeviceLocalBuffer, BufferUsage, BufferAccess}};
+use rand_distr::{Distribution, UnitSphere};
+use vulkano::{
+    buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
+    command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer},
+    memory::allocator::{FreeListAllocator, GenericMemoryAllocator},
+};
 
-use crate::{shaders::{self, SAMPLES}, scene, bvh::CpuBVH};
+use crate::{
+    bvh::CpuBVH,
+    scene,
+    shaders::{self, SAMPLES},
+};
 
 pub(crate) fn get_mutable_buffer(
     memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
@@ -56,20 +64,12 @@ pub(crate) fn get_blue_noise_buffer(
     alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Arc<dyn BufferAccess> {
     // TODO: make this path relative or something
-    let blue_noise_data = image::open("/home/ivo/Code/bound_engine/images/blue_noise_rgba.png")
-        .unwrap()
-        .to_rgba32f()
-        .chunks_exact(2)
-        .into_iter()
+    let blue_noise_data = UnitSphere
+        .sample_iter(rand::thread_rng())
         .take(SAMPLES as usize)
-        .map(|chunk| {
-            let r1 = chunk[0] * 2.0 * PI;
-            let r2 = chunk[1] * 0.5 * PI;
-
-            let rand = Vec3::new(r1.cos() * r2.cos(), r1.sin() * r2.cos(), r2.sin());
-
-            Quat::from_rotation_arc(Vec3::new(0.0, 0.0, 1.0), rand).to_array()
-        })
+        .collect::<Vec<[f32; 3]>>()
+        .into_iter()
+        .map(|x| [x[0], x[1], x[2], 0.0])
         .collect::<Vec<[f32; 4]>>();
 
     DeviceLocalBuffer::from_iter(

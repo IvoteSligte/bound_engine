@@ -50,10 +50,39 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
     float unitSize = (1 << lightmapNum) * BASE_UNIT_SIZE;
 
-    ivec3 index = ivec3(floor(v / unitSize)) + HALF_IMAGE_SIZE;
+    ivec3 index = ivec3(round(v / unitSize)) + HALF_IMAGE_SIZE;
 
     return ivec4(index, lightmapNum);
 }
+
+// vec3 sampleSpatial(ivec4 lmIndex, uint level) {
+//     const ivec3 OFFSETS[7] = ivec3[7](
+//         ivec3(0, 0, -1),
+//         ivec3(-1, 0, 0),
+//         ivec3(0, -1, 0),
+//         ivec3(0, 1, 0),
+//         ivec3(1, 0, 0),
+//         ivec3(0, 0, 1),
+//         ivec3(0, 0, 0)
+//     );
+
+//     vec3 color = vec3(0.0);
+//     uint spatialSamples = 1;
+//     for (uint i = 0; i < OFFSETS.length(); i++) {
+//         ivec3 offset = OFFSETS[i];
+//         ivec3 lmIndexSpatial = lmIndex.xyz + offset;
+
+//         uint syncSpatial = imageLoad(lightmapSyncImages[lmIndex.w], lmIndexSpatial).x;
+//         uint levelSpatial = syncSpatial & BITS_LEVEL;
+
+//         if (levelSpatial == level) {
+//             spatialSamples += 1;
+//             color += imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndexSpatial).rgb;
+//         }
+//     }
+//     color /= float(spatialSamples);
+//     return color;
+// }
 
 void main() {
     const uvec3 TOTAL_SIZE = gl_NumWorkGroups * gl_WorkGroupSize;
@@ -81,8 +110,6 @@ void main() {
 
     uint sync = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, BIT_USED);
 
-    bool debug_set_used = false; // DEBUG
-
     bool isUnused = (sync & BIT_USED) == 0;
     if (isUnused) {
         const uint INVOCATIONS_PER_COUNTER = TOTAL_LENGTH / SUBBUFFER_COUNT;
@@ -91,7 +118,6 @@ void main() {
         uint bufIdx = atomicAdd(currCounters.counters[COUNTER_INDEX], 1);
         if (bufIdx < SUBBUFFER_LENGTH) {
             currBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit);
-            debug_set_used = true;
         } else {
             imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(sync));
         }
@@ -99,8 +125,7 @@ void main() {
 
     uint level = sync & BITS_LEVEL;
     if (level > 0) {
-        //vec3 color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
-        vec3 color = imageLoad(lightmapImages[lmIndex.w], lmIndex.xyz).rgb; // DEBUG
+        vec3 color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
         imageStore(colorImage, IPOS, vec4(color, 0.0));
     }
 }
