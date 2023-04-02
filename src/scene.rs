@@ -32,7 +32,7 @@ pub(crate) const MATERIALS: [Material; 7] = [
     },
     Material {
         reflectance: [0.0; 3],
-        emittance: [1.0; 3],
+        emittance: [10.0; 3],
         _dummy0: [0u8; 4],
         _dummy1: [0u8; 4],
     },
@@ -44,7 +44,7 @@ pub(crate) const MATERIALS: [Material; 7] = [
     },
     Material {
         reflectance: [0.5; 3],
-        emittance: [0.7, 0.0, 0.0],
+        emittance: [70.0, 0.0, 0.0],
         _dummy0: [0u8; 4],
         _dummy1: [0u8; 4],
     },

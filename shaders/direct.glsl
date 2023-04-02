@@ -43,46 +43,16 @@ layout(binding = 6) buffer restrict CurrCounters {
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
     const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
-    const float BASE_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * BASE_UNIT_SIZE);
+    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
     uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
-    float unitSize = (1 << lightmapNum) * BASE_UNIT_SIZE;
+    float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
 
     ivec3 index = ivec3(round(v / unitSize)) + HALF_IMAGE_SIZE;
 
     return ivec4(index, lightmapNum);
 }
-
-// vec3 sampleSpatial(ivec4 lmIndex, uint level) {
-//     const ivec3 OFFSETS[7] = ivec3[7](
-//         ivec3(0, 0, -1),
-//         ivec3(-1, 0, 0),
-//         ivec3(0, -1, 0),
-//         ivec3(0, 1, 0),
-//         ivec3(1, 0, 0),
-//         ivec3(0, 0, 1),
-//         ivec3(0, 0, 0)
-//     );
-
-//     vec3 color = vec3(0.0);
-//     uint spatialSamples = 1;
-//     for (uint i = 0; i < OFFSETS.length(); i++) {
-//         ivec3 offset = OFFSETS[i];
-//         ivec3 lmIndexSpatial = lmIndex.xyz + offset;
-
-//         uint syncSpatial = imageLoad(lightmapSyncImages[lmIndex.w], lmIndexSpatial).x;
-//         uint levelSpatial = syncSpatial & BITS_LEVEL;
-
-//         if (levelSpatial == level) {
-//             spatialSamples += 1;
-//             color += imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndexSpatial).rgb;
-//         }
-//     }
-//     color /= float(spatialSamples);
-//     return color;
-// }
 
 void main() {
     const uvec3 TOTAL_SIZE = gl_NumWorkGroups * gl_WorkGroupSize;
@@ -107,6 +77,12 @@ void main() {
     traceRayWithBVH(ray, hitObjPosition);
 
     ivec4 lmIndex = lightmapIndexAtPos(ray.origin);
+
+    bool missed = lmIndex.w >= LIGHTMAP_COUNT;
+    if (missed) {
+        imageStore(colorImage, IPOS, vec4(0.0));
+        return;
+    }
 
     uint sync = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, BIT_USED);
 

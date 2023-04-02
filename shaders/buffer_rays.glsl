@@ -52,21 +52,16 @@ layout(binding = 9) uniform restrict readonly BlueNoise {
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
     const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
-    const float BASE_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * BASE_UNIT_SIZE);
+    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
     uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
-    float unitSize = (1 << lightmapNum) * BASE_UNIT_SIZE;
+    float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
 
     ivec3 index = ivec3(round(v / unitSize)) + HALF_IMAGE_SIZE;
 
     return ivec4(index, lightmapNum);
 }
-
-// vec3 posAtLightmapIndex(ivec4 lmIndex) {
-
-// }
 
 void main() {
     // FIXME: binding is invalid when the buffer is not read from
@@ -84,11 +79,10 @@ void main() {
     ivec4 lmIndex = lightmapIndexAtPos(hitItem.position);
 
     vec3 normal = normalize(hitItem.position - bvh.nodes[hitItem.objectHit].position);
-    
+
     vec3 color = vec3(0.0);
     uint sync = imageLoad(lightmapSyncImages[lmIndex.w], lmIndex.xyz).x;
     uint level = sync & BITS_LEVEL;
-    // TODO: consistent direction sampling
 
     for (uint r = 0; r < SAMPLES; r++) {
         vec3 randDir = normalize(normal + bn.items[r].xyz);
@@ -98,6 +92,12 @@ void main() {
         traceRayWithBVH(ray, hitObjPosition);
 
         ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin);
+
+        bool missed = lmIndexSample.w >= LIGHTMAP_COUNT;
+        if (missed) {
+            continue;
+        }
+
         uint syncSample = imageAtomicOr(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, BIT_USED);
 
         uint levelSample = syncSample & BITS_LEVEL;
@@ -111,6 +111,7 @@ void main() {
                 uint bufIdx = atomicAdd(nextCounters.counters[COUNTER_INDEX], 1);
                 nextBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
             }
+
             imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(level));
             return;
         }
