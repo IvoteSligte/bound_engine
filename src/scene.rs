@@ -56,7 +56,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 1e6,
         child: None,
         next: None,
-        leaf: Some(1),
+        material: Some(1),
         parent: None,
     },
     CpuNode {
@@ -64,7 +64,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 1e6,
         child: None,
         next: None,
-        leaf: Some(2),
+        material: Some(2),
         parent: None,
     },
     CpuNode {
@@ -72,7 +72,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 1e6,
         child: None,
         next: None,
-        leaf: Some(3),
+        material: Some(3),
         parent: None,
     },
     CpuNode {
@@ -80,7 +80,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 1e6,
         child: None,
         next: None,
-        leaf: Some(3),
+        material: Some(3),
         parent: None,
     },
     CpuNode {
@@ -88,7 +88,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 1e6,
         child: None,
         next: None,
-        leaf: Some(3),
+        material: Some(3),
         parent: None,
     },
     CpuNode {
@@ -96,7 +96,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 1e6,
         child: None,
         next: None,
-        leaf: Some(3),
+        material: Some(3),
         parent: None,
     },
     CpuNode {
@@ -104,7 +104,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 100.0,
         child: None,
         next: None,
-        leaf: Some(4),
+        material: Some(4),
         parent: None,
     },
     CpuNode {
@@ -112,7 +112,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 4.0,
         child: None,
         next: None,
-        leaf: Some(5),
+        material: Some(5),
         parent: None,
     },
     CpuNode {
@@ -120,7 +120,7 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         radius: 2.0,
         child: None,
         next: None,
-        leaf: Some(6),
+        material: Some(6),
         parent: None,
     },
 ];

@@ -101,7 +101,7 @@ void main() {
 
     vec3 viewDir = rotateWithQuat(rt.rotation, DIRECTION);
 
-    Ray ray = Ray(0, rt.position, viewDir);
+    Ray ray = Ray(0, rt.position, viewDir, 0);
 
     vec3 hitObjPosition;
     traceRayWithBVH(ray, hitObjPosition);
@@ -117,7 +117,7 @@ void main() {
 
         uint bufIdx = atomicAdd(currCounters.counters[COUNTER_INDEX], 1);
         if (bufIdx < SUBBUFFER_LENGTH) {
-            currBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit);
+            currBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
         } else {
             imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(sync));
         }

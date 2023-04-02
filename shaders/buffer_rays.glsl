@@ -92,7 +92,7 @@ void main() {
 
     for (uint r = 0; r < SAMPLES; r++) {
         vec3 randDir = normalize(normal + bn.items[r].xyz);
-        Ray ray = Ray(0, hitItem.position, randDir);
+        Ray ray = Ray(0, hitItem.position, randDir, 0);
 
         vec3 hitObjPosition;
         traceRayWithBVH(ray, hitObjPosition);
@@ -109,7 +109,7 @@ void main() {
 
                 // checking if the subbuffer is full is removed cause the size of the buffer is equal to the number of instances
                 uint bufIdx = atomicAdd(nextCounters.counters[COUNTER_INDEX], 1);
-                nextBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit);
+                nextBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
             }
             imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(level));
             return;
@@ -122,14 +122,14 @@ void main() {
         // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful
         // otherwise, create an image and fill it with emission at that point
         if (level == 0) {
-            Material material = buf.mats[ray.objectHit];
+            Material material = buf.mats[ray.materialHit];
             color += material.emittance;
         } else {
             color += imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
         }
     }
 
-    Material material = buf.mats[hitItem.objectHit];
+    Material material = buf.mats[hitItem.materialHit];
     color = color * (material.reflectance * (1.0 / SAMPLES)) + material.emittance;
 
     imageStore(lightmapImages[LIGHTMAP_COUNT * level + lmIndex.w], lmIndex.xyz, vec4(color, 0.0));

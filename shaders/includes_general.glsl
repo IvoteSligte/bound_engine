@@ -25,18 +25,20 @@ struct Bounds {
     float radiusSquared;
     uint child;
     uint next;
-    uint leaf;
+    uint material;
 };
 
 struct Ray {
     uint objectHit;
     vec3 origin;
     vec3 direction;
+    uint materialHit;
 };
 
 struct HitItem {
     vec3 position;
     uint objectHit;
+    uint materialHit;
 };
 
 vec3 rotateWithQuat(vec4 q, vec3 v) {

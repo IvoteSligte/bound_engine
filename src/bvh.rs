@@ -24,7 +24,7 @@ pub(crate) struct CpuNode {
     pub radius: f32,
     pub child: Option<usize>,  // index of child node
     pub next: Option<usize>,   // index of child node
-    pub leaf: Option<usize>,   // index of object
+    pub material: Option<usize>,   // index of object
     pub parent: Option<usize>, // index of parent
 }
 
@@ -83,7 +83,7 @@ impl CpuBVH {
             radius: best_fit.sphere.radius,
             child: Some(child_0_idx),
             next: self.nodes[best_fit.index].next,
-            leaf: None,
+            material: None,
             parent: self.nodes[best_fit.index].parent,
         });
     }
@@ -426,7 +426,7 @@ impl From<CpuBVH> for crate::shaders::ty::GpuBVH {
                 radiusSquared: n.radius * n.radius,
                 child: n.child.map(|x| x as u32 + 1).unwrap_or(0),
                 next: n.next.map(|x| x as u32 + 1).unwrap_or(0),
-                leaf: n.leaf.map(|x| x as u32).unwrap_or(0),
+                material: n.material.map(|x| x as u32).unwrap_or(0),
                 _dummy0: [0u8; 4],
             })
             .collect::<Vec<_>>();
