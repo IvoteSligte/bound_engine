@@ -8,12 +8,13 @@ use vulkano::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, BlitImageInfo,
         CommandBufferUsage, CopyImageInfo, FillBufferInfo, PrimaryAutoCommandBuffer,
     },
+    descriptor_set::PersistentDescriptorSet,
     device::Queue,
     image::{StorageImage, SwapchainImage},
     pipeline::{ComputePipeline, Pipeline, PipelineBindPoint},
     sampler::Filter,
 };
-use winit::dpi::PhysicalSize;
+use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
     descriptor_sets::DescriptorSetCollection,
@@ -33,20 +34,20 @@ pub(crate) struct CommandBufferCollection {
 impl CommandBufferCollection {
     pub(crate) fn new(
         command_buffer_allocator: &StandardCommandBufferAllocator,
-        queue: &Arc<vulkano::device::Queue>,
-        pipelines: &Pipelines,
-        dimensions: PhysicalSize<u32>,
+        queue: Arc<Queue>,
+        pipelines: Pipelines,
+        window: Arc<Window>,
         descriptor_sets: DescriptorSetCollection,
         lightmap_buffers: &LightmapBufferSet,
         color_image: Arc<StorageImage>,
-        swapchain_images: &Vec<Arc<vulkano::image::SwapchainImage>>,
+        swapchain_images: Vec<Arc<SwapchainImage>>,
         lightmap_images: &LightmapImages,
     ) -> CommandBufferCollection {
         let pathtraces = get_pathtrace_command_buffers(
             command_buffer_allocator,
             queue.clone(),
             pipelines.clone(),
-            dimensions,
+            window.clone(),
             descriptor_sets.clone(),
             lightmap_buffers.clone(),
         );
@@ -58,10 +59,10 @@ impl CommandBufferCollection {
             swapchain_images.clone(),
         );
 
-        let lightmap = get_lightmap_command_buffer(
+        let move_lightmap = get_move_lightmaps_command_buffer(
             command_buffer_allocator,
             queue.clone(),
-            pipelines.move_lightmaps.clone(),
+            pipelines.clone(),
             descriptor_sets.clone(),
             lightmap_images.clone(),
         );
@@ -69,7 +70,7 @@ impl CommandBufferCollection {
         CommandBufferCollection {
             pathtraces,
             swapchains,
-            move_lightmap: lightmap,
+            move_lightmap,
         }
     }
 }
@@ -78,13 +79,15 @@ pub(crate) fn get_pathtrace_command_buffers(
     allocator: &StandardCommandBufferAllocator,
     queue: Arc<Queue>,
     pipelines: Pipelines,
-    dimensions: PhysicalSize<u32>,
+    window: Arc<Window>,
     mut descriptor_sets: DescriptorSetCollection,
     mut lightmap_buffers: LightmapBufferSet,
 ) -> VecCycle<Arc<PrimaryAutoCommandBuffer>> {
+    let dimensions: PhysicalSize<f32> = window.inner_size().cast();
+
     let dispatch_direct = [
-        (dimensions.width as f32 / 8.0).ceil() as u32,
-        (dimensions.height as f32 / 8.0).ceil() as u32,
+        (dimensions.width / 8.0).ceil() as u32,
+        (dimensions.height / 8.0).ceil() as u32,
         1,
     ];
 
@@ -164,10 +167,10 @@ pub(crate) fn get_swapchain_command_buffers(
 }
 
 // FIXME: number of lightmaps moved is not correct, etc, etc
-pub(crate) fn get_lightmap_command_buffer(
+pub(crate) fn get_move_lightmaps_command_buffer(
     allocator: &StandardCommandBufferAllocator,
     queue: Arc<Queue>,
-    lightmap_pipelines: Vec<Arc<ComputePipeline>>,
+    pipelines: Pipelines,
     descriptor_sets: DescriptorSetCollection,
     lightmap_images: LightmapImages,
 ) -> Arc<PrimaryAutoCommandBuffer> {
@@ -180,23 +183,49 @@ pub(crate) fn get_lightmap_command_buffer(
     )
     .unwrap();
 
-    for i in 0..LIGHTMAP_COUNT {
-        builder
-            .bind_pipeline_compute(lightmap_pipelines[i].clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                lightmap_pipelines[i].layout().clone(),
-                0,
-                descriptor_sets.move_colors[i].clone(),
+    let mut move_lightmaps = |lightmaps: Vec<Arc<StorageImage>>,
+                              descriptors: Vec<Arc<PersistentDescriptorSet>>,
+                              pipelines: Vec<Arc<ComputePipeline>>,
+                              staging: Arc<StorageImage>| {
+        for i in 0..LIGHTMAP_COUNT {
+            builder
+                .bind_pipeline_compute(pipelines[i].clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines[i].layout().clone(),
+                    0,
+                    descriptors[i].clone(),
+                )
+                .dispatch(dispatch_lightmap)
+                .unwrap()
+                .copy_image(CopyImageInfo::images(
+                    staging.clone(),
+                    lightmaps[i].clone(),
+                ))
+                .unwrap();
+        }
+    };
+
+    lightmap_images
+        .colors
+        .clone()
+        .into_iter()
+        .zip(descriptor_sets.move_colors.clone())
+        .for_each(|(lightmaps, descriptors)| {
+            move_lightmaps(
+                lightmaps,
+                descriptors,
+                pipelines.move_lightmap_colors.clone(),
+                lightmap_images.staging_color.clone(),
             )
-            .dispatch(dispatch_lightmap)
-            .unwrap()
-            .copy_image(CopyImageInfo::images(
-                lightmap_images.staging.clone(),
-                lightmap_images.colors[i].clone(),
-            ))
-            .unwrap();
-    }
+        });
+
+    move_lightmaps(
+        lightmap_images.syncs.clone(),
+        descriptor_sets.move_syncs.clone(),
+        pipelines.move_lightmap_syncs.clone(),
+        lightmap_images.staging_sync.clone(),
+    );
 
     Arc::new(builder.build().unwrap())
 }
@@ -213,9 +242,10 @@ pub(crate) fn get_real_time_command_buffer(
         CommandBufferUsage::OneTimeSubmit,
     )
     .unwrap();
+
     real_time_command_buffer_builder
         .update_buffer(Box::new(real_time_data), real_time_buffer.clone(), 0) // TODO: replace with copy_buffer using staging buffer
         .unwrap();
-    let real_time_command_buffer = real_time_command_buffer_builder.build().unwrap();
-    real_time_command_buffer
+
+    real_time_command_buffer_builder.build().unwrap()
 }

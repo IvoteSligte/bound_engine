@@ -3,6 +3,8 @@ use crate::lightmap::LightmapImages;
 use crate::pipelines::Pipelines;
 
 use vec_cycle::VecCycle;
+use vulkano::image::ImageViewAbstract;
+use vulkano::pipeline::ComputePipeline;
 use vulkano::pipeline::Pipeline;
 
 use vulkano::descriptor_set::WriteDescriptorSet;
@@ -28,7 +30,8 @@ pub(crate) struct DescriptorSetUnit {
 #[derive(Clone)]
 pub(crate) struct DescriptorSetCollection {
     pub(crate) ray_units: VecCycle<DescriptorSetUnit>,
-    pub(crate) move_colors: Vec<Arc<PersistentDescriptorSet>>,
+    pub(crate) move_colors: Vec<Vec<Arc<PersistentDescriptorSet>>>,
+    pub(crate) move_syncs: Vec<Arc<PersistentDescriptorSet>>,
 }
 
 pub(crate) fn get_compute_descriptor_sets(
@@ -51,6 +54,13 @@ pub(crate) fn get_compute_descriptor_sets(
         .map(|_| {
             let lm_buffer_units = lightmap_buffers.next().unwrap();
 
+            let flattened_colors = lightmap_image_views
+                .colors
+                .clone()
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+
             let direct = PersistentDescriptorSet::new(
                 allocator,
                 pipelines.direct.layout().set_layouts()[0].clone(),
@@ -58,7 +68,7 @@ pub(crate) fn get_compute_descriptor_sets(
                     WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
                     WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
                     WriteDescriptorSet::image_view(2, color_image_view.clone()),
-                    WriteDescriptorSet::image_view_array(3, 0, lightmap_image_views.colors.clone()),
+                    WriteDescriptorSet::image_view_array(3, 0, flattened_colors.clone()),
                     WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.syncs.clone()),
                     WriteDescriptorSet::buffer(5, lm_buffer_units[0].buffer.clone()),
                     WriteDescriptorSet::buffer(6, lm_buffer_units[0].counters.clone()),
@@ -73,7 +83,7 @@ pub(crate) fn get_compute_descriptor_sets(
                     WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
                     WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
                     WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
-                    WriteDescriptorSet::image_view_array(3, 0, lightmap_image_views.colors.clone()),
+                    WriteDescriptorSet::image_view_array(3, 0, flattened_colors.clone()),
                     WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.syncs.clone()),
                     WriteDescriptorSet::buffer(5, lm_buffer_units[0].buffer.clone()),
                     WriteDescriptorSet::buffer(6, lm_buffer_units[0].counters.clone()),
@@ -91,27 +101,42 @@ pub(crate) fn get_compute_descriptor_sets(
         })
         .collect::<Vec<_>>();
 
-    // FIXME: (general fix, move lightmap_image_views.syncs as well)
+    let move_descriptor = |image: Arc<dyn ImageViewAbstract>, staging: Arc<dyn ImageViewAbstract>, pipeline: Arc<ComputePipeline>| {
+        PersistentDescriptorSet::new(
+            allocator,
+            pipeline.layout().set_layouts()[0].clone(),
+            [
+                WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
+                WriteDescriptorSet::image_view(1, image.clone()),
+                WriteDescriptorSet::image_view(2, staging.clone()),
+            ],
+        )
+        .unwrap()
+    };
+
     let move_colors = lightmap_image_views
         .colors
-        .iter()
-        .zip(pipelines.move_lightmaps.iter())
-        .map(|(lm_view, lm_pipeline)| {
-            PersistentDescriptorSet::new(
-                allocator,
-                lm_pipeline.layout().set_layouts()[0].clone(),
-                [
-                    WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
-                    WriteDescriptorSet::image_view(1, lm_view.clone()),
-                    WriteDescriptorSet::image_view(2, lightmap_image_views.staging.clone()),
-                ],
-            )
-            .unwrap()
+        .clone()
+        .into_iter()
+        .map(|vec| {
+            vec.into_iter()
+                .zip(pipelines.move_lightmap_colors.clone().into_iter())
+                .map(|(image, pipeline)| move_descriptor(image, lightmap_image_views.staging_color.clone(), pipeline))
+                .collect()
         })
-        .collect::<Vec<_>>();
+        .collect();
+
+    let move_syncs = lightmap_image_views
+        .syncs
+        .clone()
+        .into_iter()
+        .zip(pipelines.move_lightmap_syncs.clone().into_iter())
+        .map(|(image, pipeline)| move_descriptor(image, lightmap_image_views.staging_sync.clone(), pipeline))
+        .collect();
 
     DescriptorSetCollection {
         ray_units: VecCycle::new(ray_units),
         move_colors,
+        move_syncs,
     }
 }

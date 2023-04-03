@@ -38,16 +38,18 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub(crate) struct LightmapImages {
-    pub(crate) colors: Vec<Arc<StorageImage>>,
+    pub(crate) colors: Vec<Vec<Arc<StorageImage>>>,
     pub(crate) syncs: Vec<Arc<StorageImage>>,
-    pub(crate) staging: Arc<StorageImage>,
+    pub(crate) staging_color: Arc<StorageImage>,
+    pub(crate) staging_sync: Arc<StorageImage>,
 }
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
-    pub(crate) colors: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) colors: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
     pub(crate) syncs: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) staging: Arc<dyn ImageViewAbstract>,
+    pub(crate) staging_color: Arc<dyn ImageViewAbstract>,
+    pub(crate) staging_sync: Arc<dyn ImageViewAbstract>,
 }
 
 impl LightmapImages {
@@ -76,19 +78,35 @@ impl LightmapImages {
             .unwrap()
         };
 
-        let colors = (0..(LIGHTMAP_COUNT * RAYS_INDIRECT))
+        let colors = (0..RAYS_INDIRECT)
+            .map(|_| {
+                (0..(LIGHTMAP_COUNT))
+                    .map(|_| {
+                        create_storage_image(
+                            ImageUsage {
+                                transfer_dst: true,
+                                ..ImageUsage::default()
+                            },
+                            Format::R16G16B16A16_UNORM,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        let syncs = (0..LIGHTMAP_COUNT)
             .map(|_| {
                 create_storage_image(
                     ImageUsage {
                         transfer_dst: true,
                         ..ImageUsage::default()
                     },
-                    Format::R16G16B16A16_UNORM,
+                    Format::R32_UINT,
                 )
             })
             .collect();
 
-        let staging = create_storage_image(
+        let staging_color = create_storage_image(
             ImageUsage {
                 transfer_src: true,
                 ..ImageUsage::default()
@@ -96,14 +114,19 @@ impl LightmapImages {
             Format::R16G16B16A16_UNORM,
         );
 
-        let syncs = (0..LIGHTMAP_COUNT)
-            .map(|_| create_storage_image(ImageUsage::default(), Format::R32_UINT))
-            .collect();
+        let staging_sync = create_storage_image(
+            ImageUsage {
+                transfer_src: true,
+                ..ImageUsage::default()
+            },
+            Format::R32_UINT,
+        );
 
         Self {
             colors,
-            staging,
             syncs,
+            staging_color,
+            staging_sync,
         }
     }
 
@@ -112,8 +135,13 @@ impl LightmapImages {
             colors: self
                 .colors
                 .iter()
-                .map(|vlm| {
-                    ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
+                .map(|vec| {
+                    vec.iter()
+                        .map(|vlm| {
+                            ImageView::new_default(vlm.clone()).unwrap()
+                                as Arc<dyn ImageViewAbstract>
+                        })
+                        .collect()
                 })
                 .collect(),
             syncs: self
@@ -123,7 +151,8 @@ impl LightmapImages {
                     ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
                 })
                 .collect(),
-            staging: ImageView::new_default(self.staging.clone()).unwrap(),
+            staging_color: ImageView::new_default(self.staging_color.clone()).unwrap(),
+            staging_sync: ImageView::new_default(self.staging_sync.clone()).unwrap(),
         }
     }
 }

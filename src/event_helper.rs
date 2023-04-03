@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use glam::*;
-use winit::window::{CursorGrabMode, Window};
+use winit::window::{CursorGrabMode, Window, Fullscreen};
 use winit_event_helper::{Callbacks, EventHelper, KeyCode};
-use winit_fullscreen::WindowFullScreen;
 
 mod rotation {
     use glam::Vec3;
@@ -98,7 +97,12 @@ pub(crate) fn get_callbacks() -> Callbacks<Data> {
     callbacks
         .window
         .inputs
-        .just_pressed(KeyCode::F11, |eh| eh.window.toggle_fullscreen());
+        .just_pressed(KeyCode::F11, |eh| {
+            match eh.window.fullscreen() {
+                Some(_) => eh.window.set_fullscreen(None),
+                None => eh.window.set_fullscreen(Some(Fullscreen::Borderless(None))),
+            }
+        });
 
     // DEBUG
     callbacks.window.inputs.just_pressed(KeyCode::Equals, |eh| {

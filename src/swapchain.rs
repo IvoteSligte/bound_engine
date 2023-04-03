@@ -16,7 +16,7 @@ use vulkano::{
     },
     sync::{FenceSignalFuture, GpuFuture, JoinFuture},
 };
-use winit::dpi::PhysicalSize;
+use winit::window::Window;
 use winit_event_helper::EventHelper;
 
 use crate::{
@@ -33,15 +33,25 @@ use crate::{
 };
 
 pub(crate) fn get_swapchain(
-    device: &Arc<Device>,
+    device: Arc<Device>,
     surface: Arc<Surface>,
+    window: Arc<Window>,
     physical_device: Arc<PhysicalDevice>,
-    image_format: Format,
-    dimensions: PhysicalSize<u32>,
 ) -> (Arc<Swapchain>, Vec<Arc<SwapchainImage>>) {
     let capabilities = physical_device
         .surface_capabilities(&surface, Default::default())
         .unwrap();
+
+    let image_format = physical_device
+        .surface_formats(&surface, Default::default())
+        .unwrap()
+        .iter()
+        .max_by_key(|(format, _)| match format {
+            Format::R8G8B8A8_SRGB | Format::B8G8R8A8_SRGB => 1,
+            _ => 0,
+        })
+        .unwrap()
+        .0;
 
     Swapchain::new(
         device.clone(),
@@ -49,7 +59,7 @@ pub(crate) fn get_swapchain(
         SwapchainCreateInfo {
             min_image_count: capabilities.min_image_count + 1, // TODO: improve
             image_format: Some(image_format),
-            image_extent: dimensions.into(),
+            image_extent: window.inner_size().into(),
             image_usage: ImageUsage {
                 transfer_dst: true,
                 ..ImageUsage::empty()
@@ -132,7 +142,7 @@ pub(crate) fn recreate_swapchain(
             },
         );
 
-        let color_image = get_color_image(memory_allocator, dimensions, queue_family_index);
+        let color_image = get_color_image(memory_allocator, eh.window.clone(), queue_family_index);
 
         let descriptor_sets = get_compute_descriptor_sets(
             &descriptor_set_allocator,
@@ -157,7 +167,7 @@ pub(crate) fn recreate_swapchain(
             command_buffer_allocator,
             queue.clone(),
             pipelines.clone(),
-            dimensions,
+            eh.window.clone(),
             descriptor_sets.clone(),
             lightmap_buffers.clone(),
         );

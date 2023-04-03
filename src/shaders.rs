@@ -8,13 +8,17 @@ vulkano_shaders::shader! {
             ty: "compute",
             path: "shaders/buffer_rays.glsl",
         },
-        MoveLightmap: {
+        MoveLightmapColors: {
             ty: "compute",
-            path: "shaders/move_lightmap.glsl",
+            path: "shaders/move_lightmap_colors.glsl",
+        },
+        MoveLightmapSyncs: {
+            ty: "compute",
+            path: "shaders/move_lightmap_syncs.glsl",
         }
     },
     types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
-    include: ["includes_trace_ray.glsl", "includes_general.glsl", "includes_random.glsl"],
+    include: ["includes_trace_ray.glsl", "includes_general.glsl"],
     define: [
         ("ITEM_COUNT", "65536"),
         ("RAYS_INDIRECT", "4"),
@@ -40,7 +44,8 @@ use std::sync::Arc;
 pub(crate) struct Shaders {
     pub(crate) direct: Arc<ShaderModule>,
     pub(crate) buffer_rays: Arc<ShaderModule>,
-    pub(crate) move_lightmap: Arc<ShaderModule>,
+    pub(crate) move_lightmap_colors: Arc<ShaderModule>,
+    pub(crate) move_lightmap_syncs: Arc<ShaderModule>,
 }
 
 impl Shaders {
@@ -48,7 +53,8 @@ impl Shaders {
         Self {
             direct: load_Direct(device.clone()).unwrap(),
             buffer_rays: load_BufferRays(device.clone()).unwrap(),
-            move_lightmap: load_MoveLightmap(device.clone()).unwrap(),
+            move_lightmap_colors: load_MoveLightmapColors(device.clone()).unwrap(),
+            move_lightmap_syncs: load_MoveLightmapSyncs(device.clone()).unwrap(),
         }
     }
 }

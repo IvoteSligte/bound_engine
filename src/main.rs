@@ -2,7 +2,7 @@ mod bvh;
 
 use std::{f32::consts::PI, sync::Arc};
 
-use buffers::{get_bvh_buffer, get_mutable_buffer, get_blue_noise_buffer};
+use buffers::{get_blue_noise_buffer, get_bvh_buffer, get_mutable_buffer};
 use descriptor_sets::get_compute_descriptor_sets;
 use device::{get_device, select_physical_device};
 use event_helper::get_callbacks;
@@ -21,12 +21,12 @@ use vulkano::{
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::DeviceExtensions,
-    format::Format,
     memory::allocator::StandardMemoryAllocator,
     swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
     sync::{self, FenceSignalFuture, FlushError, GpuFuture},
 };
 use winit::{
+    dpi::{PhysicalSize, Size},
     event_loop::{ControlFlow, EventLoop},
     window::{CursorGrabMode, WindowBuilder},
 };
@@ -54,10 +54,17 @@ fn main() {
     let instance = get_instance();
 
     let event_loop = EventLoop::new();
-    let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
-    window.set_visible(true);
+    let window = Arc::new(
+        WindowBuilder::new()
+            .with_maximized(true)
+            .with_decorations(false)
+            .with_visible(true)
+            .with_resizable(false)
+            .with_inner_size(Size::Physical(PhysicalSize::new(1920, 1080))) // TODO: support for other resolutions
+            .build(&event_loop)
+            .unwrap(),
+    );
     window.set_cursor_visible(false);
-    window.set_resizable(false);
     let surface = vulkano_win::create_surface_from_winit(window.clone(), instance.clone()).unwrap();
 
     let device_extensions = DeviceExtensions {
@@ -68,29 +75,25 @@ fn main() {
     let (physical_device, queue_family_index) =
         select_physical_device(instance, &surface, &device_extensions);
 
-    let (device, queue) = get_device(&physical_device, device_extensions, queue_family_index);
+    let (device, queue) = get_device(
+        physical_device.clone(),
+        device_extensions,
+        queue_family_index,
+    );
 
     // TODO: improve
     let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
 
-    let dimensions = window.inner_size();
-    let image_format = physical_device
-        .surface_formats(&surface, Default::default())
-        .unwrap()
-        .iter()
-        .max_by_key(|(format, _)| match format {
-            Format::R8G8B8A8_SRGB | Format::B8G8R8A8_SRGB => 1,
-            _ => 0,
-        })
-        .unwrap()
-        .0;
-
-    let (mut swapchain, swapchain_images) =
-        get_swapchain(&device, surface, physical_device, image_format, dimensions);
+    let (mut swapchain, swapchain_images) = get_swapchain(
+        device.clone(),
+        surface.clone(),
+        window.clone(),
+        physical_device.clone(),
+    );
 
     let shaders = Shaders::load(device.clone());
 
-    let mut pipelines = Pipelines::from_shaders(device.clone(), shaders.clone(), dimensions.cast());
+    let mut pipelines = Pipelines::from_shaders(device.clone(), shaders.clone(), window.clone());
 
     let command_buffer_allocator = StandardCommandBufferAllocator::new(
         device.clone(),
@@ -113,7 +116,7 @@ fn main() {
         previousRotation: [0.0; 4],
         position: [0.0; 3],
         previousPosition: [0.0; 3],
-        deltaLightmapOrigins: [[0; 4]; LIGHTMAP_COUNT], // FIXME:
+        deltaLightmapOrigins: [[0; 4]; LIGHTMAP_COUNT],
         lightmapOrigin: [0; 3],
         frame: 0,
         _dummy0: [0; 4],
@@ -133,7 +136,8 @@ fn main() {
     )
     .unwrap();
 
-    let blue_noise_buffer = get_blue_noise_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
+    let blue_noise_buffer =
+        get_blue_noise_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
 
     let lightmap_buffers = LightmapBufferSet::new(&memory_allocator, queue_family_index, 2);
 
@@ -147,7 +151,7 @@ fn main() {
         .wait(None)
         .unwrap();
 
-    let color_image = get_color_image(&memory_allocator, dimensions, queue_family_index);
+    let color_image = get_color_image(&memory_allocator, window.clone(), queue_family_index);
     let lightmap_images = LightmapImages::new(&memory_allocator, queue_family_index);
 
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
@@ -165,13 +169,13 @@ fn main() {
 
     let mut command_buffers = CommandBufferCollection::new(
         &command_buffer_allocator,
-        &queue,
-        &pipelines,
-        dimensions,
+        queue.clone(),
+        pipelines.clone(),
+        window.clone(),
         descriptor_sets,
         &lightmap_buffers,
         color_image,
-        &swapchain_images,
+        swapchain_images.clone(),
         &lightmap_images,
     );
 
@@ -256,15 +260,23 @@ fn main() {
 
         let old_pos = IVec3::from_array(real_time_data.lightmapOrigin);
         let new_pos = new_position.as_ivec3();
+        
+        // FIXME:
+        const SMALLEST_UNIT: f32 = 0.5;
+        const LARGEST_UNIT: i32 = ((1 << (LIGHTMAP_COUNT - 1)) as f32 * SMALLEST_UNIT) as i32;
 
-        let delta_position = new_pos - old_pos;
-
-        const LARGEST_UNIT: i32 = 1 << (LIGHTMAP_COUNT - 1);
-        if delta_position.abs().cmpge(IVec3::splat(LARGEST_UNIT)).any() {
+        let largest_delta_pos = (new_pos - old_pos) / LARGEST_UNIT;
+        
+        if largest_delta_pos.abs().cmpge(IVec3::splat(1)).any() {
             lightmap_update = true;
+
+            let delta_pos =  largest_delta_pos * LARGEST_UNIT;
+            real_time_data.lightmapOrigin = (old_pos + delta_pos).to_array();
+
             for i in 0..LIGHTMAP_COUNT {
-                real_time_data.deltaLightmapOrigins[i] =
-                    (delta_position / (1 << i)).extend(0).to_array();
+                let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
+                let delta_units = (delta_pos.as_vec3() / unit_size).as_ivec3();
+                real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
             }
         }
 

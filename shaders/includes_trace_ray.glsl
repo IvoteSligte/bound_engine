@@ -13,10 +13,9 @@ bool hitsObject(Ray ray, Bounds bnd, out bool isInside, out vec2 m) {
     return ((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > 0.0;
 }
 
-void traceRayWithBVH(inout Ray ray, out vec3 hitObjPosition) {
+void traceRayWithBVH(inout Ray ray) {
     ray.objectHit = 0;
     ray.materialHit = 0;
-    hitObjPosition = vec3(0.0);
     float distanceToHit = 1e20;
     uint nodeHit = 0;
 
@@ -42,7 +41,6 @@ void traceRayWithBVH(inout Ray ray, out vec3 hitObjPosition) {
                 // is a leaf, store data
                 distanceToHit = dist;
                 nodeHit = currIdx;
-                hitObjPosition = curr.position;
                 ray.objectHit = currIdx;
                 ray.materialHit = curr.material;
             }

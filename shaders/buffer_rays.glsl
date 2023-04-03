@@ -55,7 +55,7 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.5);
     float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
 
     ivec3 index = ivec3(round(v / unitSize)) + HALF_IMAGE_SIZE;
@@ -88,13 +88,12 @@ void main() {
         vec3 randDir = normalize(normal + bn.items[r].xyz);
         Ray ray = Ray(0, hitItem.position, randDir, 0);
 
-        vec3 hitObjPosition;
-        traceRayWithBVH(ray, hitObjPosition);
+        traceRayWithBVH(ray);
 
         ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin);
 
-        bool missed = lmIndexSample.w >= LIGHTMAP_COUNT;
-        if (missed) {
+        bool outOfRange = lmIndexSample.w >= LIGHTMAP_COUNT;
+        if (outOfRange) {
             continue;
         }
 

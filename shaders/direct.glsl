@@ -46,7 +46,7 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.5);
     float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
 
     ivec3 index = ivec3(round(v / unitSize)) + HALF_IMAGE_SIZE;
@@ -73,20 +73,20 @@ void main() {
 
     Ray ray = Ray(0, rt.position, viewDir, 0);
 
-    vec3 hitObjPosition;
-    traceRayWithBVH(ray, hitObjPosition);
+    traceRayWithBVH(ray);
 
     ivec4 lmIndex = lightmapIndexAtPos(ray.origin);
 
-    bool missed = lmIndex.w >= LIGHTMAP_COUNT;
-    if (missed) {
+    bool outOfRange = lmIndex.w >= LIGHTMAP_COUNT;
+    if (outOfRange) {
         imageStore(colorImage, IPOS, vec4(0.0));
         return;
     }
 
     uint sync = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, BIT_USED);
-
+    uint level = sync & BITS_LEVEL;
     bool isUnused = (sync & BIT_USED) == 0;
+
     if (isUnused) {
         const uint INVOCATIONS_PER_COUNTER = TOTAL_LENGTH / SUBBUFFER_COUNT;
         const uint COUNTER_INDEX = GLOBAL_INVOCATION_INDEX / INVOCATIONS_PER_COUNTER;
@@ -99,9 +99,6 @@ void main() {
         }
     }
 
-    uint level = sync & BITS_LEVEL;
-    if (level > 0) {
-        vec3 color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
-        imageStore(colorImage, IPOS, vec4(color, 0.0));
-    }
+    vec3 color = level > 0 ? imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb : vec3(0.0);
+    imageStore(colorImage, IPOS, vec4(color, 0.0));
 }

@@ -1,7 +1,5 @@
 #version 460
 
-#include "includes_general.glsl"
-
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(constant_id = 0) const uint LIGHTMAP_INDEX = 0;
@@ -17,9 +15,9 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
 } rt;
 
 layout(binding = 1, rgba16) uniform restrict readonly image3D lightmapImageIn;
-layout(binding = 2, rgba16) uniform restrict writeonly image3D lightmapImageOut;
+layout(binding = 2, rgba16) uniform restrict writeonly image3D lightmapImageStaging;
 
-void main() { // FIXME:
+void main() {
     vec4 data = imageLoad(lightmapImageIn, ivec3(gl_GlobalInvocationID));
-    imageStore(lightmapImageOut, ivec3(gl_GlobalInvocationID) - rt.deltaLightmapOrigins[LIGHTMAP_INDEX].xyz, data);
+    imageStore(lightmapImageStaging, ivec3(gl_GlobalInvocationID) - rt.deltaLightmapOrigins[LIGHTMAP_INDEX].xyz, data);
 }

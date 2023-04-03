@@ -50,7 +50,7 @@ pub(crate) const MATERIALS: [Material; 7] = [
     },
 ];
 
-pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
+pub(crate) const BVH_OBJECTS: [CpuNode; 7] = [
     CpuNode {
         position: Vec3::new(-1000020.0, 0.0, 0.0),
         radius: 1e6,
@@ -67,22 +67,22 @@ pub(crate) const BVH_OBJECTS: [CpuNode; 9] = [
         material: Some(2),
         parent: None,
     },
-    CpuNode {
-        position: Vec3::new(0.0, -1000020.0, 0.0),
-        radius: 1e6,
-        child: None,
-        next: None,
-        material: Some(3),
-        parent: None,
-    },
-    CpuNode {
-        position: Vec3::new(0.0, 1000020.0, 0.0),
-        radius: 1e6,
-        child: None,
-        next: None,
-        material: Some(3),
-        parent: None,
-    },
+    // CpuNode {
+    //     position: Vec3::new(0.0, -1000020.0, 0.0),
+    //     radius: 1e6,
+    //     child: None,
+    //     next: None,
+    //     material: Some(3),
+    //     parent: None,
+    // },
+    // CpuNode {
+    //     position: Vec3::new(0.0, 1000020.0, 0.0),
+    //     radius: 1e6,
+    //     child: None,
+    //     next: None,
+    //     material: Some(3),
+    //     parent: None,
+    // },
     CpuNode {
         position: Vec3::new(0.0, 0.0, -1000020.0),
         radius: 1e6,

@@ -28,7 +28,7 @@ pub(crate) fn select_physical_device<'a>(
 }
 
 pub(crate) fn get_device(
-    physical_device: &Arc<PhysicalDevice>,
+    physical_device: Arc<PhysicalDevice>,
     device_extensions: DeviceExtensions,
     queue_family_index: u32,
 ) -> (Arc<Device>, Arc<Queue>) {
