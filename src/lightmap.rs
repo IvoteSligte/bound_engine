@@ -117,6 +117,7 @@ impl LightmapImages {
         let staging_sync = create_storage_image(
             ImageUsage {
                 transfer_src: true,
+                transfer_dst: true,
                 ..ImageUsage::default()
             },
             Format::R32_UINT,

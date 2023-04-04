@@ -210,6 +210,8 @@ pub(crate) fn get_move_lightmaps_command_buffer(
 
     for i in 0..LIGHTMAP_COUNT {
         builder
+            .clear_color_image(ClearColorImageInfo::image(lightmap_images.staging_sync.clone()))
+            .unwrap()
             .bind_pipeline_compute(pipelines.move_lightmap_syncs[i].clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
@@ -218,8 +220,6 @@ pub(crate) fn get_move_lightmaps_command_buffer(
                 descriptor_sets.move_syncs[i].clone(),
             )
             .dispatch(dispatch_lightmap)
-            .unwrap()
-            .clear_color_image(ClearColorImageInfo::image(lightmap_images.syncs[i].clone()))
             .unwrap()
             .copy_image(CopyImageInfo::images(
                 lightmap_images.staging_sync.clone(),
