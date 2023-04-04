@@ -1,16 +1,14 @@
-// float distanceToObject(Ray ray, Bounds bnd, out bool isInside) {
-//     vec3 v = bnd.position - ray.origin;
-//     vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
-//     isInside = m.y < bnd.radiusSquared;
-//     float d = (m.x * m.x - m.y) + bnd.radiusSquared;
-//     return d < 0.0 ? 0.0 : m.x - sqrt(d);
-// }
-
-bool hitsObject(Ray ray, Bounds bnd, out bool isInside, out vec2 m) {
+float distanceToObject(Ray ray, Bounds bnd) {
     vec3 v = bnd.position - ray.origin;
-    m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
-    isInside = m.y < bnd.radiusSquared;
-    return ((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > 0.0;
+    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    float d = (m.x * m.x - m.y) + bnd.radiusSquared;
+    return d < 0.0 ? 0.0 : m.x - sqrt(d);
+}
+
+bool hitsBounds(Ray ray, Bounds bnd) {
+    vec3 v = bnd.position - ray.origin;
+    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    return m.y < bnd.radiusSquared || (((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > 1e-5);
 }
 
 void traceRayWithBVH(inout Ray ray) {
@@ -24,26 +22,19 @@ void traceRayWithBVH(inout Ray ray) {
     while (currIdx != 0) {
         Bounds curr = bvh.nodes[currIdx];
 
-        bool isInside;
-        vec2 m;
-        bool isHit = hitsObject(ray, curr, isInside, m);
-
-        // not a leaf, move to child
-        if (curr.material == 0 && (isInside || isHit)) {
-            currIdx = curr.child;
+        if (curr.material == 0) {
+            currIdx = hitsBounds(ray, curr) ? curr.child : curr.next;
             continue;
         }
 
-        // is a leaf and is hit
-        if (isHit) {
-            float dist = m.x - sqrt((m.x * m.x - m.y) + curr.radiusSquared);
-            if (dist < distanceToHit) {
-                // is a leaf, store data
-                distanceToHit = dist;
-                nodeHit = currIdx;
-                ray.objectHit = currIdx;
-                ray.materialHit = curr.material;
-            }
+        float dist = distanceToObject(ray, curr);
+
+        if (dist > 1e-5 && dist < distanceToHit) {
+            // is a leaf, store data
+            distanceToHit = dist;
+            nodeHit = currIdx;
+            ray.objectHit = currIdx;
+            ray.materialHit = curr.material;
         }
 
         // move to next node

@@ -88,6 +88,7 @@ impl CpuBVH {
         });
     }
 
+    // FIXME: spheres are invisible occasionally due to faulty boundaries
     /// Merges `other` into `self`.
     pub fn merge_in_place(&mut self, other: CpuBVH) {
         let is_self_in_other = other.root().sphere().contains(&self.root().sphere());
