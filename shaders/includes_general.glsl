@@ -1,5 +1,5 @@
-const uint MAX_OBJECTS = 16;
-const uint MAX_MATERIALS = 8;
+const uint MAX_OBJECTS = 256;
+const uint MAX_MATERIALS = 256;
 
 const uint SUBBUFFER_COUNT = 256;
 const uint SUBBUFFER_LENGTH = ITEM_COUNT / SUBBUFFER_COUNT; // even division

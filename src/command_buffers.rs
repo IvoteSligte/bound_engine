@@ -6,12 +6,12 @@ use vulkano::{
     buffer::DeviceLocalBuffer,
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, BlitImageInfo,
-        CommandBufferUsage, CopyImageInfo, FillBufferInfo, PrimaryAutoCommandBuffer,
+        ClearColorImageInfo, CommandBufferUsage, CopyImageInfo, FillBufferInfo,
+        PrimaryAutoCommandBuffer,
     },
-    descriptor_set::PersistentDescriptorSet,
     device::Queue,
     image::{StorageImage, SwapchainImage},
-    pipeline::{ComputePipeline, Pipeline, PipelineBindPoint},
+    pipeline::{Pipeline, PipelineBindPoint},
     sampler::Filter,
 };
 use winit::{dpi::PhysicalSize, window::Window};
@@ -183,49 +183,50 @@ pub(crate) fn get_move_lightmaps_command_buffer(
     )
     .unwrap();
 
-    let mut move_lightmaps = |lightmaps: Vec<Arc<StorageImage>>,
-                              descriptors: Vec<Arc<PersistentDescriptorSet>>,
-                              pipelines: Vec<Arc<ComputePipeline>>,
-                              staging: Arc<StorageImage>| {
-        for i in 0..LIGHTMAP_COUNT {
-            builder
-                .bind_pipeline_compute(pipelines[i].clone())
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Compute,
-                    pipelines[i].layout().clone(),
-                    0,
-                    descriptors[i].clone(),
-                )
-                .dispatch(dispatch_lightmap)
-                .unwrap()
-                .copy_image(CopyImageInfo::images(
-                    staging.clone(),
-                    lightmaps[i].clone(),
-                ))
-                .unwrap();
-        }
-    };
-
     lightmap_images
         .colors
         .clone()
         .into_iter()
         .zip(descriptor_sets.move_colors.clone())
         .for_each(|(lightmaps, descriptors)| {
-            move_lightmaps(
-                lightmaps,
-                descriptors,
-                pipelines.move_lightmap_colors.clone(),
-                lightmap_images.staging_color.clone(),
-            )
+            for i in 0..LIGHTMAP_COUNT {
+                builder
+                    .bind_pipeline_compute(pipelines.move_lightmap_colors[i].clone())
+                    .bind_descriptor_sets(
+                        PipelineBindPoint::Compute,
+                        pipelines.move_lightmap_colors[i].layout().clone(),
+                        0,
+                        descriptors[i].clone(),
+                    )
+                    .dispatch(dispatch_lightmap)
+                    .unwrap()
+                    .copy_image(CopyImageInfo::images(
+                        lightmap_images.staging_color.clone(),
+                        lightmaps[i].clone(),
+                    ))
+                    .unwrap();
+            }
         });
 
-    move_lightmaps(
-        lightmap_images.syncs.clone(),
-        descriptor_sets.move_syncs.clone(),
-        pipelines.move_lightmap_syncs.clone(),
-        lightmap_images.staging_sync.clone(),
-    );
+    for i in 0..LIGHTMAP_COUNT {
+        builder
+            .bind_pipeline_compute(pipelines.move_lightmap_syncs[i].clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.move_lightmap_syncs[i].layout().clone(),
+                0,
+                descriptor_sets.move_syncs[i].clone(),
+            )
+            .dispatch(dispatch_lightmap)
+            .unwrap()
+            .clear_color_image(ClearColorImageInfo::image(lightmap_images.syncs[i].clone()))
+            .unwrap()
+            .copy_image(CopyImageInfo::images(
+                lightmap_images.staging_sync.clone(),
+                lightmap_images.syncs[i].clone(),
+            ))
+            .unwrap();
+    }
 
     Arc::new(builder.build().unwrap())
 }

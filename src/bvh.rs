@@ -128,7 +128,11 @@ impl CpuBVH {
         }
     }
 
-    // #[allow(dead_code)]
+    // TODO:
+    // fn optimise(&mut self) {
+
+    // }
+
     // fn merge_node_with_parent(&mut self, target_idx: usize) {
     //     let CpuNodePtr { index, ptr_type } = self.pointer_to_node(target_idx);
 
@@ -206,38 +210,6 @@ impl CpuBVH {
 
         best_fit
     }
-
-    // fn added_area_with_sphere(&self, mut sphere: Sphere, mut idx: usize) -> f32 {
-    //     let mut parent_idx = self.nodes[idx].parent;
-    //     let mut added_area = sphere.radius * sphere.radius;
-
-    //     while let Some(p) = parent_idx {
-    //         let mut spheres = self
-    //             .children_of_node(p)
-    //             .into_iter()
-    //             .filter(|&i| i != idx)
-    //             .map(|child| self.nodes[child].sphere())
-    //             .collect::<Vec<Sphere>>();
-    //         spheres.push(sphere);
-
-    //         let surrounding_sphere = Sphere::largest_surrounding_sphere(spheres);
-    //         let surrounding_radius = surrounding_sphere.radius;
-    //         let area_diff = surrounding_radius * surrounding_radius
-    //             - self.nodes[p].radius * self.nodes[p].radius;
-
-    //         if area_diff == 0.0 {
-    //             break;
-    //         }
-
-    //         added_area += area_diff;
-
-    //         parent_idx = self.nodes[p].parent;
-    //         idx = p;
-    //         sphere = surrounding_sphere;
-    //     }
-
-    //     added_area
-    // }
 
     fn children_of_node(&self, target_idx: usize) -> Vec<usize> {
         let mut children = vec![];
@@ -426,7 +398,7 @@ impl From<CpuBVH> for crate::shaders::ty::GpuBVH {
                 radiusSquared: n.radius * n.radius,
                 child: n.child.map(|x| x as u32 + 1).unwrap_or(0),
                 next: n.next.map(|x| x as u32 + 1).unwrap_or(0),
-                material: n.material.map(|x| x as u32).unwrap_or(0),
+                material: n.material.map(|x| x as u32 + 1).unwrap_or(0),
                 _dummy0: [0u8; 4],
             })
             .collect::<Vec<_>>();

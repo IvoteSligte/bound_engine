@@ -8,8 +8,7 @@ use vulkano::{
 };
 
 use crate::{
-    bvh::CpuBVH,
-    scene,
+    scene::{get_materials, get_objects},
     shaders::{self, SAMPLES},
 };
 
@@ -20,7 +19,8 @@ pub(crate) fn get_mutable_buffer(
     let mut mutable_data = shaders::ty::MutableData {
         ..Default::default()
     };
-    mutable_data.mats[..scene::MATERIALS.len()].copy_from_slice(&scene::MATERIALS);
+    let materials = get_materials();
+    mutable_data.mats[..materials.len()].copy_from_slice(&materials);
 
     DeviceLocalBuffer::from_data(
         memory_allocator,
@@ -38,18 +38,11 @@ pub(crate) fn get_bvh_buffer(
     memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
     alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>> {
-    let mut bvh: CpuBVH = scene::BVH_OBJECTS[0].clone().into();
-
-    for n in scene::BVH_OBJECTS[1..].iter() {
-        bvh.merge_in_place(n.clone().into());
-    }
-
-    // DEBUG
-    //bvh.graphify();
+    let bvh = get_objects();
 
     DeviceLocalBuffer::<shaders::ty::GpuBVH>::from_data(
         memory_allocator,
-        bvh.into(),
+        bvh,
         BufferUsage {
             uniform_buffer: true,
             ..BufferUsage::empty()
