@@ -1,5 +1,5 @@
 use crate::shaders::Shaders;
-use crate::{shaders, LIGHTMAP_COUNT, FOV};
+use crate::{shaders, FOV};
 
 use vulkano::pipeline::ComputePipeline;
 
@@ -32,8 +32,6 @@ where
 pub(crate) struct Pipelines {
     pub(crate) direct: Arc<ComputePipeline>,
     pub(crate) buffer_rays: Arc<ComputePipeline>,
-    pub(crate) move_lightmap_colors: Vec<Arc<ComputePipeline>>,
-    pub(crate) move_lightmap_syncs: Vec<Arc<ComputePipeline>>,
 }
 
 impl Pipelines {
@@ -51,35 +49,9 @@ impl Pipelines {
 
         let buffer_rays = get_compute_pipeline(device.clone(), shaders.buffer_rays.clone(), &());
 
-        let move_lightmap_colors = (0..LIGHTMAP_COUNT)
-            .map(|i| {
-                get_compute_pipeline(
-                    device.clone(),
-                    shaders.move_lightmap_colors.clone(),
-                    &shaders::MoveLightmapColorsSpecializationConstants {
-                        LIGHTMAP_INDEX: i as u32,
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let move_lightmap_syncs = (0..LIGHTMAP_COUNT)
-            .map(|i| {
-                get_compute_pipeline(
-                    device.clone(),
-                    shaders.move_lightmap_syncs.clone(),
-                    &shaders::MoveLightmapSyncsSpecializationConstants {
-                        LIGHTMAP_INDEX: i as u32,
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-
         Self {
             direct,
             buffer_rays,
-            move_lightmap_colors,
-            move_lightmap_syncs,
         }
     }
 }

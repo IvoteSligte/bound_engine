@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
-use glam::UVec3;
+use glam::{IVec3, UVec3};
 use vec_cycle::VecCycle;
 use vulkano::{
     buffer::DeviceLocalBuffer,
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, BlitImageInfo,
-        ClearColorImageInfo, CommandBufferUsage, CopyImageInfo, FillBufferInfo,
+        ClearColorImageInfo, CommandBufferUsage, CopyImageInfo, FillBufferInfo, ImageCopy,
         PrimaryAutoCommandBuffer,
     },
     device::Queue,
-    image::{StorageImage, SwapchainImage},
+    image::{ImageAccess, ImageSubresourceLayers, StorageImage, SwapchainImage},
     pipeline::{Pipeline, PipelineBindPoint},
     sampler::Filter,
 };
@@ -28,7 +28,6 @@ use crate::{
 pub(crate) struct CommandBufferCollection {
     pub(crate) pathtraces: VecCycle<Arc<PrimaryAutoCommandBuffer>>,
     pub(crate) swapchains: Vec<Arc<PrimaryAutoCommandBuffer>>,
-    pub(crate) move_lightmap: Arc<PrimaryAutoCommandBuffer>,
 }
 
 impl CommandBufferCollection {
@@ -41,7 +40,6 @@ impl CommandBufferCollection {
         lightmap_buffers: &LightmapBufferSet,
         color_image: Arc<StorageImage>,
         swapchain_images: Vec<Arc<SwapchainImage>>,
-        lightmap_images: &LightmapImages,
     ) -> CommandBufferCollection {
         let pathtraces = get_pathtrace_command_buffers(
             command_buffer_allocator,
@@ -59,18 +57,9 @@ impl CommandBufferCollection {
             swapchain_images.clone(),
         );
 
-        let move_lightmap = get_move_lightmaps_command_buffer(
-            command_buffer_allocator,
-            queue.clone(),
-            pipelines.clone(),
-            descriptor_sets.clone(),
-            lightmap_images.clone(),
-        );
-
         CommandBufferCollection {
             pathtraces,
             swapchains,
-            move_lightmap,
         }
     }
 }
@@ -166,16 +155,12 @@ pub(crate) fn get_swapchain_command_buffers(
         .collect()
 }
 
-// FIXME: number of lightmaps moved is not correct, etc, etc
-pub(crate) fn get_move_lightmaps_command_buffer(
+pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
     allocator: &StandardCommandBufferAllocator,
     queue: Arc<Queue>,
-    pipelines: Pipelines,
-    descriptor_sets: DescriptorSetCollection,
     lightmap_images: LightmapImages,
+    movement: IVec3,
 ) -> Arc<PrimaryAutoCommandBuffer> {
-    let dispatch_lightmap = UVec3::splat(LIGHTMAP_SIZE / 4).to_array();
-
     let mut builder = AutoCommandBufferBuilder::primary(
         allocator,
         queue.queue_family_index(),
@@ -183,22 +168,75 @@ pub(crate) fn get_move_lightmaps_command_buffer(
     )
     .unwrap();
 
+    // TODO: check validity
+    const LIGHTMAP_SIZE_I: i32 = LIGHTMAP_SIZE as i32;
+
+    const SMALLEST_UNIT: f32 = 0.5;
+    // TODO: check if units_moved is less than LIGHTMAP_SIZE cause otherwise this is useless
+    let units_moved_per_layer = (0..LIGHTMAP_COUNT)
+        .map(|i| SMALLEST_UNIT * 2.0f32.powi(i as i32))
+        .map(|unit_size| movement.as_vec3() / unit_size)
+        .map(|units_moved| units_moved.as_ivec3())
+        .collect::<Vec<_>>();
+
+    let (src_offset_per_layer, dst_offset_per_layer): (Vec<UVec3>, Vec<UVec3>) =
+        units_moved_per_layer
+            .iter()
+            .map(|&units_moved| {
+                let (src_offset, dst_offset): (Vec<_>, Vec<_>) = units_moved
+                    .to_array()
+                    .into_iter()
+                    .map(|n| {
+                        if n.is_positive() {
+                            (n.abs(), 0)
+                        } else {
+                            (0, n.abs())
+                        }
+                    })
+                    .unzip();
+                (
+                    IVec3::from_slice(&src_offset),
+                    IVec3::from_slice(&dst_offset),
+                )
+            })
+            .map(|(a, b)| (a.as_uvec3(), b.as_uvec3()))
+            .unzip();
+
+    // TODO: check if all(extent > 0) cause otherwise this is useless as well
+    let extent_per_layer = units_moved_per_layer
+        .iter()
+        .map(|&units_moved| LIGHTMAP_SIZE_I - units_moved.abs())
+        .map(|v| v.as_uvec3())
+        .collect::<Vec<_>>();
+
     lightmap_images
         .colors
         .clone()
         .into_iter()
-        .zip(descriptor_sets.move_colors.clone())
-        .for_each(|(lightmaps, descriptors)| {
+        .for_each(|lightmaps| {
             for i in 0..LIGHTMAP_COUNT {
                 builder
-                    .bind_pipeline_compute(pipelines.move_lightmap_colors[i].clone())
-                    .bind_descriptor_sets(
-                        PipelineBindPoint::Compute,
-                        pipelines.move_lightmap_colors[i].layout().clone(),
-                        0,
-                        descriptors[i].clone(),
-                    )
-                    .dispatch(dispatch_lightmap)
+                    .copy_image(CopyImageInfo {
+                        regions: [ImageCopy {
+                            src_subresource: ImageSubresourceLayers::from_parameters(
+                                lightmap_images.staging_color.format(),
+                                1,
+                            ),
+                            dst_subresource: ImageSubresourceLayers::from_parameters(
+                                lightmaps[i].format(),
+                                1,
+                            ),
+                            src_offset: src_offset_per_layer[i].to_array(),
+                            dst_offset: dst_offset_per_layer[i].to_array(),
+                            extent: extent_per_layer[i].to_array(),
+                            ..ImageCopy::default()
+                        }]
+                        .into(),
+                        ..CopyImageInfo::images(
+                            lightmaps[i].clone(),
+                            lightmap_images.staging_color.clone(),
+                        )
+                    })
                     .unwrap()
                     .copy_image(CopyImageInfo::images(
                         lightmap_images.staging_color.clone(),
@@ -208,18 +246,34 @@ pub(crate) fn get_move_lightmaps_command_buffer(
             }
         });
 
+    // TODO: clear regions that are not copied to
     for i in 0..LIGHTMAP_COUNT {
         builder
-            .clear_color_image(ClearColorImageInfo::image(lightmap_images.staging_sync.clone()))
+            .clear_color_image(ClearColorImageInfo::image(
+                lightmap_images.staging_sync.clone(),
+            ))
             .unwrap()
-            .bind_pipeline_compute(pipelines.move_lightmap_syncs[i].clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.move_lightmap_syncs[i].layout().clone(),
-                0,
-                descriptor_sets.move_syncs[i].clone(),
-            )
-            .dispatch(dispatch_lightmap)
+            .copy_image(CopyImageInfo {
+                regions: [ImageCopy {
+                    src_subresource: ImageSubresourceLayers::from_parameters(
+                        lightmap_images.staging_sync.format(),
+                        1,
+                    ),
+                    dst_subresource: ImageSubresourceLayers::from_parameters(
+                        lightmap_images.syncs[i].format(),
+                        1,
+                    ),
+                    src_offset: src_offset_per_layer[i].to_array(),
+                    dst_offset: dst_offset_per_layer[i].to_array(),
+                    extent: extent_per_layer[i].to_array(),
+                    ..ImageCopy::default()
+                }]
+                .into(),
+                ..CopyImageInfo::images(
+                    lightmap_images.syncs[i].clone(),
+                    lightmap_images.staging_sync.clone(),
+                )
+            })
             .unwrap()
             .copy_image(CopyImageInfo::images(
                 lightmap_images.staging_sync.clone(),

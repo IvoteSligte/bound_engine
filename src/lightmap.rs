@@ -48,8 +48,6 @@ pub(crate) struct LightmapImages {
 pub(crate) struct LightmapImageViews {
     pub(crate) colors: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
     pub(crate) syncs: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) staging_color: Arc<dyn ImageViewAbstract>,
-    pub(crate) staging_sync: Arc<dyn ImageViewAbstract>,
 }
 
 impl LightmapImages {
@@ -84,6 +82,7 @@ impl LightmapImages {
                     .map(|_| {
                         create_storage_image(
                             ImageUsage {
+                                transfer_src: true,
                                 transfer_dst: true,
                                 ..ImageUsage::default()
                             },
@@ -98,6 +97,7 @@ impl LightmapImages {
             .map(|_| {
                 create_storage_image(
                     ImageUsage {
+                        transfer_src: true,
                         transfer_dst: true,
                         ..ImageUsage::default()
                     },
@@ -109,6 +109,7 @@ impl LightmapImages {
         let staging_color = create_storage_image(
             ImageUsage {
                 transfer_src: true,
+                transfer_dst: true,
                 ..ImageUsage::default()
             },
             Format::R16G16B16A16_UNORM,
@@ -152,8 +153,6 @@ impl LightmapImages {
                     ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
                 })
                 .collect(),
-            staging_color: ImageView::new_default(self.staging_color.clone()).unwrap(),
-            staging_sync: ImageView::new_default(self.staging_sync.clone()).unwrap(),
         }
     }
 }

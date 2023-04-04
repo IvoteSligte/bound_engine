@@ -3,8 +3,6 @@ use crate::lightmap::LightmapImages;
 use crate::pipelines::Pipelines;
 
 use vec_cycle::VecCycle;
-use vulkano::image::ImageViewAbstract;
-use vulkano::pipeline::ComputePipeline;
 use vulkano::pipeline::Pipeline;
 
 use vulkano::descriptor_set::WriteDescriptorSet;
@@ -30,8 +28,6 @@ pub(crate) struct DescriptorSetUnit {
 #[derive(Clone)]
 pub(crate) struct DescriptorSetCollection {
     pub(crate) ray_units: VecCycle<DescriptorSetUnit>,
-    pub(crate) move_colors: Vec<Vec<Arc<PersistentDescriptorSet>>>,
-    pub(crate) move_syncs: Vec<Arc<PersistentDescriptorSet>>,
 }
 
 pub(crate) fn get_compute_descriptor_sets(
@@ -101,42 +97,7 @@ pub(crate) fn get_compute_descriptor_sets(
         })
         .collect::<Vec<_>>();
 
-    let move_descriptor = |image: Arc<dyn ImageViewAbstract>, staging: Arc<dyn ImageViewAbstract>, pipeline: Arc<ComputePipeline>| {
-        PersistentDescriptorSet::new(
-            allocator,
-            pipeline.layout().set_layouts()[0].clone(),
-            [
-                WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
-                WriteDescriptorSet::image_view(1, image.clone()),
-                WriteDescriptorSet::image_view(2, staging.clone()),
-            ],
-        )
-        .unwrap()
-    };
-
-    let move_colors = lightmap_image_views
-        .colors
-        .clone()
-        .into_iter()
-        .map(|vec| {
-            vec.into_iter()
-                .zip(pipelines.move_lightmap_colors.clone().into_iter())
-                .map(|(image, pipeline)| move_descriptor(image, lightmap_image_views.staging_color.clone(), pipeline))
-                .collect()
-        })
-        .collect();
-
-    let move_syncs = lightmap_image_views
-        .syncs
-        .clone()
-        .into_iter()
-        .zip(pipelines.move_lightmap_syncs.clone().into_iter())
-        .map(|(image, pipeline)| move_descriptor(image, lightmap_image_views.staging_sync.clone(), pipeline))
-        .collect();
-
     DescriptorSetCollection {
         ray_units: VecCycle::new(ray_units),
-        move_colors,
-        move_syncs,
     }
 }

@@ -172,14 +172,11 @@ fn main() {
         queue.clone(),
         pipelines.clone(),
         window.clone(),
-        descriptor_sets,
+        descriptor_sets.clone(),
         &lightmap_buffers,
         color_image,
         swapchain_images.clone(),
-        &lightmap_images,
     );
-
-    let mut lightmap_update = false;
 
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
     let mut previous_fence_index = 0;
@@ -260,16 +257,16 @@ fn main() {
 
         let old_pos = IVec3::from_array(real_time_data.lightmapOrigin);
         let new_pos = new_position.as_ivec3();
-        
+
         // FIXME:
         const SMALLEST_UNIT: f32 = 0.5;
         const LARGEST_UNIT: f32 = (1 << (LIGHTMAP_COUNT - 1)) as f32 * SMALLEST_UNIT;
 
         let largest_delta_pos = (new_pos - old_pos).as_vec3() / LARGEST_UNIT;
 
-        if largest_delta_pos.abs().cmpge(Vec3::splat(1.0)).any() {
-            lightmap_update = true;
+        let mut move_lightmap = None;
 
+        if largest_delta_pos.abs().cmpge(Vec3::splat(1.0)).any() {
             let delta_pos = largest_delta_pos * LARGEST_UNIT;
             real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array();
 
@@ -278,6 +275,13 @@ fn main() {
                 let delta_units = (delta_pos / unit_size).as_ivec3();
                 real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
             }
+
+            move_lightmap = Some(get_dynamic_move_lightmaps_command_buffer(
+                &command_buffer_allocator,
+                queue.clone(),
+                lightmap_images.clone(),
+                delta_pos.as_ivec3(),
+            ));
         }
 
         // rendering
@@ -341,11 +345,10 @@ fn main() {
 
         let mut future = previous_future;
 
-        if lightmap_update {
-            lightmap_update = false;
+        if let Some(command_buffer) = move_lightmap {
 
             future = future
-                .then_execute(queue.clone(), command_buffers.move_lightmap.clone())
+                .then_execute(queue.clone(), command_buffer)
                 .unwrap()
                 .boxed();
         }
