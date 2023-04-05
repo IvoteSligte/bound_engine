@@ -8,13 +8,13 @@ float distanceToObject(Ray ray, Bounds bnd) {
 bool hitsBounds(Ray ray, Bounds bnd) {
     vec3 v = bnd.position - ray.origin;
     vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
-    return m.y < bnd.radiusSquared || (((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > 1e-5);
+    return m.y < bnd.radiusSquared || (((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > EPSILON);
 }
 
 void traceRayWithBVH(inout Ray ray) {
     ray.objectHit = 0;
     ray.materialHit = 0;
-    float distanceToHit = 1e20;
+    float distanceToHit = FLT_MAX;
     uint nodeHit = 0;
 
     uint currIdx = bvh.root;
@@ -29,7 +29,7 @@ void traceRayWithBVH(inout Ray ray) {
 
         float dist = distanceToObject(ray, curr);
 
-        if (dist > 1e-5 && dist < distanceToHit) {
+        if (dist > EPSILON && dist < distanceToHit) {
             // is a leaf, store data
             distanceToHit = dist;
             nodeHit = currIdx;

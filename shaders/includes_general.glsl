@@ -12,6 +12,8 @@ const float LM_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currentl
 
 #define FLT_MAX 3.402823466e+38
 
+#define EPSILON 1e-5
+
 struct Material {
     vec3 reflectance;
     vec3 emittance;
