@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use vulkano::{
-    buffer::{DeviceLocalBuffer, BufferAccess},
-    command_buffer::{
-        allocator::StandardCommandBufferAllocator,
-    },
+    buffer::{BufferAccess, DeviceLocalBuffer},
+    command_buffer::allocator::StandardCommandBufferAllocator,
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{physical::PhysicalDevice, Device},
     format::Format,
@@ -26,7 +24,7 @@ use crate::{
     descriptor_sets::*,
     event_helper::Data,
     get_color_image,
-    lightmap::{LightmapBufferSet, LightmapImages},
+    lightmap::LightmapImages,
     pipelines::{get_compute_pipeline, Pipelines},
     shaders::{self, Shaders},
     FOV,
@@ -104,7 +102,6 @@ pub(crate) fn recreate_swapchain(
     bvh_buffer: Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>>,
     mutable_buffer: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>,
     lightmap_images: LightmapImages,
-    lightmap_buffers: LightmapBufferSet,
     blue_noise_buffer: Arc<dyn BufferAccess>,
     command_buffers: &mut CommandBufferCollection,
 ) -> bool {
@@ -152,7 +149,6 @@ pub(crate) fn recreate_swapchain(
             mutable_buffer.clone(),
             color_image.clone(),
             lightmap_images.clone(),
-            lightmap_buffers.clone(),
             blue_noise_buffer.clone(),
         );
 
@@ -163,13 +159,12 @@ pub(crate) fn recreate_swapchain(
             new_swapchain_images.clone(),
         );
 
-        command_buffers.pathtraces = get_pathtrace_command_buffers(
+        command_buffers.pathtrace = get_pathtrace_command_buffers(
             command_buffer_allocator,
             queue.clone(),
             pipelines.clone(),
             eh.window.clone(),
             descriptor_sets.clone(),
-            lightmap_buffers.clone(),
         );
     }
 

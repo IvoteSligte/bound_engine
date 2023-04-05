@@ -28,15 +28,7 @@ layout(binding = 2, rgba16) uniform restrict writeonly image2D colorImage;
 
 layout(binding = 3, rgba16) uniform restrict readonly image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages; // TODO: CPU side - only grab the first LIGHTMAP_COUNT images
 
-layout(binding = 4, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
-
-layout(binding = 5) buffer restrict CurrBuffer {
-    HitItem items[SUBBUFFER_COUNT][SUBBUFFER_LENGTH];
-} currBuffer;
-
-layout(binding = 6) buffer restrict CurrCounters {
-    uint counters[SUBBUFFER_COUNT];
-} currCounters;
+layout(binding = 4, rg32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
 
 #include "includes_trace_ray.glsl"
 
@@ -55,13 +47,6 @@ ivec4 lightmapIndexAtPos(vec3 v) {
 }
 
 void main() {
-    const uvec3 TOTAL_SIZE = gl_NumWorkGroups * gl_WorkGroupSize;
-    const uint TOTAL_LENGTH = TOTAL_SIZE.x * TOTAL_SIZE.y; // only two dimensions are used
-    const uint GLOBAL_INVOCATION_INDEX = TOTAL_SIZE.x * gl_GlobalInvocationID.y + gl_GlobalInvocationID.x; // only two dimensions are used
-
-    // FIXME: the binding is not recognised when buffers are only written to and not read from
-    HitItem useless = currBuffer.items[0][0];
-
     const ivec2 VIEWPORT = ivec2(imageSize(colorImage).xy);
     const ivec2 IPOS = ivec2(gl_GlobalInvocationID.xy);
 
@@ -83,22 +68,16 @@ void main() {
         return;
     }
 
-    uint sync = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, BIT_USED);
+    uint sync = imageLoad(lightmapSyncImages[lmIndex.w], lmIndex.xyz).x;
     uint level = sync & BITS_LEVEL;
     bool isUnused = (sync & BIT_USED) == 0;
+    bool isUnfinished = level != RAYS_INDIRECT;
 
-    if (isUnused) {
-        const uint INVOCATIONS_PER_COUNTER = TOTAL_LENGTH / SUBBUFFER_COUNT;
-        const uint COUNTER_INDEX = GLOBAL_INVOCATION_INDEX / INVOCATIONS_PER_COUNTER;
-
-        uint bufIdx = atomicAdd(currCounters.counters[COUNTER_INDEX], 1);
-        if (bufIdx < SUBBUFFER_LENGTH) {
-            currBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
-        } else {
-            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(sync));
-        }
+    if (isUnused && isUnfinished) {
+        imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(sync | BIT_USED, ray.objectHit, uvec2(0)));
     }
 
     vec3 color = level > 0 ? imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb : vec3(0.0);
+    //vec3 color = vec3(!isUnused); // DEBUG
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }

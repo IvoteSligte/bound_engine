@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use glam::{IVec3, UVec3};
-use vec_cycle::VecCycle;
 use vulkano::{
     buffer::DeviceLocalBuffer,
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, BlitImageInfo,
-        ClearColorImageInfo, CommandBufferUsage, CopyImageInfo, FillBufferInfo, ImageCopy,
+        ClearColorImageInfo, CommandBufferUsage, CopyImageInfo, ImageCopy,
         PrimaryAutoCommandBuffer,
     },
     device::Queue,
@@ -17,16 +16,16 @@ use vulkano::{
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    descriptor_sets::DescriptorSetCollection,
-    lightmap::{LightmapBufferSet, LightmapImages},
+    descriptor_sets::DescriptorSets,
+    lightmap::LightmapImages,
     pipelines::Pipelines,
-    shaders::{self, ITEM_COUNT, LIGHTMAP_SIZE},
+    shaders::{self, LIGHTMAP_SIZE},
     LIGHTMAP_COUNT,
 };
 
 #[derive(Clone)]
 pub(crate) struct CommandBufferCollection {
-    pub(crate) pathtraces: VecCycle<Arc<PrimaryAutoCommandBuffer>>,
+    pub(crate) pathtrace: Arc<PrimaryAutoCommandBuffer>,
     pub(crate) swapchains: Vec<Arc<PrimaryAutoCommandBuffer>>,
 }
 
@@ -36,18 +35,16 @@ impl CommandBufferCollection {
         queue: Arc<Queue>,
         pipelines: Pipelines,
         window: Arc<Window>,
-        descriptor_sets: DescriptorSetCollection,
-        lightmap_buffers: &LightmapBufferSet,
+        descriptor_sets: DescriptorSets,
         color_image: Arc<StorageImage>,
         swapchain_images: Vec<Arc<SwapchainImage>>,
     ) -> CommandBufferCollection {
-        let pathtraces = get_pathtrace_command_buffers(
+        let pathtrace = get_pathtrace_command_buffers(
             command_buffer_allocator,
             queue.clone(),
             pipelines.clone(),
             window.clone(),
             descriptor_sets.clone(),
-            lightmap_buffers.clone(),
         );
 
         let swapchains = get_swapchain_command_buffers(
@@ -58,7 +55,7 @@ impl CommandBufferCollection {
         );
 
         CommandBufferCollection {
-            pathtraces,
+            pathtrace,
             swapchains,
         }
     }
@@ -69,9 +66,8 @@ pub(crate) fn get_pathtrace_command_buffers(
     queue: Arc<Queue>,
     pipelines: Pipelines,
     window: Arc<Window>,
-    mut descriptor_sets: DescriptorSetCollection,
-    mut lightmap_buffers: LightmapBufferSet,
-) -> VecCycle<Arc<PrimaryAutoCommandBuffer>> {
+    descriptor_sets: DescriptorSets,
+) -> Arc<PrimaryAutoCommandBuffer> {
     let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
     let dispatch_direct = [
@@ -80,50 +76,41 @@ pub(crate) fn get_pathtrace_command_buffers(
         1,
     ];
 
-    let dispatch_buffer_rays = [ITEM_COUNT, 1, 1];
+    let dispatch_buffer_rays = [LIGHTMAP_SIZE; 3];
 
-    descriptor_sets.ray_units.restart();
-    lightmap_buffers.restart();
-
-    VecCycle::new(
-        (0..2)
-            .map(|_| {
-                let lm_unit = lightmap_buffers.next().unwrap();
-                let desc_unit = descriptor_sets.ray_units.next().unwrap();
-
-                let mut builder = AutoCommandBufferBuilder::primary(
-                    allocator,
-                    queue.queue_family_index(),
-                    CommandBufferUsage::SimultaneousUse, // TODO: multiplesubmit
-                )
-                .unwrap();
-
-                builder
-                    .fill_buffer(FillBufferInfo::dst_buffer(lm_unit[1].counters.clone())) // clear buffer
-                    .unwrap()
-                    .bind_pipeline_compute(pipelines.direct.clone())
-                    .bind_descriptor_sets(
-                        PipelineBindPoint::Compute,
-                        pipelines.direct.layout().clone(),
-                        0,
-                        desc_unit.direct.clone(),
-                    )
-                    .dispatch(dispatch_direct)
-                    .unwrap()
-                    .bind_pipeline_compute(pipelines.buffer_rays.clone())
-                    .bind_descriptor_sets(
-                        PipelineBindPoint::Compute,
-                        pipelines.buffer_rays.layout().clone(),
-                        0,
-                        desc_unit.buffer_rays.clone(),
-                    )
-                    .dispatch(dispatch_buffer_rays)
-                    .unwrap();
-
-                Arc::new(builder.build().unwrap())
-            })
-            .collect(),
+    let mut builder = AutoCommandBufferBuilder::primary(
+        allocator,
+        queue.queue_family_index(),
+        CommandBufferUsage::SimultaneousUse, // TODO: multiplesubmit
     )
+    .unwrap();
+
+    builder
+        .bind_pipeline_compute(pipelines.direct.clone())
+        .bind_descriptor_sets(
+            PipelineBindPoint::Compute,
+            pipelines.direct.layout().clone(),
+            0,
+            descriptor_sets.direct.clone(),
+        )
+        .dispatch(dispatch_direct)
+        .unwrap();
+
+    // TODO: remove barriers between these
+    for pipeline in pipelines.buffer_rays.iter() {
+        builder
+            .bind_pipeline_compute(pipeline.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipeline.layout().clone(),
+                0,
+                descriptor_sets.buffer_rays.clone(),
+            )
+            .dispatch(dispatch_buffer_rays)
+            .unwrap();
+    }
+
+    Arc::new(builder.build().unwrap())
 }
 
 pub(crate) fn get_swapchain_command_buffers(

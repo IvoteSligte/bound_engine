@@ -4,6 +4,8 @@
 
 layout(local_size_x = SAMPLES, local_size_y = 1, local_size_z = 1) in;
 
+layout(constant_id = 0) const int LIGHTMAP_INDEX = 0; // TODO: command buffers/pipelines with this
+
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
     vec4 previousRotation;
@@ -25,25 +27,10 @@ layout(binding = 2) uniform restrict readonly MutableData {
 
 layout(binding = 3, rgba16) uniform restrict image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages;
 
-layout(binding = 4, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
+layout(binding = 4, rg32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
 
-layout(binding = 5) buffer restrict readonly CurrBuffer {
-    HitItem items[SUBBUFFER_COUNT][SUBBUFFER_LENGTH];
-} currBuffer;
-
-layout(binding = 6) buffer restrict CurrCounters {
-    uint counters[SUBBUFFER_COUNT];
-} currCounters;
-
-layout(binding = 7) buffer restrict NextBuffer {
-    HitItem items[SUBBUFFER_COUNT][SUBBUFFER_LENGTH];
-} nextBuffer;
-
-layout(binding = 8) buffer restrict NextCounters {
-    uint counters[SUBBUFFER_COUNT];
-} nextCounters;
-
-layout(binding = 9) uniform restrict readonly BlueNoise {
+// TODO: correct bindings
+layout(binding = 5) uniform restrict readonly BlueNoise {
     vec4 items[SAMPLES];
 } bn;
 
@@ -63,31 +50,38 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     return ivec4(index, lightmapNum);
 }
 
+vec3 posAtLightmapIndex(ivec4 lmIndex) {
+    const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
+
+    float unitSize = (1 << lmIndex.w) * LM_UNIT_SIZE;
+    vec3 v = (lmIndex.xyz - HALF_IMAGE_SIZE) * unitSize;
+
+    return v;
+}
+
 shared vec3 SharedColors[SAMPLES];
 shared bool SharedIsValids[SAMPLES];
 
 void main() {
-    // FIXME: binding is invalid when the buffer is not read from
-    HitItem useless = nextBuffer.items[0][0];
+    const ivec4 LM_INDEX = ivec4(gl_WorkGroupID.xyz, LIGHTMAP_INDEX);
 
-    const uint COUNTER_INDEX = gl_WorkGroupID.x / SUBBUFFER_LENGTH;
-    const uint BUFFER_INDEX = gl_WorkGroupID.x % SUBBUFFER_LENGTH;
-
-    // if buffer slot is empty
-    if (BUFFER_INDEX >= currCounters.counters[COUNTER_INDEX]) {
-        return;
+    uvec2 misc = imageLoad(lightmapSyncImages[LM_INDEX.w], LM_INDEX.xyz).xy;
+    uint sync = misc.x;
+    uint objectHit = misc.y;
+    bool isUnused = (sync & BIT_USED) == 0;
+    
+    if (isUnused) {
+        return; // TODO: check if this does not mess up anything parallelised
     }
 
-    HitItem hitItem = currBuffer.items[COUNTER_INDEX][BUFFER_INDEX];
-    ivec4 lmIndex = lightmapIndexAtPos(hitItem.position);
-
-    vec3 normal = normalize(hitItem.position - bvh.nodes[hitItem.objectHit].position);
-
-    uint sync = imageLoad(lightmapSyncImages[lmIndex.w], lmIndex.xyz).x;
     uint level = sync & BITS_LEVEL;
 
+    vec3 position = posAtLightmapIndex(LM_INDEX);
+
+    vec3 normal = normalize(position - bvh.nodes[objectHit].position);
+
     vec3 randDir = normalize(normal + bn.items[gl_LocalInvocationID.x].xyz);
-    Ray ray = Ray(0, hitItem.position, randDir, 0);
+    Ray ray = Ray(0, position, randDir, 0);
 
     traceRayWithBVH(ray);
 
@@ -98,30 +92,18 @@ void main() {
         SharedColors[gl_LocalInvocationID.x] = vec3(0.0);
         SharedIsValids[gl_LocalInvocationID.x] = true;
     } else {
-        uint syncSample = imageAtomicOr(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, BIT_USED);
-
+        uint syncSample = imageLoad(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz).x;
         uint levelSample = syncSample & BITS_LEVEL;
-        bool isUnused = (syncSample & BIT_USED) == 0;
 
         if (levelSample < level) {
+            bool isUnused = (syncSample & BIT_USED) == 0;
             if (isUnused) {
-                const uint COUNTER_INDEX = gl_WorkGroupID.x / SUBBUFFER_LENGTH;
-
-                uint bufIdx = atomicAdd(nextCounters.counters[COUNTER_INDEX], 1);
-                if (bufIdx < SUBBUFFER_LENGTH) {
-                    nextBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
-                } else {
-                    imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
-                }
+                imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample | BIT_USED, ray.objectHit, uvec2(0)));
             }
 
             SharedColors[gl_LocalInvocationID.x] = vec3(0.0);
             SharedIsValids[gl_LocalInvocationID.x] = false;
         } else {
-            if (isUnused) {
-                imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
-            }
-
             // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful
             // otherwise, create an image and fill it with emission at points
             if (level == 0) {
@@ -159,17 +141,14 @@ void main() {
         }
 
         if (isValid) {
-            Material material = buf.mats[hitItem.materialHit];
+            Material material = buf.mats[bvh.nodes[objectHit].material]; // TODO: optimize by storing materialHit
             color = color * (material.reflectance * (1.0 / SAMPLES)) + material.emittance;
 
-            imageStore(lightmapImages[LIGHTMAP_COUNT * level + lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
+            imageStore(lightmapImages[LIGHTMAP_COUNT * level + LM_INDEX.w], LM_INDEX.xyz, vec4(color, 0.0));
 
-            // TODO: merge all ray bounces into one lightmap, then remove BIT_USED here for infinite bounces
-            uint storeValue = ((level + 1) == RAYS_INDIRECT) ? ((level + 1) | BIT_USED) : (level + 1);
-            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(storeValue));
+            imageStore(lightmapSyncImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(level + 1, 0, uvec2(0)));
         } else {
-            uint storeValue = level;
-            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(storeValue));
+            imageStore(lightmapSyncImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(level, 0, uvec2(0)));
         }
     }
 }

@@ -1,22 +1,6 @@
-use itertools::Itertools;
-use vec_cycle::VecCycle;
-use vulkano::buffer::BufferUsage;
-
 use crate::shaders::LIGHTMAP_COUNT;
 use crate::shaders::LIGHTMAP_SIZE;
 use crate::shaders::RAYS_INDIRECT;
-
-use super::shaders;
-
-use vulkano::buffer::DeviceLocalBuffer;
-
-use std::ops::DerefMut;
-
-use std::ops::Deref;
-
-use vulkano::memory::allocator::FreeListAllocator;
-
-use vulkano::memory::allocator::GenericMemoryAllocator;
 
 use vulkano::image::view::ImageView;
 
@@ -101,7 +85,7 @@ impl LightmapImages {
                         transfer_dst: true,
                         ..ImageUsage::default()
                     },
-                    Format::R32_UINT,
+                    Format::R32G32_UINT,
                 )
             })
             .collect();
@@ -121,7 +105,7 @@ impl LightmapImages {
                 transfer_dst: true,
                 ..ImageUsage::default()
             },
-            Format::R32_UINT,
+            Format::R32G32_UINT,
         );
 
         Self {
@@ -153,77 +137,6 @@ impl LightmapImages {
                     ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
                 })
                 .collect(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct LightmapBufferSet(VecCycle<Vec<LightmapBufferUnit>>);
-
-impl LightmapBufferSet {
-    pub(crate) fn new(
-        memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
-        queue_family_index: u32,
-        count: usize,
-    ) -> Self {
-        assert_ne!(count, 0, "count must be greater than zero");
-
-        Self(VecCycle::new(
-            (0..count)
-                .map(|_| LightmapBufferUnit::new(memory_allocator, queue_family_index))
-                .permutations(count)
-                .collect(),
-        ))
-    }
-}
-
-impl Deref for LightmapBufferSet {
-    type Target = VecCycle<Vec<LightmapBufferUnit>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for LightmapBufferSet {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct LightmapBufferUnit {
-    pub(crate) buffer: Arc<DeviceLocalBuffer<shaders::ty::CurrBuffer>>,
-    pub(crate) counters: Arc<DeviceLocalBuffer<shaders::ty::CurrCounters>>,
-}
-
-impl LightmapBufferUnit {
-    pub(crate) fn new(
-        memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
-        queue_family_index: u32,
-    ) -> Self {
-        Self {
-            buffer: DeviceLocalBuffer::new(
-                memory_allocator,
-                BufferUsage {
-                    storage_buffer: true,
-                    uniform_buffer: true,
-                    ..BufferUsage::empty()
-                },
-                [queue_family_index],
-            )
-            .unwrap(),
-            counters: DeviceLocalBuffer::new(
-                memory_allocator,
-                BufferUsage {
-                    storage_buffer: true,
-                    uniform_buffer: true,
-                    transfer_dst: true,
-                    ..BufferUsage::empty()
-                },
-                [queue_family_index],
-            )
-            .unwrap(),
         }
     }
 }

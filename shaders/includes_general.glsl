@@ -1,9 +1,6 @@
 const uint MAX_OBJECTS = 256;
 const uint MAX_MATERIALS = 256;
 
-const uint SUBBUFFER_COUNT = 256;
-const uint SUBBUFFER_LENGTH = ITEM_COUNT / SUBBUFFER_COUNT; // even division
-
 const uint ALL_ONES = 4294967295;
 const uint BIT_USED = 1 << 30; // bit 31
 const uint BITS_LEVEL = 63; // bits [0, 6]
@@ -32,12 +29,6 @@ struct Ray {
     uint objectHit;
     vec3 origin;
     vec3 direction;
-    uint materialHit;
-};
-
-struct HitItem {
-    vec3 position;
-    uint objectHit;
     uint materialHit;
 };
 

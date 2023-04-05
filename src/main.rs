@@ -10,7 +10,7 @@ use fps_counter::FPSCounter;
 use glam::*;
 use images::get_color_image;
 use instance::get_instance;
-use lightmap::{LightmapBufferSet, LightmapImages};
+use lightmap::LightmapImages;
 use pipelines::Pipelines;
 use shaders::{Shaders, LIGHTMAP_COUNT};
 use vulkano::{
@@ -139,8 +139,6 @@ fn main() {
     let blue_noise_buffer =
         get_blue_noise_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
 
-    let lightmap_buffers = LightmapBufferSet::new(&memory_allocator, queue_family_index, 2);
-
     alloc_command_buffer_builder
         .build()
         .unwrap()
@@ -163,7 +161,6 @@ fn main() {
         mutable_buffer.clone(),
         color_image.clone(),
         lightmap_images.clone(),
-        lightmap_buffers.clone(),
         blue_noise_buffer.clone(),
     );
 
@@ -173,7 +170,6 @@ fn main() {
         pipelines.clone(),
         window.clone(),
         descriptor_sets.clone(),
-        &lightmap_buffers,
         color_image,
         swapchain_images.clone(),
     );
@@ -303,7 +299,6 @@ fn main() {
                 bvh_buffer.clone(),
                 mutable_buffer.clone(),
                 lightmap_images.clone(),
-                lightmap_buffers.clone(),
                 blue_noise_buffer.clone(),
                 &mut command_buffers,
             );
@@ -361,7 +356,7 @@ fn main() {
         let future = future
             .then_execute(
                 queue.clone(),
-                command_buffers.pathtraces.next().unwrap().clone(),
+                command_buffers.pathtrace.clone(),
             )
             .unwrap()
             .then_execute(
