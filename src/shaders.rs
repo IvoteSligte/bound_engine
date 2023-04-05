@@ -4,9 +4,9 @@ vulkano_shaders::shader! {
             ty: "compute",
             path: "shaders/direct.glsl",
         },
-        BufferRays: {
+        LightmapRays: {
             ty: "compute",
-            path: "shaders/buffer_rays.glsl",
+            path: "shaders/lightmap_rays.glsl",
         },
     },
     types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
@@ -33,14 +33,14 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub(crate) struct Shaders {
     pub(crate) direct: Arc<ShaderModule>,
-    pub(crate) buffer_rays: Arc<ShaderModule>,
+    pub(crate) lightmap_rays: Arc<ShaderModule>,
 }
 
 impl Shaders {
     pub(crate) fn load(device: Arc<Device>) -> Self {
         Self {
             direct: load_Direct(device.clone()).unwrap(),
-            buffer_rays: load_BufferRays(device.clone()).unwrap(),
+            lightmap_rays: load_LightmapRays(device.clone()).unwrap(),
         }
     }
 }

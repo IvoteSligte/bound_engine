@@ -31,7 +31,7 @@ where
 #[derive(Clone)]
 pub(crate) struct Pipelines {
     pub(crate) direct: Arc<ComputePipeline>,
-    pub(crate) buffer_rays: Vec<Arc<ComputePipeline>>,
+    pub(crate) lightmap_rays: Vec<Arc<ComputePipeline>>,
 }
 
 impl Pipelines {
@@ -47,12 +47,12 @@ impl Pipelines {
             },
         ); // TODO: specialization constants here
 
-        let buffer_rays = (0..LIGHTMAP_COUNT)
+        let lightmap_rays = (0..LIGHTMAP_COUNT)
             .map(|i| {
                 get_compute_pipeline(
                     device.clone(),
-                    shaders.buffer_rays.clone(),
-                    &shaders::BufferRaysSpecializationConstants {
+                    shaders.lightmap_rays.clone(),
+                    &shaders::LightmapRaysSpecializationConstants {
                         LIGHTMAP_INDEX: i as i32,
                     },
                 )
@@ -61,7 +61,7 @@ impl Pipelines {
 
         Self {
             direct,
-            buffer_rays,
+            lightmap_rays,
         }
     }
 }

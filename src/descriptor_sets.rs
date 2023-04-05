@@ -20,7 +20,7 @@ use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 #[derive(Clone)]
 pub(crate) struct DescriptorSets {
     pub(crate) direct: Arc<PersistentDescriptorSet>,
-    pub(crate) buffer_rays: Arc<PersistentDescriptorSet>,
+    pub(crate) lightmap_rays: Arc<PersistentDescriptorSet>,
 }
 
 pub(crate) fn get_compute_descriptor_sets(
@@ -56,9 +56,9 @@ pub(crate) fn get_compute_descriptor_sets(
     )
     .unwrap();
 
-    let buffer_rays = PersistentDescriptorSet::new(
+    let lightmap_rays = PersistentDescriptorSet::new(
         allocator,
-        pipelines.buffer_rays[0].layout().set_layouts()[0].clone(),
+        pipelines.lightmap_rays[0].layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
             WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
@@ -72,6 +72,6 @@ pub(crate) fn get_compute_descriptor_sets(
 
     DescriptorSets {
         direct,
-        buffer_rays,
+        lightmap_rays,
     }
 }

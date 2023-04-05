@@ -76,7 +76,7 @@ pub(crate) fn get_pathtrace_command_buffers(
         1,
     ];
 
-    let dispatch_buffer_rays = [LIGHTMAP_SIZE; 3];
+    let dispatch_lightmap_rays = [LIGHTMAP_SIZE; 3];
 
     let mut builder = AutoCommandBufferBuilder::primary(
         allocator,
@@ -97,16 +97,16 @@ pub(crate) fn get_pathtrace_command_buffers(
         .unwrap();
 
     // TODO: remove barriers between these
-    for pipeline in pipelines.buffer_rays.iter() {
+    for pipeline in pipelines.lightmap_rays.iter() {
         builder
             .bind_pipeline_compute(pipeline.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
                 pipeline.layout().clone(),
                 0,
-                descriptor_sets.buffer_rays.clone(),
+                descriptor_sets.lightmap_rays.clone(),
             )
-            .dispatch(dispatch_buffer_rays)
+            .dispatch(dispatch_lightmap_rays)
             .unwrap();
     }
 
