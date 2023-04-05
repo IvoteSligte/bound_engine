@@ -80,11 +80,12 @@ void main() {
 
     vec3 normal = normalize(hitItem.position - bvh.nodes[hitItem.objectHit].position);
 
-    vec3 color = vec3(0.0);
     uint sync = imageLoad(lightmapSyncImages[lmIndex.w], lmIndex.xyz).x;
     uint level = sync & BITS_LEVEL;
+    uint samples = (sync & BITS_SAMPLES) >> 6;
+    vec3 color = imageLoad(lightmapImages[lmIndex.w], lmIndex.xyz).rgb * float(samples);
 
-    for (uint r = 0; r < SAMPLES; r++) {
+    for (uint r = samples; r < SAMPLES; r++) {
         vec3 randDir = normalize(normal + bn.items[r].xyz);
         Ray ray = Ray(0, hitItem.position, randDir, 0);
 
@@ -111,7 +112,10 @@ void main() {
                 nextBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
             }
 
-            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(level));
+            if (samples > 0) {
+                imageStore(lightmapImages[LIGHTMAP_COUNT * level + lmIndex.w], lmIndex.xyz, vec4(color / samples, 0.0));
+            }
+            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(level | (r << 6)));
             return;
         }
 
@@ -120,7 +124,7 @@ void main() {
         }
 
         // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful
-        // otherwise, create an image and fill it with emission at that point
+        // otherwise, create an image and fill it with emission at points
         if (level == 0) {
             Material material = buf.mats[ray.materialHit];
             color += material.emittance;

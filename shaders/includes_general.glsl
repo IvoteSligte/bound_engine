@@ -7,6 +7,7 @@ const uint SUBBUFFER_LENGTH = ITEM_COUNT / SUBBUFFER_COUNT; // even division
 const uint ALL_ONES = 4294967295;
 const uint BIT_USED = 1 << 30; // bit 31
 const uint BITS_LEVEL = 63; // bits [0, 6]
+const uint BITS_SAMPLES = 262080; // bits [7, 18]
 
 const float LM_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
 
