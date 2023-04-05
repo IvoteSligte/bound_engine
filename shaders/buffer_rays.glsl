@@ -2,7 +2,7 @@
 
 #include "includes_general.glsl"
 
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = SAMPLES, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
@@ -63,12 +63,15 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     return ivec4(index, lightmapNum);
 }
 
+shared vec3 SharedColors[SAMPLES];
+shared bool SharedIsValids[SAMPLES];
+
 void main() {
     // FIXME: binding is invalid when the buffer is not read from
     HitItem useless = nextBuffer.items[0][0];
 
-    const uint COUNTER_INDEX = gl_GlobalInvocationID.x / SUBBUFFER_LENGTH;
-    const uint BUFFER_INDEX = gl_GlobalInvocationID.x % SUBBUFFER_LENGTH;
+    const uint COUNTER_INDEX = gl_WorkGroupID.x / SUBBUFFER_LENGTH;
+    const uint BUFFER_INDEX = gl_WorkGroupID.x % SUBBUFFER_LENGTH;
 
     // if buffer slot is empty
     if (BUFFER_INDEX >= currCounters.counters[COUNTER_INDEX]) {
@@ -82,22 +85,19 @@ void main() {
 
     uint sync = imageLoad(lightmapSyncImages[lmIndex.w], lmIndex.xyz).x;
     uint level = sync & BITS_LEVEL;
-    uint samples = (sync & BITS_SAMPLES) >> 6;
-    vec3 color = imageLoad(lightmapImages[lmIndex.w], lmIndex.xyz).rgb * float(samples);
 
-    for (uint r = samples; r < SAMPLES; r++) {
-        vec3 randDir = normalize(normal + bn.items[r].xyz);
-        Ray ray = Ray(0, hitItem.position, randDir, 0);
+    vec3 randDir = normalize(normal + bn.items[gl_LocalInvocationID.x].xyz);
+    Ray ray = Ray(0, hitItem.position, randDir, 0);
 
-        traceRayWithBVH(ray);
+    traceRayWithBVH(ray);
 
-        ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin);
+    ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin);
 
-        bool outOfRange = lmIndexSample.w >= LIGHTMAP_COUNT;
-        if (outOfRange) {
-            continue;
-        }
-
+    bool outOfRange = lmIndexSample.w >= LIGHTMAP_COUNT;
+    if (outOfRange) {
+        SharedColors[gl_LocalInvocationID.x] = vec3(0.0);
+        SharedIsValids[gl_LocalInvocationID.x] = true;
+    } else {
         uint syncSample = imageAtomicOr(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, BIT_USED);
 
         uint levelSample = syncSample & BITS_LEVEL;
@@ -105,40 +105,71 @@ void main() {
 
         if (levelSample < level) {
             if (isUnused) {
-                const uint COUNTER_INDEX = gl_GlobalInvocationID.x / SUBBUFFER_LENGTH;
+                const uint COUNTER_INDEX = gl_WorkGroupID.x / SUBBUFFER_LENGTH;
 
-                // checking if the subbuffer is full is removed cause the size of the buffer is equal to the number of instances
                 uint bufIdx = atomicAdd(nextCounters.counters[COUNTER_INDEX], 1);
-                nextBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
+                if (bufIdx < SUBBUFFER_LENGTH) {
+                    nextBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
+                } else {
+                    imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
+                }
             }
 
-            if (samples > 0) {
-                imageStore(lightmapImages[LIGHTMAP_COUNT * level + lmIndex.w], lmIndex.xyz, vec4(color / samples, 0.0));
-            }
-            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(level | (r << 6)));
-            return;
-        }
-
-        if (isUnused) {
-            imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
-        }
-
-        // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful
-        // otherwise, create an image and fill it with emission at points
-        if (level == 0) {
-            Material material = buf.mats[ray.materialHit];
-            color += material.emittance;
+            SharedColors[gl_LocalInvocationID.x] = vec3(0.0);
+            SharedIsValids[gl_LocalInvocationID.x] = false;
         } else {
-            color += imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
+            if (isUnused) {
+                imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
+            }
+
+            // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful
+            // otherwise, create an image and fill it with emission at points
+            if (level == 0) {
+                Material material = buf.mats[ray.materialHit];
+                SharedColors[gl_LocalInvocationID.x] = material.emittance;
+            } else {
+                SharedColors[gl_LocalInvocationID.x] = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
+            }
+
+            SharedIsValids[gl_LocalInvocationID.x] = true;
         }
     }
 
-    Material material = buf.mats[hitItem.materialHit];
-    color = color * (material.reflectance * (1.0 / SAMPLES)) + material.emittance;
+    barrier();
 
-    imageStore(lightmapImages[LIGHTMAP_COUNT * level + lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
+    if (gl_LocalInvocationID.x < 64) {
+        vec3 color = vec3(0.0);
+        bool isValid = true;
+        for (uint i = 0; i < SAMPLES / 64; i++) {
+            color += SharedColors[i * 64 + gl_LocalInvocationID.x];
+            isValid = isValid && SharedIsValids[i * 64 + gl_LocalInvocationID.x];
+        }
+        SharedColors[gl_LocalInvocationID.x] = color;
+        SharedIsValids[gl_LocalInvocationID.x] = isValid;
+    }
 
-    // TODO: merge all ray bounces into one lightmap, then remove BIT_USED here for infinite bounces
-    uint storeValue = ((level + 1) == RAYS_INDIRECT) ? ((level + 1) | BIT_USED) : (level + 1);
-    imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(storeValue));
+    barrier();
+
+    if (gl_LocalInvocationID.x == 0) {
+        vec3 color = vec3(0.0);
+        bool isValid = true;
+        for (uint i = 0; i < 64; i++) {
+            color += SharedColors[i];
+            isValid = isValid && SharedIsValids[i];
+        }
+
+        if (isValid) {
+            Material material = buf.mats[hitItem.materialHit];
+            color = color * (material.reflectance * (1.0 / SAMPLES)) + material.emittance;
+
+            imageStore(lightmapImages[LIGHTMAP_COUNT * level + lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
+
+            // TODO: merge all ray bounces into one lightmap, then remove BIT_USED here for infinite bounces
+            uint storeValue = ((level + 1) == RAYS_INDIRECT) ? ((level + 1) | BIT_USED) : (level + 1);
+            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(storeValue));
+        } else {
+            uint storeValue = level;
+            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(storeValue));
+        }
+    }
 }

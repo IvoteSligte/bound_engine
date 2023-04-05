@@ -80,7 +80,7 @@ pub(crate) fn get_pathtrace_command_buffers(
         1,
     ];
 
-    let dispatch_buffer_rays = [ITEM_COUNT / 64, 1, 1];
+    let dispatch_buffer_rays = [ITEM_COUNT, 1, 1];
 
     descriptor_sets.ray_units.restart();
     lightmap_buffers.restart();
