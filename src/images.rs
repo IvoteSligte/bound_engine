@@ -16,11 +16,7 @@ pub(crate) fn get_color_image(
             array_layers: 1,
         },
         Format::R16G16B16A16_UNORM, // double precision for copying to srgb
-        ImageUsage {
-            storage: true,
-            transfer_src: true,
-            ..ImageUsage::empty()
-        },
+        ImageUsage::STORAGE | ImageUsage::TRANSFER_SRC,
         ImageCreateFlags::empty(),
         [queue_family_index],
     )

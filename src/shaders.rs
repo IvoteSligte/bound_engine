@@ -9,7 +9,6 @@ vulkano_shaders::shader! {
             path: "shaders/lightmap_rays.glsl",
         },
     },
-    types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
     include: ["includes_trace_ray.glsl", "includes_general.glsl"],
     define: [
         ("RAYS_INDIRECT", "4"),
@@ -39,8 +38,8 @@ pub(crate) struct Shaders {
 impl Shaders {
     pub(crate) fn load(device: Arc<Device>) -> Self {
         Self {
-            direct: load_Direct(device.clone()).unwrap(),
-            lightmap_rays: load_LightmapRays(device.clone()).unwrap(),
+            direct: load_direct(device.clone()).unwrap(),
+            lightmap_rays: load_lightmap_rays(device.clone()).unwrap(),
         }
     }
 }

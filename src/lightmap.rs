@@ -45,15 +45,12 @@ impl LightmapImages {
             depth: LIGHTMAP_SIZE,
         };
 
-        let create_storage_image = |usage, format| {
+        let create_storage_transfer_image = |format| {
             StorageImage::with_usage(
                 allocator,
                 dimensions,
                 format,
-                ImageUsage {
-                    storage: true,
-                    ..usage
-                },
+                ImageUsage::STORAGE | ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
                 ImageCreateFlags::empty(),
                 [queue_family_index],
             )
@@ -63,50 +60,18 @@ impl LightmapImages {
         let colors = (0..RAYS_INDIRECT)
             .map(|_| {
                 (0..(LIGHTMAP_COUNT))
-                    .map(|_| {
-                        create_storage_image(
-                            ImageUsage {
-                                transfer_src: true,
-                                transfer_dst: true,
-                                ..ImageUsage::default()
-                            },
-                            Format::R16G16B16A16_UNORM,
-                        )
-                    })
+                    .map(|_| create_storage_transfer_image(Format::R16G16B16A16_UNORM))
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
 
         let syncs = (0..LIGHTMAP_COUNT)
-            .map(|_| {
-                create_storage_image(
-                    ImageUsage {
-                        transfer_src: true,
-                        transfer_dst: true,
-                        ..ImageUsage::default()
-                    },
-                    Format::R32G32_UINT,
-                )
-            })
+            .map(|_| create_storage_transfer_image(Format::R32G32_UINT))
             .collect();
 
-        let staging_color = create_storage_image(
-            ImageUsage {
-                transfer_src: true,
-                transfer_dst: true,
-                ..ImageUsage::default()
-            },
-            Format::R16G16B16A16_UNORM,
-        );
+        let staging_color = create_storage_transfer_image(Format::R16G16B16A16_UNORM);
 
-        let staging_sync = create_storage_image(
-            ImageUsage {
-                transfer_src: true,
-                transfer_dst: true,
-                ..ImageUsage::default()
-            },
-            Format::R32G32_UINT,
-        );
+        let staging_sync = create_storage_transfer_image(Format::R32G32_UINT);
 
         Self {
             colors,

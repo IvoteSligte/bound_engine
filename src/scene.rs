@@ -13,28 +13,26 @@ pub(crate) struct CpuMaterial {
     emittance: Vec3,
 }
 
-impl From<shaders::ty::Material> for CpuMaterial {
-    fn from(value: shaders::ty::Material) -> Self {
+impl From<shaders::Material> for CpuMaterial {
+    fn from(value: shaders::Material) -> Self {
         Self {
-            reflectance: Vec3::from_array(value.reflectance),
+            reflectance: Vec3::from_array(*value.reflectance),
             emittance: Vec3::from_array(value.emittance),
         }
     }
 }
 
-impl Into<shaders::ty::Material> for CpuMaterial {
-    fn into(self) -> shaders::ty::Material {
-        shaders::ty::Material {
-            reflectance: self.reflectance.to_array(),
+impl Into<shaders::Material> for CpuMaterial {
+    fn into(self) -> shaders::Material {
+        shaders::Material {
+            reflectance: self.reflectance.to_array().into(),
             emittance: self.emittance.to_array(),
-            _dummy0: [0; 4],
-            _dummy1: [0; 4],
         }
     }
 }
 
 impl CpuMaterial {
-    pub(crate) fn to_pod(vec: Vec<Self>) -> Vec<shaders::ty::Material> {
+    pub(crate) fn to_pod(vec: Vec<Self>) -> Vec<shaders::Material> {
         vec.into_iter().map(|x| x.into()).collect()
     }
 }
@@ -69,7 +67,7 @@ fn custom_materials() -> Vec<CpuMaterial> {
     materials
 }
 
-pub(crate) fn get_materials() -> Vec<shaders::ty::Material> {
+pub(crate) fn get_materials() -> Vec<shaders::Material> {
     let mut materials = custom_materials();
 
     materials.insert(
@@ -142,7 +140,7 @@ fn custom_objects() -> Vec<CpuObject> {
     objects
 }
 
-pub(crate) fn get_objects() -> shaders::ty::GpuBVH {
+pub(crate) fn get_objects() -> shaders::GpuBVH {
     let objects = custom_objects();
 
     let mut bvh: bvh::CpuBVH =

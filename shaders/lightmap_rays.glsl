@@ -6,7 +6,7 @@ layout(local_size_x = SAMPLES, local_size_y = 1, local_size_z = 1) in;
 
 layout(constant_id = 0) const int LIGHTMAP_INDEX = 0; // TODO: command buffers/pipelines with this
 
-layout(binding = 0) uniform restrict readonly RealTimeBuffer {
+layout(push_constant) uniform restrict readonly PushConstants {
     vec4 rotation;
     vec4 previousRotation;
     vec3 position;
@@ -14,23 +14,23 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     ivec3 lightmapOrigin;
     ivec4 deltaLightmapOrigins[LIGHTMAP_COUNT];
     uint frame;
-} rt;
+} pc;
 
-layout(binding = 1) uniform restrict readonly GpuBVH {
+layout(binding = 0) uniform restrict readonly GpuBVH {
     uint root;
     Bounds nodes[2 * MAX_OBJECTS];
 } bvh;
 
-layout(binding = 2) uniform restrict readonly MutableData {
+layout(binding = 1) uniform restrict readonly MutableData {
     Material mats[MAX_MATERIALS];
 } buf;
 
-layout(binding = 3, rgba16) uniform restrict image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages;
+layout(binding = 2, rgba16) uniform restrict image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages;
 
-layout(binding = 4, rg32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
+layout(binding = 3, rg32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
 
 // TODO: correct bindings
-layout(binding = 5) uniform restrict readonly BlueNoise {
+layout(binding = 4) uniform restrict readonly BlueNoise {
     vec4 items[SAMPLES];
 } bn;
 
@@ -41,7 +41,7 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * LM_UNIT_SIZE);
 
-    v -= rt.lightmapOrigin.xyz;
+    v -= pc.lightmapOrigin.xyz;
     uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.5);
     float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
 

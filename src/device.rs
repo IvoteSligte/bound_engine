@@ -1,6 +1,13 @@
 use std::sync::Arc;
 
-use vulkano::{instance::Instance, swapchain::Surface, device::{DeviceExtensions, physical::{PhysicalDevice, PhysicalDeviceType}, Queue, Device, DeviceCreateInfo, QueueCreateInfo}, sync::PipelineStage};
+use vulkano::{
+    device::{
+        physical::{PhysicalDevice, PhysicalDeviceType},
+        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
+    },
+    instance::Instance,
+    swapchain::Surface,
+};
 
 pub(crate) fn select_physical_device<'a>(
     instance: Arc<Instance>,
@@ -16,10 +23,8 @@ pub(crate) fn select_physical_device<'a>(
             p.queue_family_properties()
                 .iter()
                 .position(|q| {
-                    q.supports_stage(PipelineStage::ComputeShader)
-                        && q.supports_stage(PipelineStage::Host)
-                    //&& q.supports_stage(PipelineStage::Copy)
-                    //&& q.supports_stage(PipelineStage::Blit)
+                    q.queue_flags
+                        .contains(QueueFlags::COMPUTE | QueueFlags::TRANSFER)
                 })
                 .map(|q| (p, q as u32))
                 .filter(|(p, q)| p.surface_support(*q, surface).unwrap_or(false))

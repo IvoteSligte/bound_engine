@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use glam::{IVec3, UVec3};
 use vulkano::{
-    buffer::DeviceLocalBuffer,
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, BlitImageInfo,
         ClearColorImageInfo, CommandBufferUsage, CopyImageInfo, ImageCopy,
@@ -25,7 +24,6 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct CommandBufferCollection {
-    pub(crate) pathtrace: Arc<PrimaryAutoCommandBuffer>,
     pub(crate) swapchains: Vec<Arc<PrimaryAutoCommandBuffer>>,
 }
 
@@ -33,20 +31,9 @@ impl CommandBufferCollection {
     pub(crate) fn new(
         command_buffer_allocator: &StandardCommandBufferAllocator,
         queue: Arc<Queue>,
-        pipelines: Pipelines,
-        window: Arc<Window>,
-        descriptor_sets: DescriptorSets,
         color_image: Arc<StorageImage>,
         swapchain_images: Vec<Arc<SwapchainImage>>,
     ) -> CommandBufferCollection {
-        let pathtrace = get_pathtrace_command_buffers(
-            command_buffer_allocator,
-            queue.clone(),
-            pipelines.clone(),
-            window.clone(),
-            descriptor_sets.clone(),
-        );
-
         let swapchains = get_swapchain_command_buffers(
             command_buffer_allocator,
             queue.clone(),
@@ -55,18 +42,18 @@ impl CommandBufferCollection {
         );
 
         CommandBufferCollection {
-            pathtrace,
             swapchains,
         }
     }
 }
 
-pub(crate) fn get_pathtrace_command_buffers(
+pub(crate) fn get_pathtrace_command_buffer(
     allocator: &StandardCommandBufferAllocator,
     queue: Arc<Queue>,
     pipelines: Pipelines,
     window: Arc<Window>,
     descriptor_sets: DescriptorSets,
+    push_constants: shaders::PushConstants,
 ) -> Arc<PrimaryAutoCommandBuffer> {
     let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
@@ -86,6 +73,7 @@ pub(crate) fn get_pathtrace_command_buffers(
     .unwrap();
 
     builder
+        .push_constants(pipelines.direct.layout().clone(), 0, push_constants.clone())
         .bind_pipeline_compute(pipelines.direct.clone())
         .bind_descriptor_sets(
             PipelineBindPoint::Compute,
@@ -270,24 +258,4 @@ pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
     }
 
     Arc::new(builder.build().unwrap())
-}
-
-pub(crate) fn get_real_time_command_buffer(
-    command_buffer_allocator: &StandardCommandBufferAllocator,
-    queue_family_index: u32,
-    real_time_data: shaders::ty::RealTimeBuffer,
-    real_time_buffer: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
-) -> PrimaryAutoCommandBuffer {
-    let mut real_time_command_buffer_builder = AutoCommandBufferBuilder::primary(
-        command_buffer_allocator,
-        queue_family_index,
-        CommandBufferUsage::OneTimeSubmit,
-    )
-    .unwrap();
-
-    real_time_command_buffer_builder
-        .update_buffer(Box::new(real_time_data), real_time_buffer.clone(), 0) // TODO: replace with copy_buffer using staging buffer
-        .unwrap();
-
-    real_time_command_buffer_builder.build().unwrap()
 }

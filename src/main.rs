@@ -14,16 +14,15 @@ use lightmap::LightmapImages;
 use pipelines::Pipelines;
 use shaders::{Shaders, LIGHTMAP_COUNT};
 use vulkano::{
-    buffer::{BufferUsage, DeviceLocalBuffer},
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
-        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract,
+        AutoCommandBufferBuilder, CommandBufferUsage,
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::DeviceExtensions,
     memory::allocator::StandardMemoryAllocator,
     swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
-    sync::{self, FenceSignalFuture, FlushError, GpuFuture},
+    sync::{self, FlushError, GpuFuture},
 };
 use winit::{
     dpi::{PhysicalSize, Size},
@@ -81,7 +80,6 @@ fn main() {
         queue_family_index,
     );
 
-    // TODO: improve
     let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
 
     let (mut swapchain, swapchain_images) = get_swapchain(
@@ -99,6 +97,7 @@ fn main() {
         device.clone(),
         StandardCommandBufferAllocatorCreateInfo::default(),
     );
+
     let mut alloc_command_buffer_builder = AutoCommandBufferBuilder::primary(
         &command_buffer_allocator,
         queue_family_index,
@@ -111,38 +110,23 @@ fn main() {
     let mutable_buffer = get_mutable_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
 
     // TODO: abstraction using struct
-    let mut real_time_data = shaders::ty::RealTimeBuffer {
+    let mut push_constants = shaders::PushConstants {
         rotation: [0.0; 4],
         previousRotation: [0.0; 4],
-        position: [0.0; 3],
-        previousPosition: [0.0; 3],
+        position: [0.0; 3].into(),
+        previousPosition: [0.0; 3].into(),
         deltaLightmapOrigins: [[0; 4]; LIGHTMAP_COUNT],
-        lightmapOrigin: [0; 3],
+        lightmapOrigin: [0; 3].into(),
         frame: 0,
-        _dummy0: [0; 4],
-        _dummy1: [0; 4],
-        _dummy2: [0; 4],
     };
-
-    let real_time_buffer = DeviceLocalBuffer::from_data(
-        &memory_allocator,
-        real_time_data,
-        BufferUsage {
-            uniform_buffer: true,
-            transfer_dst: true,
-            ..BufferUsage::empty()
-        },
-        &mut alloc_command_buffer_builder,
-    )
-    .unwrap();
 
     let blue_noise_buffer =
         get_blue_noise_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
 
-    alloc_command_buffer_builder
-        .build()
-        .unwrap()
-        .execute(queue.clone())
+    let alloc_command_buffer = Arc::new(alloc_command_buffer_builder.build().unwrap());
+
+    sync::now(device.clone())
+        .then_execute(queue.clone(), alloc_command_buffer)
         .unwrap()
         .then_signal_fence_and_flush()
         .unwrap()
@@ -153,10 +137,9 @@ fn main() {
     let lightmap_images = LightmapImages::new(&memory_allocator, queue_family_index);
 
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
-    let descriptor_sets = get_compute_descriptor_sets(
+    let mut descriptor_sets = get_compute_descriptor_sets(
         &descriptor_set_allocator,
         pipelines.clone(),
-        real_time_buffer.clone(),
         bvh_buffer.clone(),
         mutable_buffer.clone(),
         color_image.clone(),
@@ -167,17 +150,14 @@ fn main() {
     let mut command_buffers = CommandBufferCollection::new(
         &command_buffer_allocator,
         queue.clone(),
-        pipelines.clone(),
-        window.clone(),
-        descriptor_sets.clone(),
         color_image,
         swapchain_images.clone(),
     );
 
-    let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
+    let mut fences = vec![None; swapchain_images.len()];
     let mut previous_fence_index = 0;
 
-    let mut eh = get_event_helper(window);
+    let mut eh = get_event_helper(window.clone());
 
     let callbacks = get_callbacks();
 
@@ -240,18 +220,18 @@ fn main() {
             eh.delta_position.z += delta_mov;
         }
 
-        let new_position = Vec3::from_array(real_time_data.position) + eh.position();
+        let new_position = Vec3::from_array(*push_constants.position) + eh.position();
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
-        real_time_data.previousRotation = real_time_data.rotation;
-        real_time_data.previousPosition = real_time_data.position;
-        real_time_data.rotation = eh.rotation().to_array();
-        real_time_data.position = new_position.to_array();
+        push_constants.previousRotation = push_constants.rotation;
+        push_constants.previousPosition = push_constants.position;
+        push_constants.rotation = eh.rotation().to_array();
+        push_constants.position = new_position.to_array().into();
         eh.delta_position = Vec3::ZERO;
 
-        real_time_data.frame += 1;
+        push_constants.frame += 1;
 
-        let old_pos = IVec3::from_array(real_time_data.lightmapOrigin);
+        let old_pos = IVec3::from_array(*push_constants.lightmapOrigin);
         let new_pos = new_position.as_ivec3();
 
         // FIXME:
@@ -264,12 +244,12 @@ fn main() {
 
         if largest_delta_pos.abs().cmpge(Vec3::splat(1.0)).any() {
             let delta_pos = largest_delta_pos * LARGEST_UNIT;
-            real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array();
+            push_constants.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array().into();
 
             for i in 0..LIGHTMAP_COUNT {
                 let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
                 let delta_units = (delta_pos / unit_size).as_ivec3();
-                real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
+                push_constants.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
             }
 
             move_lightmap = Some(get_dynamic_move_lightmaps_command_buffer(
@@ -295,18 +275,27 @@ fn main() {
                 &memory_allocator,
                 queue_family_index,
                 &descriptor_set_allocator,
-                real_time_buffer.clone(),
                 bvh_buffer.clone(),
                 mutable_buffer.clone(),
                 lightmap_images.clone(),
                 blue_noise_buffer.clone(),
                 &mut command_buffers,
+                &mut descriptor_sets,
             );
 
             if !success {
                 return;
             }
         }
+
+        let pathtrace_command_buffer = get_pathtrace_command_buffer(
+            &command_buffer_allocator,
+            queue.clone(),
+            pipelines.clone(),
+            window.clone(),
+            descriptor_sets.clone(),
+            push_constants,
+        );
 
         let (image_index, suboptimal, image_future) =
             match acquire_next_image(swapchain.clone(), None) {
@@ -331,33 +320,17 @@ fn main() {
             image_fence.wait(None).unwrap();
         }
 
-        let real_time_command_buffer = get_real_time_command_buffer(
-            &command_buffer_allocator,
-            queue_family_index,
-            real_time_data,
-            real_time_buffer.clone(),
-        );
-
         let mut future = previous_future;
 
         if let Some(command_buffer) = move_lightmap {
-
             future = future
                 .then_execute(queue.clone(), command_buffer)
                 .unwrap()
                 .boxed();
         }
 
-        future = future
-            .then_execute(queue.clone(), real_time_command_buffer)
-            .unwrap()
-            .boxed();
-
         let future = future
-            .then_execute(
-                queue.clone(),
-                command_buffers.pathtrace.clone(),
-            )
+            .then_execute(queue.clone(), pathtrace_command_buffer.clone())
             .unwrap()
             .then_execute(
                 queue.clone(),

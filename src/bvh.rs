@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use glam::Vec3;
 use itertools::Itertools;
 
+use crate::shaders;
+
 #[derive(Clone, Debug)]
 pub(crate) struct CpuBVH {
     pub(crate) root: usize,
@@ -22,10 +24,10 @@ impl From<CpuNode> for CpuBVH {
 pub(crate) struct CpuNode {
     pub position: Vec3,
     pub radius: f32,
-    pub child: Option<usize>,  // index of child node
-    pub next: Option<usize>,   // index of child node
-    pub material: Option<usize>,   // index of object
-    pub parent: Option<usize>, // index of parent
+    pub child: Option<usize>,    // index of child node
+    pub next: Option<usize>,     // index of child node
+    pub material: Option<usize>, // index of object
+    pub parent: Option<usize>,   // index of parent
 }
 
 #[derive(Clone, Copy)]
@@ -298,7 +300,7 @@ impl CpuBVH {
                     stack.push(x);
                     vertices.insert(x);
                 }
-                
+
                 if self.nodes[x].parent == node.parent {
                     edges.push((current, x, "sibling"));
                 } else {
@@ -384,28 +386,36 @@ impl Sphere {
     }
 }
 
-impl From<CpuBVH> for crate::shaders::ty::GpuBVH {
+impl From<CpuBVH> for shaders::GpuBVH {
     fn from(source: CpuBVH) -> Self {
-        let mut bvh = crate::shaders::ty::GpuBVH {
-            root: source.root as u32 + 1, // node 0 is empty
-            ..Default::default()
+        let mut bvh = shaders::GpuBVH {
+            root: (source.root as u32 + 1).into(),
+            nodes: [shaders::Bounds {
+                position: [0.0; 3],
+                radiusSquared: 0.0,
+                child: 0,
+                next: 0,
+                material: 0,
+            }
+            .into(); 512], // node 0 is empty
         };
 
-        let mut raw_source = source
+        let raw_source = source
             .nodes
             .into_iter()
-            .map(|n| crate::shaders::ty::Bounds {
-                position: n.position.to_array(),
-                radiusSquared: n.radius * n.radius,
-                child: n.child.map(|x| x as u32 + 1).unwrap_or(0),
-                next: n.next.map(|x| x as u32 + 1).unwrap_or(0),
-                material: n.material.map(|x| x as u32 + 1).unwrap_or(0),
-                _dummy0: [0u8; 4],
+            .map(|n| {
+                shaders::Bounds {
+                    position: n.position.to_array(),
+                    radiusSquared: n.radius * n.radius,
+                    child: n.child.map(|x| x as u32 + 1).unwrap_or(0),
+                    next: n.next.map(|x| x as u32 + 1).unwrap_or(0),
+                    material: n.material.map(|x| x as u32 + 1).unwrap_or(0),
+                }
+                .into()
             })
             .collect::<Vec<_>>();
 
-        bvh.nodes[0] = Default::default();
-        bvh.nodes[1..=raw_source.len()].swap_with_slice(&mut raw_source);
+        bvh.nodes[1..=raw_source.len()].copy_from_slice(&raw_source);
         bvh
     }
 }

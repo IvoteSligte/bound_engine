@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use vulkano::{
-    buffer::{BufferAccess, DeviceLocalBuffer},
     command_buffer::allocator::StandardCommandBufferAllocator,
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{physical::PhysicalDevice, Device},
@@ -12,14 +11,14 @@ use vulkano::{
         PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
         SwapchainCreationError,
     },
-    sync::{FenceSignalFuture, GpuFuture, JoinFuture},
+    sync::{GpuFuture, future::{FenceSignalFuture, JoinFuture}}, buffer::Subbuffer,
 };
 use winit::window::Window;
 use winit_event_helper::EventHelper;
 
 use crate::{
     command_buffers::{
-        get_pathtrace_command_buffers, get_swapchain_command_buffers, CommandBufferCollection,
+        get_swapchain_command_buffers, CommandBufferCollection,
     },
     descriptor_sets::*,
     event_helper::Data,
@@ -58,10 +57,7 @@ pub(crate) fn get_swapchain(
             min_image_count: capabilities.min_image_count + 1, // TODO: improve
             image_format: Some(image_format),
             image_extent: window.inner_size().into(),
-            image_usage: ImageUsage {
-                transfer_dst: true,
-                ..ImageUsage::empty()
-            },
+            image_usage: ImageUsage::TRANSFER_DST,
             ..Default::default()
         },
     )
@@ -98,12 +94,12 @@ pub(crate) fn recreate_swapchain(
     memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
     queue_family_index: u32,
     descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    real_time_buffer: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
-    bvh_buffer: Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>>,
-    mutable_buffer: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>,
+    bvh_buffer: Subbuffer<shaders::GpuBVH>,
+    mutable_buffer: Subbuffer<shaders::MutableData>,
     lightmap_images: LightmapImages,
-    blue_noise_buffer: Arc<dyn BufferAccess>,
+    blue_noise_buffer: Subbuffer<shaders::BlueNoise>,
     command_buffers: &mut CommandBufferCollection,
+    descriptor_sets: &mut DescriptorSets,
 ) -> bool {
     eh.recreate_swapchain = false;
     let dimensions = eh.window.inner_size(); // TODO: function input
@@ -141,10 +137,9 @@ pub(crate) fn recreate_swapchain(
 
         let color_image = get_color_image(memory_allocator, eh.window.clone(), queue_family_index);
 
-        let descriptor_sets = get_compute_descriptor_sets(
+        *descriptor_sets = get_compute_descriptor_sets(
             &descriptor_set_allocator,
             pipelines.clone(),
-            real_time_buffer.clone(),
             bvh_buffer.clone(),
             mutable_buffer.clone(),
             color_image.clone(),
@@ -157,14 +152,6 @@ pub(crate) fn recreate_swapchain(
             queue.clone(),
             color_image.clone(),
             new_swapchain_images.clone(),
-        );
-
-        command_buffers.pathtrace = get_pathtrace_command_buffers(
-            command_buffer_allocator,
-            queue.clone(),
-            pipelines.clone(),
-            eh.window.clone(),
-            descriptor_sets.clone(),
         );
     }
 

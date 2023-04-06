@@ -9,7 +9,7 @@ layout(constant_id = 1) const float RATIO_Y = 1.0;
 
 const vec2 RATIO = vec2(RATIO_X, RATIO_Y);
 
-layout(binding = 0) uniform restrict readonly RealTimeBuffer {
+layout(push_constant) uniform restrict readonly PushConstants {
     vec4 rotation;
     vec4 previousRotation;
     vec3 position;
@@ -17,18 +17,18 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     ivec3 lightmapOrigin;
     ivec4 deltaLightmapOrigins[LIGHTMAP_COUNT];
     uint frame;
-} rt;
+} pc;
 
-layout(binding = 1) uniform restrict readonly GpuBVH {
+layout(binding = 0) uniform restrict readonly GpuBVH {
     uint root;
     Bounds nodes[2 * MAX_OBJECTS];
 } bvh;
 
-layout(binding = 2, rgba16) uniform restrict writeonly image2D colorImage;
+layout(binding = 1, rgba16) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 3, rgba16) uniform restrict readonly image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages; // TODO: CPU side - only grab the first LIGHTMAP_COUNT images
+layout(binding = 2, rgba16) uniform restrict readonly image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages;
 
-layout(binding = 4, rg32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
+layout(binding = 3, rg32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
 
 #include "includes_trace_ray.glsl"
 
@@ -37,7 +37,7 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * LM_UNIT_SIZE);
 
-    v -= rt.lightmapOrigin.xyz;
+    v -= pc.lightmapOrigin.xyz;
     uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.5);
     float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
 
@@ -54,9 +54,9 @@ void main() {
     const vec2 NORM_COORD = RATIO * (IPOS * 2.0 / VIEWPORT - 1.0);
     const vec3 DIRECTION = normalize(vec3(NORM_COORD.x, 1.0, NORM_COORD.y));
 
-    vec3 viewDir = rotateWithQuat(rt.rotation, DIRECTION);
+    vec3 viewDir = rotateWithQuat(pc.rotation, DIRECTION);
 
-    Ray ray = Ray(0, rt.position, viewDir, 0);
+    Ray ray = Ray(0, pc.position, viewDir, 0);
 
     traceRayWithBVH(ray);
 
