@@ -24,7 +24,7 @@ pub(crate) struct DescriptorSetCollection {
     pub(crate) ray_units: VecCycle<DescriptorSetUnit>,
 }
 
-pub(crate) fn get_compute_descriptor_sets(
+pub(crate) fn create_compute_descriptor_sets(
     allocators: Arc<Allocators>,
     pipelines: Pipelines,
     mut buffers: Buffers,

@@ -17,7 +17,7 @@ use winit::{dpi::PhysicalSize, window::Window};
 use crate::{
     allocators::Allocators,
     buffers::Buffers,
-    descriptor_sets::{DescriptorSetCollection, get_compute_descriptor_sets},
+    descriptor_sets::{DescriptorSetCollection, create_compute_descriptor_sets},
     images::Images,
     pipelines::Pipelines,
     shaders::{self, ITEM_COUNT, LIGHTMAP_SIZE},
@@ -39,14 +39,14 @@ impl CommandBuffers {
         buffers: Buffers,
         images: Images,
     ) -> CommandBuffers {
-        let descriptor_sets = get_compute_descriptor_sets(
+        let descriptor_sets = create_compute_descriptor_sets(
             allocators.clone(),
             pipelines.clone(),
             buffers.clone(),
             images.clone(),
         );
 
-        let pathtraces = get_pathtrace_command_buffers(
+        let pathtraces = create_pathtrace_command_buffers(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
@@ -56,7 +56,7 @@ impl CommandBuffers {
         );
 
         let swapchains =
-            get_swapchain_command_buffers(allocators.clone(), queue.clone(), images.clone());
+            create_swapchain_command_buffers(allocators.clone(), queue.clone(), images.clone());
 
         CommandBuffers {
             pathtraces,
@@ -65,7 +65,7 @@ impl CommandBuffers {
     }
 }
 
-pub(crate) fn get_pathtrace_command_buffers(
+pub(crate) fn create_pathtrace_command_buffers(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
     pipelines: Pipelines,
@@ -126,7 +126,7 @@ pub(crate) fn get_pathtrace_command_buffers(
     )
 }
 
-pub(crate) fn get_swapchain_command_buffers(
+pub(crate) fn create_swapchain_command_buffers(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
     images: Images,
@@ -155,7 +155,7 @@ pub(crate) fn get_swapchain_command_buffers(
         .collect()
 }
 
-pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
+pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
     images: Images,
@@ -286,7 +286,7 @@ pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
     Arc::new(builder.build().unwrap())
 }
 
-pub(crate) fn get_real_time_command_buffer(
+pub(crate) fn create_real_time_command_buffer(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
     real_time_data: shaders::ty::RealTimeBuffer,

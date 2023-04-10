@@ -10,13 +10,13 @@ use crate::{
     allocators::Allocators,
     buffers::Buffers,
     command_buffers::CommandBuffers,
-    device::{get_device, select_physical_device},
+    device::{create_device, select_physical_device},
     fences::Fences,
     images::Images,
-    instance::get_instance,
+    instance::create_instance,
     pipelines::Pipelines,
     shaders::{self, Shaders},
-    swapchain::get_swapchain,
+    swapchain::create_swapchain,
 };
 
 pub(crate) struct State {
@@ -35,7 +35,7 @@ pub(crate) struct State {
 
 impl State {
     pub(crate) fn new(window: Arc<Window>) -> Self {
-        let instance = get_instance();
+        let instance = create_instance();
 
         let surface =
             vulkano_win::create_surface_from_winit(window.clone(), instance.clone()).unwrap();
@@ -48,13 +48,13 @@ impl State {
         let (physical_device, queue_family_index) =
             select_physical_device(instance, &surface, &device_extensions);
 
-        let (device, queue) = get_device(
+        let (device, queue) = create_device(
             physical_device.clone(),
             device_extensions,
             queue_family_index,
         );
 
-        let (swapchain, swapchain_images) = get_swapchain(
+        let (swapchain, swapchain_images) = create_swapchain(
             device.clone(),
             surface.clone(),
             window.clone(),

@@ -31,7 +31,7 @@ impl Images {
         swapchain_images: Vec<Arc<SwapchainImage>>,
     ) -> Self {
         Self {
-            color: get_color_image(allocators.clone(), window, queue.clone()),
+            color: create_color_image(allocators.clone(), window, queue.clone()),
             lightmap: LightmapImages::new(allocators.clone(), queue.clone()),
             swapchain: swapchain_images,
         }
@@ -51,7 +51,7 @@ pub(crate) struct ImageViews {
     pub(crate) lightmap: LightmapImageViews,
 }
 
-pub(crate) fn get_color_image(
+pub(crate) fn create_color_image(
     allocators: Arc<Allocators>,
     window: Arc<Window>,
     queue: Arc<Queue>,

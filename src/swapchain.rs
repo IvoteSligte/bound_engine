@@ -10,16 +10,16 @@ use winit::window::Window;
 use winit_event_helper::EventHelper;
 
 use crate::{
-    command_buffers::{get_pathtrace_command_buffers, get_swapchain_command_buffers},
+    command_buffers::{create_pathtrace_command_buffers, create_swapchain_command_buffers},
     descriptor_sets::*,
     event_helper::Data,
-    get_color_image,
-    pipelines::get_compute_pipeline,
+    create_color_image,
+    pipelines::create_compute_pipeline,
     shaders::{self},
     FOV,
 };
 
-pub(crate) fn get_swapchain(
+pub(crate) fn create_swapchain(
     device: Arc<Device>,
     surface: Arc<Surface>,
     window: Arc<Window>,
@@ -83,7 +83,7 @@ pub(crate) fn recreate_swapchain(
             future.wait(None).unwrap();
         }
 
-        eh.state.pipelines.direct = get_compute_pipeline(
+        eh.state.pipelines.direct = create_compute_pipeline(
             eh.state.device.clone(),
             eh.state.shaders.direct.clone(),
             &shaders::DirectSpecializationConstants {
@@ -92,14 +92,14 @@ pub(crate) fn recreate_swapchain(
             },
         );
 
-        eh.state.images.color = get_color_image(
+        eh.state.images.color = create_color_image(
             eh.state.allocators.clone(),
             eh.window.clone(),
             eh.state.queue.clone(),
         );
 
         // TODO: move to command buffer init
-        let descriptor_sets = get_compute_descriptor_sets(
+        let descriptor_sets = create_compute_descriptor_sets(
             eh.state.allocators.clone(),
             eh.state.pipelines.clone(),
             eh.state.buffers.clone(),
@@ -108,13 +108,13 @@ pub(crate) fn recreate_swapchain(
 
         eh.state.images.swapchain = new_swapchain_images;
 
-        eh.state.command_buffers.swapchains = get_swapchain_command_buffers(
+        eh.state.command_buffers.swapchains = create_swapchain_command_buffers(
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
             eh.state.images.clone(),
         );
 
-        eh.state.command_buffers.pathtraces = get_pathtrace_command_buffers(
+        eh.state.command_buffers.pathtraces = create_pathtrace_command_buffers(
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
             eh.state.pipelines.clone(),

@@ -5,7 +5,7 @@ use vulkano::{
     Version, VulkanLibrary,
 };
 
-pub(crate) fn get_instance() -> Arc<Instance> {
+pub(crate) fn create_instance() -> Arc<Instance> {
     let library = VulkanLibrary::new().unwrap();
     let required_extensions = vulkano_win::required_extensions(&library);
     let instance = Instance::new(

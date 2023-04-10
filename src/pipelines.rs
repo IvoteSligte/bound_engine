@@ -10,7 +10,7 @@ use winit::window::Window;
 
 use std::sync::Arc;
 
-pub(crate) fn get_compute_pipeline<Css>(
+pub(crate) fn create_compute_pipeline<Css>(
     device: Arc<Device>,
     shader: Arc<ShaderModule>,
     specialization_constants: &Css,
@@ -38,16 +38,17 @@ impl Pipelines {
     pub(crate) fn from_shaders(device: Arc<Device>, shaders: Shaders, window: Arc<Window>) -> Self {
         let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
-        let direct = get_compute_pipeline(
+        // TODO: refactor into separate function
+        let direct = create_compute_pipeline(
             device.clone(),
             shaders.direct.clone(),
             &shaders::DirectSpecializationConstants {
                 RATIO_X: FOV,
                 RATIO_Y: -FOV * dimensions.height / dimensions.width,
             },
-        ); // TODO: specialization constants here
+        );
 
-        let buffer_rays = get_compute_pipeline(device.clone(), shaders.buffer_rays.clone(), &());
+        let buffer_rays = create_compute_pipeline(device.clone(), shaders.buffer_rays.clone(), &());
 
         Self {
             direct,

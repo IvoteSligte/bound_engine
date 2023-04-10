@@ -15,9 +15,9 @@ mod rotation {
     pub const RIGHT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
 }
 
-pub(crate) fn get_event_helper(state: State, window: Arc<Window>) -> EventHelper<Data> {
+pub(crate) fn create_event_helper(window: Arc<Window>) -> EventHelper<Data> {
     EventHelper::new(Data {
-        state,
+        state: State::new(window.clone()),
         window,
         window_frozen: false,
         window_resized: false,
@@ -70,7 +70,7 @@ impl Data {
     }
 }
 
-pub(crate) fn get_callbacks() -> Callbacks<Data> {
+pub(crate) fn create_callbacks() -> Callbacks<Data> {
     let mut callbacks = Callbacks::<Data>::default();
 
     callbacks.window.quit(|eh, _| eh.quit = true);

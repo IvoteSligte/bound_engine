@@ -2,12 +2,11 @@ mod bvh;
 
 use std::{f32::consts::PI, sync::Arc};
 
-use event_helper::get_callbacks;
+use event_helper::create_callbacks;
 use glam::*;
-use images::get_color_image;
+use images::create_color_image;
 
 use shaders::LIGHTMAP_COUNT;
-use state::State;
 use vulkano::{
     swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
     sync::{self, FlushError, GpuFuture},
@@ -54,11 +53,9 @@ fn main() {
     );
     window.set_cursor_visible(false);
 
-    let state = State::new(window.clone());
+    let mut eh = create_event_helper(window);
 
-    let mut eh = get_event_helper(state, window);
-
-    let callbacks = get_callbacks();
+    let callbacks = create_callbacks();
 
     event_loop.run(move |event, _, control_flow| {
         if eh.quit {
@@ -150,7 +147,7 @@ fn main() {
             }
 
             // TODO: different thread
-            move_lightmap = Some(get_dynamic_move_lightmaps_command_buffer(
+            move_lightmap = Some(create_dynamic_move_lightmaps_command_buffer(
                 // TODO: refactor
                 eh.state.allocators.clone(),
                 eh.state.queue.clone(),
@@ -160,7 +157,7 @@ fn main() {
         }
 
         // TODO: separate thread
-        let real_time_command_buffer = get_real_time_command_buffer(
+        let real_time_command_buffer = create_real_time_command_buffer(
             // TODO: refactor
             eh.state.allocators.clone(),
             eh.state.queue.clone(),

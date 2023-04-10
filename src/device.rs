@@ -35,7 +35,7 @@ pub(crate) fn select_physical_device<'a>(
         .unwrap()
 }
 
-pub(crate) fn get_device(
+pub(crate) fn create_device(
     physical_device: Arc<PhysicalDevice>,
     device_extensions: DeviceExtensions,
     queue_family_index: u32,
