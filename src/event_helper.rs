@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
+use fps_counter::FPSCounter;
 use glam::*;
 use winit::window::{CursorGrabMode, Window, Fullscreen};
 use winit_event_helper::{Callbacks, EventHelper, KeyCode};
+
+use crate::state::State;
 
 mod rotation {
     use glam::Vec3;
@@ -12,9 +15,10 @@ mod rotation {
     pub const RIGHT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
 }
 
-pub(crate) fn get_event_helper(window: Arc<Window>) -> EventHelper<Data> {
+pub(crate) fn get_event_helper(state: State, window: Arc<Window>) -> EventHelper<Data> {
     EventHelper::new(Data {
-        window: window,
+        state,
+        window,
         window_frozen: false,
         window_resized: false,
         recreate_swapchain: false,
@@ -24,10 +28,12 @@ pub(crate) fn get_event_helper(window: Arc<Window>) -> EventHelper<Data> {
         quit: false,
         movement_multiplier: 25.0,
         rotation_multiplier: 1.0,
+        fps_counter: FPSCounter::new(),
     })
 }
 
 pub(crate) struct Data {
+    pub(crate) state: State,
     pub(crate) window: Arc<Window>,
     pub(crate) window_frozen: bool,
     pub(crate) window_resized: bool,
@@ -41,6 +47,7 @@ pub(crate) struct Data {
     pub(crate) quit: bool,
     pub(crate) movement_multiplier: f32,
     pub(crate) rotation_multiplier: f32,
+    pub(crate) fps_counter: FPSCounter,
 }
 
 impl Data {

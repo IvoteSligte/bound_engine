@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use vulkano::{
-    buffer::{DeviceLocalBuffer, BufferAccess},
-    command_buffer::{
-        allocator::StandardCommandBufferAllocator,
-    },
+    command_buffer::allocator::StandardCommandBufferAllocator,
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{physical::PhysicalDevice, Device},
     format::Format,
@@ -26,10 +23,9 @@ use crate::{
     descriptor_sets::*,
     event_helper::Data,
     get_color_image,
-    lightmap::{LightmapBufferSet, LightmapImages},
     pipelines::{get_compute_pipeline, Pipelines},
     shaders::{self, Shaders},
-    FOV,
+    FOV, buffers::Buffers, images::{LightmapImages, Images}, allocators::Allocators, fences::Fences,
 };
 
 pub(crate) fn get_swapchain(
@@ -70,49 +66,14 @@ pub(crate) fn get_swapchain(
     .unwrap()
 }
 
-pub(crate) fn recreate_swapchain(
+pub(crate) fn recreate_swapchain( // TODO: refactor eh.state.
     eh: &mut EventHelper<Data>,
-    swapchain: &mut Arc<Swapchain>,
-    command_buffer_allocator: &StandardCommandBufferAllocator,
-    queue: Arc<vulkano::device::Queue>,
-    fences: Vec<
-        Option<
-            Arc<
-                FenceSignalFuture<
-                    PresentFuture<
-                        JoinFuture<
-                            vulkano::command_buffer::CommandBufferExecFuture<
-                                vulkano::command_buffer::CommandBufferExecFuture<
-                                    Box<dyn GpuFuture>,
-                                >,
-                            >,
-                            SwapchainAcquireFuture,
-                        >,
-                    >,
-                >,
-            >,
-        >,
-    >,
-    previous_fence_index: usize,
-    device: Arc<Device>,
-    pipelines: &mut Pipelines,
-    shaders: Shaders,
-    memory_allocator: &GenericMemoryAllocator<Arc<FreeListAllocator>>,
-    queue_family_index: u32,
-    descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    real_time_buffer: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
-    bvh_buffer: Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>>,
-    mutable_buffer: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>,
-    lightmap_images: LightmapImages,
-    lightmap_buffers: LightmapBufferSet,
-    blue_noise_buffer: Arc<dyn BufferAccess>,
-    command_buffers: &mut CommandBufferCollection,
 ) -> bool {
     eh.recreate_swapchain = false;
     let dimensions = eh.window.inner_size(); // TODO: function input
-    let (new_swapchain, new_swapchain_images) = match swapchain.recreate(SwapchainCreateInfo {
+    let (new_swapchain, new_swapchain_images) = match eh.state.swapchain.recreate(SwapchainCreateInfo {
         image_extent: dimensions.into(),
-        ..swapchain.create_info()
+        ..eh.state.swapchain.create_info()
     }) {
         Ok(ok) => ok,
         Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => {
@@ -120,56 +81,49 @@ pub(crate) fn recreate_swapchain(
         }
         Err(err) => panic!("{}", err),
     };
-    *swapchain = new_swapchain;
+    eh.state.swapchain = new_swapchain;
 
     if eh.window_resized {
         eh.window_resized = false;
 
-        if let Some(future) = fences[previous_fence_index].clone() {
-            future
-                .then_signal_fence_and_flush()
-                .unwrap()
-                .wait(None)
-                .unwrap();
+        if let Some(future) = eh.state.fences.previous() {
+            future.wait(None).unwrap();
         }
 
-        pipelines.direct = get_compute_pipeline(
-            device.clone(),
-            shaders.direct.clone(),
+        eh.state.pipelines.direct = get_compute_pipeline(
+            eh.state.device.clone(),
+            eh.state.shaders.direct.clone(),
             &shaders::DirectSpecializationConstants {
                 RATIO_X: FOV,
                 RATIO_Y: -FOV * (dimensions.height as f32) / (dimensions.width as f32),
             },
         );
 
-        let color_image = get_color_image(memory_allocator, eh.window.clone(), queue_family_index);
+        eh.state.images.color = get_color_image(eh.state.allocators.clone(), eh.window.clone(), eh.state.queue.clone());
 
+        // TODO: move to command buffer init
         let descriptor_sets = get_compute_descriptor_sets(
-            &descriptor_set_allocator,
-            pipelines.clone(),
-            real_time_buffer.clone(),
-            bvh_buffer.clone(),
-            mutable_buffer.clone(),
-            color_image.clone(),
-            lightmap_images.clone(),
-            lightmap_buffers.clone(),
-            blue_noise_buffer.clone(),
+            eh.state.allocators.clone(),
+            eh.state.pipelines.clone(),
+            eh.state.buffers.clone(),
+            eh.state.images.clone(),
         );
 
-        command_buffers.swapchains = get_swapchain_command_buffers(
-            command_buffer_allocator,
-            queue.clone(),
-            color_image.clone(),
-            new_swapchain_images.clone(),
+        eh.state.images.swapchain = new_swapchain_images;
+
+        eh.state.command_buffers.swapchains = get_swapchain_command_buffers(
+            eh.state.allocators.clone(),
+            eh.state.queue.clone(),
+            eh.state.images.clone(),
         );
 
-        command_buffers.pathtraces = get_pathtrace_command_buffers(
-            command_buffer_allocator,
-            queue.clone(),
-            pipelines.clone(),
+        eh.state.command_buffers.pathtraces = get_pathtrace_command_buffers(
+            eh.state.allocators.clone(),
+            eh.state.queue.clone(),
+            eh.state.pipelines.clone(),
             eh.window.clone(),
             descriptor_sets.clone(),
-            lightmap_buffers.clone(),
+            eh.state.buffers.clone(),
         );
     }
 

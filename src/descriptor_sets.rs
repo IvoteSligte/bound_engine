@@ -1,5 +1,7 @@
-use crate::lightmap::LightmapBufferSet;
-use crate::lightmap::LightmapImages;
+use crate::allocators::Allocators;
+use crate::buffers::Buffers;
+use crate::images::Images;
+use crate::images::LightmapImages;
 use crate::pipelines::Pipelines;
 
 use vec_cycle::VecCycle;
@@ -12,8 +14,6 @@ use vulkano::descriptor_set::PersistentDescriptorSet;
 use vulkano::image::view::ImageView;
 
 use vulkano::image::StorageImage;
-
-use vulkano::buffer::BufferAccess;
 
 use std::sync::Arc;
 
@@ -31,26 +31,20 @@ pub(crate) struct DescriptorSetCollection {
 }
 
 pub(crate) fn get_compute_descriptor_sets(
-    allocator: &StandardDescriptorSetAllocator,
+    allocators: Arc<Allocators>,
     pipelines: Pipelines,
-    real_time_buffer: Arc<dyn BufferAccess>,
-    bvh_buffer: Arc<dyn BufferAccess>,
-    mutable_buffer: Arc<dyn BufferAccess>,
-    color_image: Arc<StorageImage>,
-    lightmap_images: LightmapImages,
-    mut lightmap_buffers: LightmapBufferSet,
-    blue_noise_buffer: Arc<dyn BufferAccess>,
+    mut buffers: Buffers,
+    images: Images,
 ) -> DescriptorSetCollection {
-    let color_image_view = ImageView::new_default(color_image.clone()).unwrap();
-    let lightmap_image_views = lightmap_images.image_views();
+    let image_views = images.image_views();
 
-    lightmap_buffers.restart();
+    buffers.lightmap.restart();
 
     let ray_units = (0..2)
         .map(|_| {
-            let lm_buffer_units = lightmap_buffers.next().unwrap();
+            let lm_buffer_units = buffers.lightmap.next().unwrap();
 
-            let flattened_colors = lightmap_image_views
+            let flattened_colors = image_views.lightmap
                 .colors
                 .clone()
                 .into_iter()
@@ -58,14 +52,14 @@ pub(crate) fn get_compute_descriptor_sets(
                 .collect::<Vec<_>>();
 
             let direct = PersistentDescriptorSet::new(
-                allocator,
+                &allocators.descriptor_set,
                 pipelines.direct.layout().set_layouts()[0].clone(),
                 [
-                    WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
-                    WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
-                    WriteDescriptorSet::image_view(2, color_image_view.clone()),
+                    WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
+                    WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
+                    WriteDescriptorSet::image_view(2, image_views.color.clone()),
                     WriteDescriptorSet::image_view_array(3, 0, flattened_colors.clone()),
-                    WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.syncs.clone()),
+                    WriteDescriptorSet::image_view_array(4, 0, image_views.lightmap.syncs.clone()),
                     WriteDescriptorSet::buffer(5, lm_buffer_units[0].buffer.clone()),
                     WriteDescriptorSet::buffer(6, lm_buffer_units[0].counters.clone()),
                 ],
@@ -73,19 +67,19 @@ pub(crate) fn get_compute_descriptor_sets(
             .unwrap();
 
             let buffer_rays = PersistentDescriptorSet::new(
-                allocator,
+                &allocators.descriptor_set,
                 pipelines.buffer_rays.layout().set_layouts()[0].clone(),
                 [
-                    WriteDescriptorSet::buffer(0, real_time_buffer.clone()),
-                    WriteDescriptorSet::buffer(1, bvh_buffer.clone()),
-                    WriteDescriptorSet::buffer(2, mutable_buffer.clone()),
+                    WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
+                    WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
+                    WriteDescriptorSet::buffer(2, buffers.mutable.clone()),
                     WriteDescriptorSet::image_view_array(3, 0, flattened_colors.clone()),
-                    WriteDescriptorSet::image_view_array(4, 0, lightmap_image_views.syncs.clone()),
+                    WriteDescriptorSet::image_view_array(4, 0, image_views.lightmap.syncs.clone()),
                     WriteDescriptorSet::buffer(5, lm_buffer_units[0].buffer.clone()),
                     WriteDescriptorSet::buffer(6, lm_buffer_units[0].counters.clone()),
                     WriteDescriptorSet::buffer(7, lm_buffer_units[1].buffer.clone()),
                     WriteDescriptorSet::buffer(8, lm_buffer_units[1].counters.clone()),
-                    WriteDescriptorSet::buffer(9, blue_noise_buffer.clone()),
+                    WriteDescriptorSet::buffer(9, buffers.blue_noise.clone()),
                 ],
             )
             .unwrap();

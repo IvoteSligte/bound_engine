@@ -1,27 +1,27 @@
 mod bvh;
 
-use std::{f32::consts::PI, sync::Arc};
+use std::{f32::consts::PI, sync::Arc, thread};
 
-use buffers::{get_blue_noise_buffer, get_bvh_buffer, get_mutable_buffer};
+use allocators::Allocators;
+use buffers::{get_blue_noise_buffer, get_bvh_buffer, get_mutable_buffer, Buffers};
 use descriptor_sets::get_compute_descriptor_sets;
 use device::{get_device, select_physical_device};
 use event_helper::get_callbacks;
-use fps_counter::FPSCounter;
 use glam::*;
-use images::get_color_image;
+use images::{get_color_image, Images, LightmapImages};
 use instance::get_instance;
-use lightmap::{LightmapBufferSet, LightmapImages};
 use pipelines::Pipelines;
 use shaders::{Shaders, LIGHTMAP_COUNT};
+use state::State;
 use vulkano::{
-    buffer::{BufferUsage, DeviceLocalBuffer},
+    buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract,
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::DeviceExtensions,
-    memory::allocator::StandardMemoryAllocator,
+    memory::allocator::{FreeListAllocator, GenericMemoryAllocator, StandardMemoryAllocator},
     swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
     sync::{self, FenceSignalFuture, FlushError, GpuFuture},
 };
@@ -34,26 +34,27 @@ use winit_event_helper::*;
 
 use crate::{command_buffers::*, event_helper::*, swapchain::*};
 
+mod allocators;
 mod buffers;
 mod command_buffers;
 mod descriptor_sets;
 mod device;
 mod event_helper;
+mod fences;
 mod images;
 mod instance;
-mod lightmap;
 mod pipelines;
 mod scene;
 mod shaders;
+mod state;
 mod swapchain;
 
 // field of view
 const FOV: f32 = 1.0;
 
 fn main() {
-    let instance = get_instance();
-
     let event_loop = EventLoop::new();
+
     let window = Arc::new(
         WindowBuilder::new()
             .with_maximized(true)
@@ -65,127 +66,12 @@ fn main() {
             .unwrap(),
     );
     window.set_cursor_visible(false);
-    let surface = vulkano_win::create_surface_from_winit(window.clone(), instance.clone()).unwrap();
 
-    let device_extensions = DeviceExtensions {
-        khr_swapchain: true,
-        ..DeviceExtensions::empty()
-    };
+    let state = State::new(window.clone());
 
-    let (physical_device, queue_family_index) =
-        select_physical_device(instance, &surface, &device_extensions);
-
-    let (device, queue) = get_device(
-        physical_device.clone(),
-        device_extensions,
-        queue_family_index,
-    );
-
-    // TODO: improve
-    let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
-
-    let (mut swapchain, swapchain_images) = get_swapchain(
-        device.clone(),
-        surface.clone(),
-        window.clone(),
-        physical_device.clone(),
-    );
-
-    let shaders = Shaders::load(device.clone());
-
-    let mut pipelines = Pipelines::from_shaders(device.clone(), shaders.clone(), window.clone());
-
-    let command_buffer_allocator = StandardCommandBufferAllocator::new(
-        device.clone(),
-        StandardCommandBufferAllocatorCreateInfo::default(),
-    );
-    let mut alloc_command_buffer_builder = AutoCommandBufferBuilder::primary(
-        &command_buffer_allocator,
-        queue_family_index,
-        CommandBufferUsage::OneTimeSubmit,
-    )
-    .unwrap();
-
-    let bvh_buffer = get_bvh_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
-
-    let mutable_buffer = get_mutable_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
-
-    // TODO: abstraction using struct
-    let mut real_time_data = shaders::ty::RealTimeBuffer {
-        rotation: [0.0; 4],
-        previousRotation: [0.0; 4],
-        position: [0.0; 3],
-        previousPosition: [0.0; 3],
-        deltaLightmapOrigins: [[0; 4]; LIGHTMAP_COUNT],
-        lightmapOrigin: [0; 3],
-        frame: 0,
-        _dummy0: [0; 4],
-        _dummy1: [0; 4],
-        _dummy2: [0; 4],
-    };
-
-    let real_time_buffer = DeviceLocalBuffer::from_data(
-        &memory_allocator,
-        real_time_data,
-        BufferUsage {
-            uniform_buffer: true,
-            transfer_dst: true,
-            ..BufferUsage::empty()
-        },
-        &mut alloc_command_buffer_builder,
-    )
-    .unwrap();
-
-    let blue_noise_buffer =
-        get_blue_noise_buffer(&memory_allocator, &mut alloc_command_buffer_builder);
-
-    let lightmap_buffers = LightmapBufferSet::new(&memory_allocator, queue_family_index, 2);
-
-    alloc_command_buffer_builder
-        .build()
-        .unwrap()
-        .execute(queue.clone())
-        .unwrap()
-        .then_signal_fence_and_flush()
-        .unwrap()
-        .wait(None)
-        .unwrap();
-
-    let color_image = get_color_image(&memory_allocator, window.clone(), queue_family_index);
-    let lightmap_images = LightmapImages::new(&memory_allocator, queue_family_index);
-
-    let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
-    let descriptor_sets = get_compute_descriptor_sets(
-        &descriptor_set_allocator,
-        pipelines.clone(),
-        real_time_buffer.clone(),
-        bvh_buffer.clone(),
-        mutable_buffer.clone(),
-        color_image.clone(),
-        lightmap_images.clone(),
-        lightmap_buffers.clone(),
-        blue_noise_buffer.clone(),
-    );
-
-    let mut command_buffers = CommandBufferCollection::new(
-        &command_buffer_allocator,
-        queue.clone(),
-        pipelines.clone(),
-        window.clone(),
-        descriptor_sets.clone(),
-        &lightmap_buffers,
-        color_image,
-        swapchain_images.clone(),
-    );
-
-    let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; swapchain_images.len()];
-    let mut previous_fence_index = 0;
-
-    let mut eh = get_event_helper(window);
+    let mut eh = get_event_helper(state, window);
 
     let callbacks = get_callbacks();
-
-    let mut fps_counter = FPSCounter::new();
 
     event_loop.run(move |event, _, control_flow| {
         if eh.quit {
@@ -200,7 +86,7 @@ fn main() {
             eh.window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
         }
 
-        println!("{}", fps_counter.tick());
+        println!("{}", eh.fps_counter.tick());
 
         let cursor_mov = eh.cursor_delta / eh.dimensions().x * eh.rotation_multiplier;
         eh.rotation += cursor_mov * Vec2::new(1.0, -1.0);
@@ -244,18 +130,18 @@ fn main() {
             eh.delta_position.z += delta_mov;
         }
 
-        let new_position = Vec3::from_array(real_time_data.position) + eh.position();
+        let new_position = Vec3::from_array(eh.state.real_time_data.position) + eh.position();
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
-        real_time_data.previousRotation = real_time_data.rotation;
-        real_time_data.previousPosition = real_time_data.position;
-        real_time_data.rotation = eh.rotation().to_array();
-        real_time_data.position = new_position.to_array();
+        eh.state.real_time_data.previousRotation = eh.state.real_time_data.rotation;
+        eh.state.real_time_data.previousPosition = eh.state.real_time_data.position;
+        eh.state.real_time_data.rotation = eh.rotation().to_array();
+        eh.state.real_time_data.position = new_position.to_array();
         eh.delta_position = Vec3::ZERO;
 
-        real_time_data.frame += 1;
+        eh.state.real_time_data.frame += 1;
 
-        let old_pos = IVec3::from_array(real_time_data.lightmapOrigin);
+        let old_pos = IVec3::from_array(eh.state.real_time_data.lightmapOrigin);
         let new_pos = new_position.as_ivec3();
 
         // FIXME:
@@ -268,45 +154,36 @@ fn main() {
 
         if largest_delta_pos.abs().cmpge(Vec3::splat(1.0)).any() {
             let delta_pos = largest_delta_pos * LARGEST_UNIT;
-            real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array();
+            eh.state.real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array();
 
             for i in 0..LIGHTMAP_COUNT {
                 let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
                 let delta_units = (delta_pos / unit_size).as_ivec3();
-                real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
+                eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
             }
 
+            // TODO: different thread
             move_lightmap = Some(get_dynamic_move_lightmaps_command_buffer(
-                &command_buffer_allocator,
-                queue.clone(),
-                lightmap_images.clone(),
+                // TODO: refactor
+                eh.state.allocators.clone(),
+                eh.state.queue.clone(),
+                eh.state.images.clone(),
                 delta_pos.as_ivec3(),
             ));
         }
 
+        // TODO: separate thread
+        let real_time_command_buffer = get_real_time_command_buffer(
+            // TODO: refactor
+            eh.state.allocators.clone(),
+            eh.state.queue.clone(),
+            eh.state.real_time_data.clone(),
+            eh.state.buffers.clone(),
+        );
+
         // rendering
         if eh.recreate_swapchain || eh.window_resized {
-            let success = recreate_swapchain(
-                &mut eh,
-                &mut swapchain,
-                &command_buffer_allocator,
-                queue.clone(),
-                fences.clone(),
-                previous_fence_index,
-                device.clone(),
-                &mut pipelines,
-                shaders.clone(),
-                &memory_allocator,
-                queue_family_index,
-                &descriptor_set_allocator,
-                real_time_buffer.clone(),
-                bvh_buffer.clone(),
-                mutable_buffer.clone(),
-                lightmap_images.clone(),
-                lightmap_buffers.clone(),
-                blue_noise_buffer.clone(),
-                &mut command_buffers,
-            );
+            let success = recreate_swapchain(&mut eh);
 
             if !success {
                 return;
@@ -314,7 +191,7 @@ fn main() {
         }
 
         let (image_index, suboptimal, image_future) =
-            match acquire_next_image(swapchain.clone(), None) {
+            match acquire_next_image(eh.state.swapchain.clone(), None) {
                 Ok(ok) => ok,
                 Err(AcquireError::OutOfDate) => {
                     return eh.recreate_swapchain = true;
@@ -323,61 +200,55 @@ fn main() {
             };
         eh.recreate_swapchain |= suboptimal;
 
-        let previous_future = match fences[previous_fence_index].clone() {
+        let previous_future = match eh.state.fences.previous() {
             Some(future) => future.boxed(),
             None => {
-                let mut future = sync::now(device.clone());
+                let mut future = sync::now(eh.state.device.clone());
                 future.cleanup_finished();
                 future.boxed()
             }
         };
 
-        if let Some(image_fence) = &fences[image_index as usize] {
+        if let Some(image_fence) = &eh.state.fences[image_index as usize] {
             image_fence.wait(None).unwrap();
         }
-
-        let real_time_command_buffer = get_real_time_command_buffer(
-            &command_buffer_allocator,
-            queue_family_index,
-            real_time_data,
-            real_time_buffer.clone(),
-        );
 
         let mut future = previous_future;
 
         if let Some(command_buffer) = move_lightmap {
-
             future = future
-                .then_execute(queue.clone(), command_buffer)
+                .then_execute(eh.state.queue.clone(), command_buffer)
                 .unwrap()
                 .boxed();
         }
 
         future = future
-            .then_execute(queue.clone(), real_time_command_buffer)
+            .then_execute(eh.state.queue.clone(), real_time_command_buffer)
             .unwrap()
             .boxed();
 
         let future = future
             .then_execute(
-                queue.clone(),
-                command_buffers.pathtraces.next().unwrap().clone(),
+                eh.state.queue.clone(),
+                eh.state.command_buffers.pathtraces.next().unwrap().clone(),
             )
             .unwrap()
             .then_execute(
-                queue.clone(),
-                command_buffers.swapchains[image_index as usize].clone(),
+                eh.state.queue.clone(),
+                eh.state.command_buffers.swapchains[image_index as usize].clone(),
             )
             .unwrap()
             .join(image_future)
             .then_swapchain_present(
-                queue.clone(),
-                SwapchainPresentInfo::swapchain_image_index(swapchain.clone(), image_index),
+                eh.state.queue.clone(),
+                SwapchainPresentInfo::swapchain_image_index(
+                    eh.state.swapchain.clone(),
+                    image_index,
+                ),
             )
             .then_signal_fence_and_flush();
 
-        // TODO: remove pointless double/triple buffering (in general, not just here)
-        fences[image_index as usize] = match future {
+        eh.state.fences[image_index as usize] = match future {
             Ok(ok) => Some(Arc::new(ok)),
             Err(FlushError::OutOfDate) => {
                 eh.recreate_swapchain = true;
@@ -388,16 +259,7 @@ fn main() {
                 None
             }
         };
-        previous_fence_index = image_index as usize;
-
-        // DEBUG, TODO: remove
-        fences[image_index as usize]
-            .clone()
-            .unwrap()
-            .then_signal_fence_and_flush()
-            .unwrap()
-            .wait(None)
-            .unwrap();
+        eh.state.fences.set_previous(image_index as usize);
     })
 }
 

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use glam::{IVec3, UVec3};
 use vec_cycle::VecCycle;
@@ -17,11 +17,12 @@ use vulkano::{
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
+    buffers::Buffers,
     descriptor_sets::DescriptorSetCollection,
-    lightmap::{LightmapBufferSet, LightmapImages},
+    images::{Images, LightmapImages},
     pipelines::Pipelines,
     shaders::{self, ITEM_COUNT, LIGHTMAP_SIZE},
-    LIGHTMAP_COUNT,
+    LIGHTMAP_COUNT, allocators::Allocators,
 };
 
 #[derive(Clone)]
@@ -32,30 +33,25 @@ pub(crate) struct CommandBufferCollection {
 
 impl CommandBufferCollection {
     pub(crate) fn new(
-        command_buffer_allocator: &StandardCommandBufferAllocator,
+        allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
         window: Arc<Window>,
         descriptor_sets: DescriptorSetCollection,
-        lightmap_buffers: &LightmapBufferSet,
-        color_image: Arc<StorageImage>,
-        swapchain_images: Vec<Arc<SwapchainImage>>,
+        buffers: Buffers,
+        images: Images,
     ) -> CommandBufferCollection {
         let pathtraces = get_pathtrace_command_buffers(
-            command_buffer_allocator,
+            allocators.clone(),
             queue.clone(),
             pipelines.clone(),
             window.clone(),
             descriptor_sets.clone(),
-            lightmap_buffers.clone(),
+            buffers.clone(),
         );
 
-        let swapchains = get_swapchain_command_buffers(
-            command_buffer_allocator,
-            queue.clone(),
-            color_image.clone(),
-            swapchain_images.clone(),
-        );
+        let swapchains =
+            get_swapchain_command_buffers(allocators.clone(), queue.clone(), images.clone());
 
         CommandBufferCollection {
             pathtraces,
@@ -65,12 +61,12 @@ impl CommandBufferCollection {
 }
 
 pub(crate) fn get_pathtrace_command_buffers(
-    allocator: &StandardCommandBufferAllocator,
+    allocators: Arc<Allocators>,
     queue: Arc<Queue>,
     pipelines: Pipelines,
     window: Arc<Window>,
     mut descriptor_sets: DescriptorSetCollection,
-    mut lightmap_buffers: LightmapBufferSet,
+    mut buffers: Buffers,
 ) -> VecCycle<Arc<PrimaryAutoCommandBuffer>> {
     let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
@@ -83,16 +79,16 @@ pub(crate) fn get_pathtrace_command_buffers(
     let dispatch_buffer_rays = [ITEM_COUNT, 1, 1];
 
     descriptor_sets.ray_units.restart();
-    lightmap_buffers.restart();
+    buffers.lightmap.restart();
 
     VecCycle::new(
         (0..2)
             .map(|_| {
-                let lm_unit = lightmap_buffers.next().unwrap();
+                let lm_unit = buffers.lightmap.next().unwrap();
                 let desc_unit = descriptor_sets.ray_units.next().unwrap();
 
                 let mut builder = AutoCommandBufferBuilder::primary(
-                    allocator,
+                    &allocators.command_buffer,
                     queue.queue_family_index(),
                     CommandBufferUsage::SimultaneousUse, // TODO: multiplesubmit
                 )
@@ -127,17 +123,17 @@ pub(crate) fn get_pathtrace_command_buffers(
 }
 
 pub(crate) fn get_swapchain_command_buffers(
-    allocator: &StandardCommandBufferAllocator,
+    allocators: Arc<Allocators>,
     queue: Arc<Queue>,
-    color_image: Arc<StorageImage>,
-    swapchain_images: Vec<Arc<SwapchainImage>>,
+    images: Images,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-    swapchain_images // TODO: remove the double/triple buffering and just have two command buffers
+    images
+        .swapchain
         .clone()
         .into_iter()
         .map(|swapchain_image| {
             let mut builder = AutoCommandBufferBuilder::primary(
-                allocator,
+                &allocators.command_buffer,
                 queue.queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
@@ -146,7 +142,7 @@ pub(crate) fn get_swapchain_command_buffers(
             builder
                 .blit_image(BlitImageInfo {
                     filter: Filter::Linear,
-                    ..BlitImageInfo::images(color_image.clone(), swapchain_image.clone())
+                    ..BlitImageInfo::images(images.color.clone(), swapchain_image.clone())
                 })
                 .unwrap();
 
@@ -156,13 +152,13 @@ pub(crate) fn get_swapchain_command_buffers(
 }
 
 pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
-    allocator: &StandardCommandBufferAllocator,
+    allocators: Arc<Allocators>,
     queue: Arc<Queue>,
-    lightmap_images: LightmapImages,
+    images: Images,
     movement: IVec3,
 ) -> Arc<PrimaryAutoCommandBuffer> {
     let mut builder = AutoCommandBufferBuilder::primary(
-        allocator,
+        &allocators.command_buffer,
         queue.queue_family_index(),
         CommandBufferUsage::SimultaneousUse,
     )
@@ -209,7 +205,8 @@ pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
         .map(|v| v.as_uvec3())
         .collect::<Vec<_>>();
 
-    lightmap_images
+    images
+        .lightmap
         .colors
         .clone()
         .into_iter()
@@ -219,7 +216,7 @@ pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
                     .copy_image(CopyImageInfo {
                         regions: [ImageCopy {
                             src_subresource: ImageSubresourceLayers::from_parameters(
-                                lightmap_images.staging_color.format(),
+                                images.lightmap.staging_color.format(),
                                 1,
                             ),
                             dst_subresource: ImageSubresourceLayers::from_parameters(
@@ -234,12 +231,12 @@ pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
                         .into(),
                         ..CopyImageInfo::images(
                             lightmaps[i].clone(),
-                            lightmap_images.staging_color.clone(),
+                            images.lightmap.staging_color.clone(),
                         )
                     })
                     .unwrap()
                     .copy_image(CopyImageInfo::images(
-                        lightmap_images.staging_color.clone(),
+                        images.lightmap.staging_color.clone(),
                         lightmaps[i].clone(),
                     ))
                     .unwrap();
@@ -250,17 +247,17 @@ pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
     for i in 0..LIGHTMAP_COUNT {
         builder
             .clear_color_image(ClearColorImageInfo::image(
-                lightmap_images.staging_sync.clone(),
+                images.lightmap.staging_sync.clone(),
             ))
             .unwrap()
             .copy_image(CopyImageInfo {
                 regions: [ImageCopy {
                     src_subresource: ImageSubresourceLayers::from_parameters(
-                        lightmap_images.staging_sync.format(),
+                        images.lightmap.staging_sync.format(),
                         1,
                     ),
                     dst_subresource: ImageSubresourceLayers::from_parameters(
-                        lightmap_images.syncs[i].format(),
+                        images.lightmap.syncs[i].format(),
                         1,
                     ),
                     src_offset: src_offset_per_layer[i].to_array(),
@@ -270,14 +267,14 @@ pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
                 }]
                 .into(),
                 ..CopyImageInfo::images(
-                    lightmap_images.syncs[i].clone(),
-                    lightmap_images.staging_sync.clone(),
+                    images.lightmap.syncs[i].clone(),
+                    images.lightmap.staging_sync.clone(),
                 )
             })
             .unwrap()
             .copy_image(CopyImageInfo::images(
-                lightmap_images.staging_sync.clone(),
-                lightmap_images.syncs[i].clone(),
+                images.lightmap.staging_sync.clone(),
+                images.lightmap.syncs[i].clone(),
             ))
             .unwrap();
     }
@@ -286,20 +283,20 @@ pub(crate) fn get_dynamic_move_lightmaps_command_buffer(
 }
 
 pub(crate) fn get_real_time_command_buffer(
-    command_buffer_allocator: &StandardCommandBufferAllocator,
-    queue_family_index: u32,
+    allocators: Arc<Allocators>,
+    queue: Arc<Queue>,
     real_time_data: shaders::ty::RealTimeBuffer,
-    real_time_buffer: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
+    buffers: Buffers,
 ) -> PrimaryAutoCommandBuffer {
     let mut real_time_command_buffer_builder = AutoCommandBufferBuilder::primary(
-        command_buffer_allocator,
-        queue_family_index,
+        &allocators.command_buffer,
+        queue.queue_family_index(),
         CommandBufferUsage::OneTimeSubmit,
     )
     .unwrap();
 
     real_time_command_buffer_builder
-        .update_buffer(Box::new(real_time_data), real_time_buffer.clone(), 0) // TODO: replace with copy_buffer using staging buffer
+        .update_buffer(Arc::new(real_time_data), buffers.real_time.clone(), 0) // TODO: replace with copy_buffer using staging buffer
         .unwrap();
 
     real_time_command_buffer_builder.build().unwrap()
