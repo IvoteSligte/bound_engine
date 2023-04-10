@@ -1,34 +1,66 @@
 #version 460
 
-#include "includes_general.glsl"
+// START GENERAL INCLUDES
+
+struct Material {
+    vec3 reflectance;
+    vec3 emittance;
+};
+
+/// node of a bvh
+struct Bounds {
+    vec3 position;
+    float radiusSquared;
+    uint child;
+    uint next;
+    uint material;
+};
+
+struct Ray {
+    uint objectHit;
+    vec3 origin;
+    vec3 direction;
+    uint materialHit;
+};
+
+struct HitItem {
+    vec3 position;
+    uint objectHit;
+    uint materialHit;
+};
+
+vec3 rotateWithQuat(vec4 q, vec3 v) {
+    vec3 t = q.w * v + cross(q.xyz, v);
+    return 2.0 * cross(q.xyz, t) + v;
+}
+
+float maximum(vec3 v) {
+    return max(max(v.x, v.y), v.z);
+}
+
+// END GENERAL INCLUDES
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(constant_id = 0) const float RATIO_X = 1.0;
-layout(constant_id = 1) const float RATIO_Y = 1.0;
-
-const vec2 RATIO = vec2(RATIO_X, RATIO_Y);
-
-layout(binding = 0) uniform restrict readonly RealTimeBuffer {
+layout(binding = 0) uniform restrict RealTimeBuffer {
     vec4 rotation;
-    vec4 previousRotation;
     vec3 position;
-    vec3 previousPosition;
     ivec3 lightmapOrigin;
     ivec4 deltaLightmapOrigins[LIGHTMAP_COUNT];
-    uint frame;
 } rt;
 
-layout(binding = 1) uniform restrict readonly GpuBVH {
+layout(binding = 1) uniform restrict GpuBVH {
     uint root;
     Bounds nodes[2 * MAX_OBJECTS];
 } bvh;
 
 layout(binding = 2, rgba16) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 3, rgba16) uniform restrict readonly image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages; // TODO: CPU side - only grab the first LIGHTMAP_COUNT images
+layout(binding = 3/*,rgba16*/) uniform restrict image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages; // TODO: CPU side - only grab the first LIGHTMAP_COUNT images
 
-layout(binding = 4, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
+layout(binding = 4) buffer restrict LightmapSync {
+    uint items[LIGHTMAP_COUNT][LIGHTMAP_SIZE][LIGHTMAP_SIZE][LIGHTMAP_SIZE];
+} lmSync;
 
 layout(binding = 5) buffer restrict CurrBuffer {
     HitItem items[SUBBUFFER_COUNT][SUBBUFFER_LENGTH];
@@ -38,7 +70,57 @@ layout(binding = 6) buffer restrict CurrCounters {
     uint counters[SUBBUFFER_COUNT];
 } currCounters;
 
-#include "includes_trace_ray.glsl"
+layout(binding = 7) uniform restrict SpecConstants {
+    vec2 ratio;
+} sc;
+
+// START TRACE RAY INCLUDES
+float distanceToObject(Ray ray, Bounds bnd) {
+    vec3 v = bnd.position - ray.origin;
+    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    float d = (m.x * m.x - m.y) + bnd.radiusSquared;
+    return d < 0.0 ? 0.0 : m.x - sqrt(d);
+}
+
+bool hitsBounds(Ray ray, Bounds bnd) {
+    vec3 v = bnd.position - ray.origin;
+    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    return m.y < bnd.radiusSquared || (((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > EPSILON);
+}
+
+void traceRayWithBVH(inout Ray ray) {
+    ray.objectHit = 0;
+    ray.materialHit = 0;
+    float distanceToHit = FLT_MAX;
+    uint nodeHit = 0;
+
+    uint currIdx = bvh.root;
+
+    while (currIdx != 0) {
+        Bounds curr = bvh.nodes[currIdx];
+
+        if (curr.material == 0) {
+            currIdx = hitsBounds(ray, curr) ? curr.child : curr.next;
+            continue;
+        }
+
+        float dist = distanceToObject(ray, curr);
+
+        if (dist > EPSILON && dist < distanceToHit) {
+            // is a leaf, store data
+            distanceToHit = dist;
+            nodeHit = currIdx;
+            ray.objectHit = currIdx;
+            ray.materialHit = curr.material;
+        }
+
+        // move to next node
+        currIdx = curr.next;
+    }
+
+    ray.origin = (ray.direction * distanceToHit) + ray.origin;
+}
+// END TRACE RAY INCLUDES
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
@@ -66,7 +148,7 @@ void main() {
     const ivec2 IPOS = ivec2(gl_GlobalInvocationID.xy);
 
     // maps FragCoord to xy range [-1.0, 1.0]
-    const vec2 NORM_COORD = RATIO * (IPOS * 2.0 / VIEWPORT - 1.0);
+    const vec2 NORM_COORD = sc.ratio * (IPOS * 2.0 / VIEWPORT - 1.0);
     const vec3 DIRECTION = normalize(vec3(NORM_COORD.x, 1.0, NORM_COORD.y));
 
     vec3 viewDir = rotateWithQuat(rt.rotation, DIRECTION);
@@ -83,7 +165,7 @@ void main() {
         return;
     }
 
-    uint sync = imageAtomicOr(lightmapSyncImages[lmIndex.w], lmIndex.xyz, BIT_USED);
+    uint sync = atomicOr(lmSync.items[lmIndex.w][lmIndex.x][lmIndex.y][lmIndex.z], BIT_USED);
     uint level = sync & BITS_LEVEL;
     bool isUnused = (sync & BIT_USED) == 0;
 
@@ -95,7 +177,7 @@ void main() {
         if (bufIdx < SUBBUFFER_LENGTH) {
             currBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
         } else {
-            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(sync));
+            lmSync.items[lmIndex.w][lmIndex.x][lmIndex.y][lmIndex.z] = sync;
         }
     }
 

@@ -1,6 +1,44 @@
 #version 460
 
-#include "includes_general.glsl"
+// START GENERAL INCLUDES // TODO: figure out a way to inline a file
+
+struct Material {
+    vec3 reflectance;
+    vec3 emittance;
+};
+
+/// node of a bvh
+struct Bounds {
+    vec3 position;
+    float radiusSquared;
+    uint child;
+    uint next;
+    uint material;
+};
+
+struct Ray {
+    uint objectHit;
+    vec3 origin;
+    vec3 direction;
+    uint materialHit;
+};
+
+struct HitItem {
+    vec3 position;
+    uint objectHit;
+    uint materialHit;
+};
+
+vec3 rotateWithQuat(vec4 q, vec3 v) {
+    vec3 t = q.w * v + cross(q.xyz, v);
+    return 2.0 * cross(q.xyz, t) + v;
+}
+
+float maximum(vec3 v) {
+    return max(max(v.x, v.y), v.z);
+}
+
+// END GENERAL INCLUDES
 
 layout(local_size_x = SAMPLES, local_size_y = 1, local_size_z = 1) in;
 
@@ -11,7 +49,6 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 previousPosition;
     ivec3 lightmapOrigin;
     ivec4 deltaLightmapOrigins[LIGHTMAP_COUNT];
-    uint frame;
 } rt;
 
 layout(binding = 1) uniform restrict readonly GpuBVH {
@@ -25,7 +62,9 @@ layout(binding = 2) uniform restrict readonly MutableData {
 
 layout(binding = 3, rgba16) uniform restrict image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages;
 
-layout(binding = 4, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
+layout(binding = 4) buffer restrict LightmapSync {
+    uint items[LIGHTMAP_COUNT][LIGHTMAP_SIZE][LIGHTMAP_SIZE][LIGHTMAP_SIZE];
+} lmSync;
 
 layout(binding = 5) buffer restrict readonly CurrBuffer {
     HitItem items[SUBBUFFER_COUNT][SUBBUFFER_LENGTH];
@@ -47,7 +86,53 @@ layout(binding = 9) uniform restrict readonly BlueNoise {
     vec4 items[SAMPLES];
 } bn;
 
-#include "includes_trace_ray.glsl"
+// START TRACE RAY INCLUDES
+float distanceToObject(Ray ray, Bounds bnd) {
+    vec3 v = bnd.position - ray.origin;
+    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    float d = (m.x * m.x - m.y) + bnd.radiusSquared;
+    return d < 0.0 ? 0.0 : m.x - sqrt(d);
+}
+
+bool hitsBounds(Ray ray, Bounds bnd) {
+    vec3 v = bnd.position - ray.origin;
+    vec2 m = v * mat2x3(ray.direction, v); // two dot products calculated using one matrix multiplication
+    return m.y < bnd.radiusSquared || (((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > EPSILON);
+}
+
+void traceRayWithBVH(inout Ray ray) {
+    ray.objectHit = 0;
+    ray.materialHit = 0;
+    float distanceToHit = FLT_MAX;
+    uint nodeHit = 0;
+
+    uint currIdx = bvh.root;
+
+    while (currIdx != 0) {
+        Bounds curr = bvh.nodes[currIdx];
+
+        if (curr.material == 0) {
+            currIdx = hitsBounds(ray, curr) ? curr.child : curr.next;
+            continue;
+        }
+
+        float dist = distanceToObject(ray, curr);
+
+        if (dist > EPSILON && dist < distanceToHit) {
+            // is a leaf, store data
+            distanceToHit = dist;
+            nodeHit = currIdx;
+            ray.objectHit = currIdx;
+            ray.materialHit = curr.material;
+        }
+
+        // move to next node
+        currIdx = curr.next;
+    }
+
+    ray.origin = (ray.direction * distanceToHit) + ray.origin;
+}
+// END TRACE RAY INCLUDES
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
@@ -83,7 +168,7 @@ void main() {
 
     vec3 normal = normalize(hitItem.position - bvh.nodes[hitItem.objectHit].position);
 
-    uint sync = imageLoad(lightmapSyncImages[lmIndex.w], lmIndex.xyz).x;
+    uint sync = lmSync.items[lmIndex.w][lmIndex.x][lmIndex.y][lmIndex.z];
     uint level = sync & BITS_LEVEL;
 
     vec3 randDir = normalize(normal + bn.items[gl_LocalInvocationID.x].xyz);
@@ -98,7 +183,7 @@ void main() {
         SharedColors[gl_LocalInvocationID.x] = vec3(0.0);
         SharedIsValids[gl_LocalInvocationID.x] = true;
     } else {
-        uint syncSample = imageAtomicOr(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, BIT_USED);
+        uint syncSample = atomicOr(lmSync.items[lmIndexSample.w][lmIndexSample.x][lmIndexSample.y][lmIndexSample.z], BIT_USED);
 
         uint levelSample = syncSample & BITS_LEVEL;
         bool isUnused = (syncSample & BIT_USED) == 0;
@@ -111,7 +196,7 @@ void main() {
                 if (bufIdx < SUBBUFFER_LENGTH) {
                     nextBuffer.items[COUNTER_INDEX][bufIdx] = HitItem(ray.origin, ray.objectHit, ray.materialHit);
                 } else {
-                    imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
+                    lmSync.items[lmIndexSample.w][lmIndexSample.x][lmIndexSample.y][lmIndexSample.z] = syncSample;
                 }
             }
 
@@ -119,7 +204,7 @@ void main() {
             SharedIsValids[gl_LocalInvocationID.x] = false;
         } else {
             if (isUnused) {
-                imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
+                lmSync.items[lmIndexSample.w][lmIndexSample.x][lmIndexSample.y][lmIndexSample.z] = syncSample;
             }
 
             // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful
@@ -166,10 +251,10 @@ void main() {
 
             // TODO: merge all ray bounces into one lightmap, then remove BIT_USED here for infinite bounces
             uint storeValue = ((level + 1) == RAYS_INDIRECT) ? ((level + 1) | BIT_USED) : (level + 1);
-            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(storeValue));
+            lmSync.items[lmIndex.w][lmIndex.x][lmIndex.y][lmIndex.z] = storeValue;
         } else {
             uint storeValue = level;
-            imageStore(lightmapSyncImages[lmIndex.w], lmIndex.xyz, uvec4(storeValue));
+            lmSync.items[lmIndex.w][lmIndex.x][lmIndex.y][lmIndex.z] = storeValue;
         }
     }
 }
