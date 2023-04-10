@@ -6,18 +6,18 @@ use vec_cycle::VecCycle;
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
-        allocator::{CommandBufferAllocator, StandardCommandBufferAllocator},
-        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-        PrimaryCommandBufferAbstract,
+        allocator::CommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
+        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
     },
     device::Queue,
-    memory::allocator::{FreeListAllocator, GenericMemoryAllocator, StandardMemoryAllocator},
+    memory::allocator::StandardMemoryAllocator,
     sync::GpuFuture,
 };
 
 use crate::{
+    allocators::Allocators,
     scene::{get_materials, get_objects},
-    shaders::{self, SAMPLES}, allocators::Allocators,
+    shaders::{self, SAMPLES},
 };
 
 #[derive(Clone)]
@@ -30,10 +30,7 @@ pub(crate) struct Buffers {
 }
 
 impl Buffers {
-    pub(crate) fn new(
-        allocators: Arc<Allocators>,
-        queue: Arc<Queue>,
-    ) -> Self {
+    pub(crate) fn new(allocators: Arc<Allocators>, queue: Arc<Queue>) -> Self {
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
             queue.queue_family_index(),
@@ -161,11 +158,7 @@ where
 pub(crate) struct LightmapBufferSet(VecCycle<Vec<LightmapBufferUnit>>);
 
 impl LightmapBufferSet {
-    pub(crate) fn new(
-        allocators: Arc<Allocators>,
-        queue_family_index: u32,
-        count: usize,
-    ) -> Self {
+    pub(crate) fn new(allocators: Arc<Allocators>, queue_family_index: u32, count: usize) -> Self {
         assert_ne!(count, 0, "count must be greater than zero");
 
         Self(VecCycle::new(
@@ -198,10 +191,7 @@ pub(crate) struct LightmapBufferUnit {
 }
 
 impl LightmapBufferUnit {
-    pub(crate) fn new(
-        memory_allocator: &StandardMemoryAllocator,
-        queue_family_index: u32,
-    ) -> Self {
+    pub(crate) fn new(memory_allocator: &StandardMemoryAllocator, queue_family_index: u32) -> Self {
         Self {
             buffer: DeviceLocalBuffer::new(
                 memory_allocator,
@@ -227,4 +217,3 @@ impl LightmapBufferUnit {
         }
     }
 }
-

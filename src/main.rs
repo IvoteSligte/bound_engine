@@ -1,29 +1,16 @@
 mod bvh;
 
-use std::{f32::consts::PI, sync::Arc, thread};
+use std::{f32::consts::PI, sync::Arc};
 
-use allocators::Allocators;
-use buffers::{get_blue_noise_buffer, get_bvh_buffer, get_mutable_buffer, Buffers};
-use descriptor_sets::get_compute_descriptor_sets;
-use device::{get_device, select_physical_device};
 use event_helper::get_callbacks;
 use glam::*;
-use images::{get_color_image, Images, LightmapImages};
-use instance::get_instance;
-use pipelines::Pipelines;
-use shaders::{Shaders, LIGHTMAP_COUNT};
+use images::get_color_image;
+
+use shaders::LIGHTMAP_COUNT;
 use state::State;
 use vulkano::{
-    buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
-    command_buffer::{
-        allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
-        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract,
-    },
-    descriptor_set::allocator::StandardDescriptorSetAllocator,
-    device::DeviceExtensions,
-    memory::allocator::{FreeListAllocator, GenericMemoryAllocator, StandardMemoryAllocator},
     swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
-    sync::{self, FenceSignalFuture, FlushError, GpuFuture},
+    sync::{self, FlushError, GpuFuture},
 };
 use winit::{
     dpi::{PhysicalSize, Size},

@@ -40,7 +40,7 @@ impl CpuMaterial {
 }
 
 fn custom_materials() -> Vec<CpuMaterial> {
-        let mut materials: Vec<CpuMaterial> = vec![
+    let mut materials: Vec<CpuMaterial> = vec![
         CpuMaterial {
             reflectance: Vec3::splat(0.99),
             emittance: Vec3::splat(0.0),
@@ -117,24 +117,28 @@ fn custom_objects() -> Vec<CpuObject> {
     let mut objects: Vec<CpuObject> = vec![
         CpuObject {
             position: Vec3::new(0.0, 0.0, -1e5),
-            radius: 1e5-10.0,
+            radius: 1e5 - 10.0,
             material: 0,
         },
         CpuObject {
             position: Vec3::new(0.0, 0.0, 20.0),
             radius: 10.0,
-            material: 1
+            material: 1,
         },
     ];
-    
+
     for q in 1..10 {
         for i in 0..9 {
             let angle = 2.0 * PI * (i as f32 / 9.0);
-    
+
             objects.push(CpuObject {
-                position: Vec3::new(angle.cos() * 40.0 * q as f32, angle.sin() * 40.0 * q as f32, 0.0),
+                position: Vec3::new(
+                    angle.cos() * 40.0 * q as f32,
+                    angle.sin() * 40.0 * q as f32,
+                    0.0,
+                ),
                 radius: 4.0,
-                material: 2+i,
+                material: 2 + i,
             });
         }
     }

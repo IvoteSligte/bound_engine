@@ -1,6 +1,14 @@
 use std::sync::Arc;
 
-use vulkano::{instance::Instance, swapchain::Surface, device::{DeviceExtensions, physical::{PhysicalDevice, PhysicalDeviceType}, Queue, Device, DeviceCreateInfo, QueueCreateInfo}, sync::PipelineStage};
+use vulkano::{
+    device::{
+        physical::{PhysicalDevice, PhysicalDeviceType},
+        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo,
+    },
+    instance::Instance,
+    swapchain::Surface,
+    sync::PipelineStage,
+};
 
 pub(crate) fn select_physical_device<'a>(
     instance: Arc<Instance>,

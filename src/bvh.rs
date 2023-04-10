@@ -22,10 +22,10 @@ impl From<CpuNode> for CpuBVH {
 pub(crate) struct CpuNode {
     pub position: Vec3,
     pub radius: f32,
-    pub child: Option<usize>,  // index of child node
-    pub next: Option<usize>,   // index of child node
-    pub material: Option<usize>,   // index of object
-    pub parent: Option<usize>, // index of parent
+    pub child: Option<usize>,    // index of child node
+    pub next: Option<usize>,     // index of child node
+    pub material: Option<usize>, // index of object
+    pub parent: Option<usize>,   // index of parent
 }
 
 #[derive(Clone, Copy)]
@@ -298,7 +298,7 @@ impl CpuBVH {
                     stack.push(x);
                     vertices.insert(x);
                 }
-                
+
                 if self.nodes[x].parent == node.parent {
                     edges.push((current, x, "sibling"));
                 } else {

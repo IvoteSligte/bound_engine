@@ -1,23 +1,25 @@
 use std::sync::Arc;
 
 use vulkano::{
-    device::{Device, Queue, DeviceExtensions},
-    swapchain::{Surface, Swapchain},
+    device::{Device, DeviceExtensions, Queue},
+    swapchain::Swapchain,
 };
 use winit::window::Window;
 
 use crate::{
     allocators::Allocators,
     buffers::Buffers,
-    command_buffers::CommandBufferCollection,
-    descriptor_sets::{DescriptorSetCollection, get_compute_descriptor_sets},
+    command_buffers::CommandBuffers,
+    device::{get_device, select_physical_device},
+    fences::Fences,
     images::Images,
+    instance::get_instance,
     pipelines::Pipelines,
-    shaders::{self, Shaders}, instance::get_instance, device::{select_physical_device, get_device}, swapchain::get_swapchain, fences::Fences,
+    shaders::{self, Shaders},
+    swapchain::get_swapchain,
 };
 
 pub(crate) struct State {
-    pub(crate) surface: Arc<Surface>,
     pub(crate) device: Arc<Device>,
     pub(crate) queue: Arc<Queue>,
     pub(crate) swapchain: Arc<Swapchain>,
@@ -26,8 +28,7 @@ pub(crate) struct State {
     pub(crate) buffers: Buffers,
     pub(crate) images: Images,
     pub(crate) allocators: Arc<Allocators>,
-    pub(crate) descriptor_sets: DescriptorSetCollection,
-    pub(crate) command_buffers: CommandBufferCollection,
+    pub(crate) command_buffers: CommandBuffers,
     pub(crate) real_time_data: shaders::ty::RealTimeBuffer,
     pub(crate) fences: Fences,
 }
@@ -53,7 +54,7 @@ impl State {
             queue_family_index,
         );
 
-        let (mut swapchain, swapchain_images) = get_swapchain(
+        let (swapchain, swapchain_images) = get_swapchain(
             device.clone(),
             surface.clone(),
             window.clone(),
@@ -62,43 +63,33 @@ impl State {
 
         let shaders = Shaders::load(device.clone());
 
-        let mut pipelines =
-            Pipelines::from_shaders(device.clone(), shaders.clone(), window.clone());
-
-        let mut real_time_data = shaders::ty::RealTimeBuffer::default();
-
+        let pipelines = Pipelines::from_shaders(device.clone(), shaders.clone(), window.clone());
+        
         let allocators = Allocators::new(device.clone());
-
+        
         let buffers = Buffers::new(allocators.clone(), queue.clone());
 
-        let mut images = Images::new(
+        let images = Images::new(
             allocators.clone(),
             window.clone(),
             queue.clone(),
             swapchain_images.clone(),
         );
 
-        let descriptor_sets = get_compute_descriptor_sets(
-            allocators.clone(),
-            pipelines.clone(),
-            buffers.clone(),
-            images.clone(),
-        );
-
-        let mut command_buffers = CommandBufferCollection::new(
+        let command_buffers = CommandBuffers::new(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
             window.clone(),
-            descriptor_sets.clone(),
             buffers.clone(),
             images.clone(),
         );
 
+        let real_time_data = shaders::ty::RealTimeBuffer::default();
+
         let fences = Fences::new(images.swapchain.len());
 
         Self {
-            surface,
             device,
             queue,
             swapchain,
@@ -107,9 +98,8 @@ impl State {
             buffers,
             images,
             allocators,
-            descriptor_sets, // TODO: move to command buffer init
             command_buffers,
-            real_time_data, // TODO: move to init
+            real_time_data,
             fences,
         }
     }

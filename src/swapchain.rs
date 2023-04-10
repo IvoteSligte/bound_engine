@@ -1,31 +1,22 @@
 use std::sync::Arc;
 
 use vulkano::{
-    command_buffer::allocator::StandardCommandBufferAllocator,
-    descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{physical::PhysicalDevice, Device},
     format::Format,
     image::{ImageUsage, SwapchainImage},
-    memory::allocator::{FreeListAllocator, GenericMemoryAllocator},
-    swapchain::{
-        PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
-        SwapchainCreationError,
-    },
-    sync::{FenceSignalFuture, GpuFuture, JoinFuture},
+    swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError},
 };
 use winit::window::Window;
 use winit_event_helper::EventHelper;
 
 use crate::{
-    command_buffers::{
-        get_pathtrace_command_buffers, get_swapchain_command_buffers, CommandBufferCollection,
-    },
+    command_buffers::{get_pathtrace_command_buffers, get_swapchain_command_buffers},
     descriptor_sets::*,
     event_helper::Data,
     get_color_image,
-    pipelines::{get_compute_pipeline, Pipelines},
-    shaders::{self, Shaders},
-    FOV, buffers::Buffers, images::{LightmapImages, Images}, allocators::Allocators, fences::Fences,
+    pipelines::get_compute_pipeline,
+    shaders::{self},
+    FOV,
 };
 
 pub(crate) fn get_swapchain(
@@ -66,21 +57,23 @@ pub(crate) fn get_swapchain(
     .unwrap()
 }
 
-pub(crate) fn recreate_swapchain( // TODO: refactor eh.state.
+pub(crate) fn recreate_swapchain(
+    // TODO: refactor eh.state.
     eh: &mut EventHelper<Data>,
 ) -> bool {
     eh.recreate_swapchain = false;
     let dimensions = eh.window.inner_size(); // TODO: function input
-    let (new_swapchain, new_swapchain_images) = match eh.state.swapchain.recreate(SwapchainCreateInfo {
-        image_extent: dimensions.into(),
-        ..eh.state.swapchain.create_info()
-    }) {
-        Ok(ok) => ok,
-        Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => {
-            return false;
-        }
-        Err(err) => panic!("{}", err),
-    };
+    let (new_swapchain, new_swapchain_images) =
+        match eh.state.swapchain.recreate(SwapchainCreateInfo {
+            image_extent: dimensions.into(),
+            ..eh.state.swapchain.create_info()
+        }) {
+            Ok(ok) => ok,
+            Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => {
+                return false;
+            }
+            Err(err) => panic!("{}", err),
+        };
     eh.state.swapchain = new_swapchain;
 
     if eh.window_resized {
@@ -99,7 +92,11 @@ pub(crate) fn recreate_swapchain( // TODO: refactor eh.state.
             },
         );
 
-        eh.state.images.color = get_color_image(eh.state.allocators.clone(), eh.window.clone(), eh.state.queue.clone());
+        eh.state.images.color = get_color_image(
+            eh.state.allocators.clone(),
+            eh.window.clone(),
+            eh.state.queue.clone(),
+        );
 
         // TODO: move to command buffer init
         let descriptor_sets = get_compute_descriptor_sets(

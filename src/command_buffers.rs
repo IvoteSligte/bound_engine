@@ -1,46 +1,51 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use glam::{IVec3, UVec3};
 use vec_cycle::VecCycle;
 use vulkano::{
-    buffer::DeviceLocalBuffer,
     command_buffer::{
-        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, BlitImageInfo,
-        ClearColorImageInfo, CommandBufferUsage, CopyImageInfo, FillBufferInfo, ImageCopy,
-        PrimaryAutoCommandBuffer,
+        AutoCommandBufferBuilder, BlitImageInfo, ClearColorImageInfo, CommandBufferUsage,
+        CopyImageInfo, FillBufferInfo, ImageCopy, PrimaryAutoCommandBuffer,
     },
     device::Queue,
-    image::{ImageAccess, ImageSubresourceLayers, StorageImage, SwapchainImage},
+    image::{ImageAccess, ImageSubresourceLayers},
     pipeline::{Pipeline, PipelineBindPoint},
     sampler::Filter,
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
+    allocators::Allocators,
     buffers::Buffers,
-    descriptor_sets::DescriptorSetCollection,
-    images::{Images, LightmapImages},
+    descriptor_sets::{DescriptorSetCollection, get_compute_descriptor_sets},
+    images::Images,
     pipelines::Pipelines,
     shaders::{self, ITEM_COUNT, LIGHTMAP_SIZE},
-    LIGHTMAP_COUNT, allocators::Allocators,
+    LIGHTMAP_COUNT,
 };
 
 #[derive(Clone)]
-pub(crate) struct CommandBufferCollection {
+pub(crate) struct CommandBuffers {
     pub(crate) pathtraces: VecCycle<Arc<PrimaryAutoCommandBuffer>>,
     pub(crate) swapchains: Vec<Arc<PrimaryAutoCommandBuffer>>,
 }
 
-impl CommandBufferCollection {
+impl CommandBuffers {
     pub(crate) fn new(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
         window: Arc<Window>,
-        descriptor_sets: DescriptorSetCollection,
         buffers: Buffers,
         images: Images,
-    ) -> CommandBufferCollection {
+    ) -> CommandBuffers {
+        let descriptor_sets = get_compute_descriptor_sets(
+            allocators.clone(),
+            pipelines.clone(),
+            buffers.clone(),
+            images.clone(),
+        );
+
         let pathtraces = get_pathtrace_command_buffers(
             allocators.clone(),
             queue.clone(),
@@ -53,7 +58,7 @@ impl CommandBufferCollection {
         let swapchains =
             get_swapchain_command_buffers(allocators.clone(), queue.clone(), images.clone());
 
-        CommandBufferCollection {
+        CommandBuffers {
             pathtraces,
             swapchains,
         }
@@ -78,7 +83,6 @@ pub(crate) fn get_pathtrace_command_buffers(
 
     let dispatch_buffer_rays = [ITEM_COUNT, 1, 1];
 
-    descriptor_sets.ray_units.restart();
     buffers.lightmap.restart();
 
     VecCycle::new(

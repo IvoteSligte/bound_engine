@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use fps_counter::FPSCounter;
 use glam::*;
-use winit::window::{CursorGrabMode, Window, Fullscreen};
+use winit::window::{CursorGrabMode, Fullscreen, Window};
 use winit_event_helper::{Callbacks, EventHelper, KeyCode};
 
 use crate::state::State;
@@ -104,11 +104,9 @@ pub(crate) fn get_callbacks() -> Callbacks<Data> {
     callbacks
         .window
         .inputs
-        .just_pressed(KeyCode::F11, |eh| {
-            match eh.window.fullscreen() {
-                Some(_) => eh.window.set_fullscreen(None),
-                None => eh.window.set_fullscreen(Some(Fullscreen::Borderless(None))),
-            }
+        .just_pressed(KeyCode::F11, |eh| match eh.window.fullscreen() {
+            Some(_) => eh.window.set_fullscreen(None),
+            None => eh.window.set_fullscreen(Some(Fullscreen::Borderless(None))),
         });
 
     // DEBUG

@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use vulkano::{instance::{Instance, InstanceCreateInfo}, VulkanLibrary, Version};
+use vulkano::{
+    instance::{Instance, InstanceCreateInfo},
+    Version, VulkanLibrary,
+};
 
 pub(crate) fn get_instance() -> Arc<Instance> {
     let library = VulkanLibrary::new().unwrap();

@@ -1,19 +1,23 @@
 use std::sync::Arc;
 
 use vulkano::{
+    device::Queue,
     format::Format,
     image::{
         view::ImageView, ImageCreateFlags, ImageDimensions, ImageUsage, ImageViewAbstract,
         StorageImage, SwapchainImage,
     },
-    memory::allocator::MemoryAllocator, device::Queue,
 };
 use winit::window::Window;
 
-use crate::{shaders::{LIGHTMAP_COUNT, LIGHTMAP_SIZE, RAYS_INDIRECT}, allocators::Allocators};
+use crate::{
+    allocators::Allocators,
+    shaders::{LIGHTMAP_COUNT, LIGHTMAP_SIZE, RAYS_INDIRECT},
+};
 
 #[derive(Clone)]
-pub(crate) struct Images { // TODO: swapchain images
+pub(crate) struct Images {
+    // TODO: swapchain images
     pub(crate) color: Arc<StorageImage>,
     pub(crate) lightmap: LightmapImages,
     pub(crate) swapchain: Vec<Arc<SwapchainImage>>,
@@ -86,11 +90,7 @@ pub(crate) struct LightmapImageViews {
 }
 
 impl LightmapImages {
-    pub(crate) fn new(
-        
-        allocators: Arc<Allocators>,
-        queue: Arc<Queue>,
-    ) -> Self {
+    pub(crate) fn new(allocators: Arc<Allocators>, queue: Arc<Queue>) -> Self {
         let dimensions = ImageDimensions::Dim3d {
             width: LIGHTMAP_SIZE,
             height: LIGHTMAP_SIZE,

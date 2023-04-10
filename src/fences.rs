@@ -1,8 +1,22 @@
-use std::{sync::Arc, ops::{Deref, DerefMut}};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
-use vulkano::{sync::{FenceSignalFuture, GpuFuture, JoinFuture}, swapchain::{SwapchainAcquireFuture, PresentFuture}, command_buffer::CommandBufferExecFuture};
+use vulkano::{
+    command_buffer::CommandBufferExecFuture,
+    swapchain::{PresentFuture, SwapchainAcquireFuture},
+    sync::{FenceSignalFuture, GpuFuture, JoinFuture},
+};
 
-type NestedFence = FenceSignalFuture<PresentFuture<JoinFuture<CommandBufferExecFuture<CommandBufferExecFuture<Box<dyn GpuFuture>>>, SwapchainAcquireFuture>>>;
+type NestedFence = FenceSignalFuture<
+    PresentFuture<
+        JoinFuture<
+            CommandBufferExecFuture<CommandBufferExecFuture<Box<dyn GpuFuture>>>,
+            SwapchainAcquireFuture,
+        >,
+    >,
+>;
 
 #[derive(Clone)]
 pub(crate) struct Fences {

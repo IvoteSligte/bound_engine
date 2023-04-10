@@ -1,7 +1,7 @@
 use crate::allocators::Allocators;
 use crate::buffers::Buffers;
 use crate::images::Images;
-use crate::images::LightmapImages;
+
 use crate::pipelines::Pipelines;
 
 use vec_cycle::VecCycle;
@@ -11,13 +11,7 @@ use vulkano::descriptor_set::WriteDescriptorSet;
 
 use vulkano::descriptor_set::PersistentDescriptorSet;
 
-use vulkano::image::view::ImageView;
-
-use vulkano::image::StorageImage;
-
 use std::sync::Arc;
-
-use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 
 #[derive(Clone)]
 pub(crate) struct DescriptorSetUnit {
@@ -44,7 +38,8 @@ pub(crate) fn get_compute_descriptor_sets(
         .map(|_| {
             let lm_buffer_units = buffers.lightmap.next().unwrap();
 
-            let flattened_colors = image_views.lightmap
+            let flattened_colors = image_views
+                .lightmap
                 .colors
                 .clone()
                 .into_iter()

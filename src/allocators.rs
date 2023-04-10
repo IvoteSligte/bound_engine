@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
 use vulkano::{
-    command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
+    command_buffer::allocator::{
+        StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
+    },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
-    memory::allocator::StandardMemoryAllocator, device::Device,
+    device::Device,
+    memory::allocator::StandardMemoryAllocator,
 };
 
 pub(crate) struct Allocators {
@@ -17,7 +20,10 @@ impl Allocators {
         // TODO: optimize each allocator's settings
         Arc::new(Self {
             memory: StandardMemoryAllocator::new_default(device.clone()),
-            command_buffer: StandardCommandBufferAllocator::new(device.clone(), StandardCommandBufferAllocatorCreateInfo::default()),
+            command_buffer: StandardCommandBufferAllocator::new(
+                device.clone(),
+                StandardCommandBufferAllocatorCreateInfo::default(),
+            ),
             descriptor_set: StandardDescriptorSetAllocator::new(device.clone()),
         })
     }
