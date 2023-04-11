@@ -27,7 +27,7 @@ layout(binding = 3, rgba16) uniform restrict image3D[RAYS_INDIRECT * LIGHTMAP_CO
 
 layout(binding = 4, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapSyncImages;
 
-layout(binding = 5) buffer restrict readonly CurrBuffer {
+layout(binding = 5) buffer restrict CurrBuffer {
     HitItem items[SUBBUFFER_COUNT][SUBBUFFER_LENGTH];
 } currBuffer;
 
@@ -63,8 +63,12 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     return ivec4(index, lightmapNum);
 }
 
-shared vec3 SharedColors[SAMPLES];
-shared bool SharedIsValids[SAMPLES];
+struct Sample {
+    vec3 color;
+    bool isValid;
+};
+
+shared Sample SharedSamples[SAMPLES];
 
 void main() {
     // FIXME: binding is invalid when the buffer is not read from
@@ -89,22 +93,26 @@ void main() {
     vec3 randDir = normalize(normal + bn.items[gl_LocalInvocationID.x].xyz);
     Ray ray = Ray(0, hitItem.position, randDir, 0);
 
-    traceRayWithBVH(ray);
+    traceRayWithBVH(ray); // bottleneck
 
     ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin);
 
+    vec3 color = vec3(0.0);
+    bool isValid = true;
+
     bool outOfRange = lmIndexSample.w >= LIGHTMAP_COUNT;
-    if (outOfRange) {
-        SharedColors[gl_LocalInvocationID.x] = vec3(0.0);
-        SharedIsValids[gl_LocalInvocationID.x] = true;
-    } else {
+    if (!outOfRange) {
         uint syncSample = imageAtomicOr(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, BIT_USED);
 
         uint levelSample = syncSample & BITS_LEVEL;
         bool isUnused = (syncSample & BIT_USED) == 0;
 
-        if (levelSample < level) {
-            if (isUnused) {
+        // TODO: if (levelSample < level && oneOrMoreSamplesGatheredAreInvalid) -> add to buffer
+        // TODO: else if (levelSample == level && allSamplesGatheredAreValid) -> add to buffer
+        if (isUnused) {
+            if (levelSample >= level) {
+                imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
+            } else {
                 const uint COUNTER_INDEX = gl_WorkGroupID.x / SUBBUFFER_LENGTH;
 
                 uint bufIdx = atomicAdd(nextCounters.counters[COUNTER_INDEX], 1);
@@ -114,48 +122,42 @@ void main() {
                     imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
                 }
             }
+        }
 
-            SharedColors[gl_LocalInvocationID.x] = vec3(0.0);
-            SharedIsValids[gl_LocalInvocationID.x] = false;
-        } else {
-            if (isUnused) {
-                imageStore(lightmapSyncImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(syncSample));
-            }
-
+        if (levelSample >= level) {
             // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful
             // otherwise, create an image and fill it with emission at points
             if (level == 0) {
                 Material material = buf.mats[ray.materialHit];
-                SharedColors[gl_LocalInvocationID.x] = material.emittance;
+                color = material.emittance;
             } else {
-                SharedColors[gl_LocalInvocationID.x] = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
+                color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
             }
-
-            SharedIsValids[gl_LocalInvocationID.x] = true;
         }
+
+        isValid = levelSample >= level;
     }
+
+    SharedSamples[gl_LocalInvocationID.x] = Sample(color, isValid);
 
     barrier();
 
     if (gl_LocalInvocationID.x < 64) {
-        vec3 color = vec3(0.0);
-        bool isValid = true;
-        for (uint i = 0; i < SAMPLES / 64; i++) {
-            color += SharedColors[i * 64 + gl_LocalInvocationID.x];
-            isValid = isValid && SharedIsValids[i * 64 + gl_LocalInvocationID.x];
+        for (uint i = 1; i < SAMPLES / 64; i++) {
+            Sample samp = SharedSamples[i * 64 + gl_LocalInvocationID.x];
+            color += samp.color;
+            isValid = isValid && samp.isValid;
         }
-        SharedColors[gl_LocalInvocationID.x] = color;
-        SharedIsValids[gl_LocalInvocationID.x] = isValid;
+        SharedSamples[gl_LocalInvocationID.x] = Sample(color, isValid);
     }
 
     barrier();
 
     if (gl_LocalInvocationID.x == 0) {
-        vec3 color = vec3(0.0);
-        bool isValid = true;
-        for (uint i = 0; i < 64; i++) {
-            color += SharedColors[i];
-            isValid = isValid && SharedIsValids[i];
+        for (uint i = 1; i < 64; i++) {
+            Sample samp = SharedSamples[i];
+            color += samp.color;
+            isValid = isValid && samp.isValid;
         }
 
         if (isValid) {
