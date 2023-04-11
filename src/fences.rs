@@ -3,20 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use vulkano::{
-    command_buffer::CommandBufferExecFuture,
-    swapchain::{PresentFuture, SwapchainAcquireFuture},
-    sync::{FenceSignalFuture, GpuFuture, JoinFuture},
-};
+use vulkano::sync::{FenceSignalFuture, GpuFuture};
 
-type NestedFence = FenceSignalFuture<
-    PresentFuture<
-        JoinFuture<
-            CommandBufferExecFuture<CommandBufferExecFuture<Box<dyn GpuFuture>>>,
-            SwapchainAcquireFuture,
-        >,
-    >,
->;
+type NestedFence = FenceSignalFuture<Box<dyn GpuFuture>>;
 
 #[derive(Clone)]
 pub(crate) struct Fences {

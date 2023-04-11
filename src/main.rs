@@ -114,7 +114,7 @@ fn main() {
             eh.delta_position.z += delta_mov;
         }
 
-        let new_position = Vec3::from_array(eh.state.real_time_data.position) + eh.position();
+        let new_position = Vec3::from_array(eh.state.real_time_data.position) + eh.delta_position();
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
         eh.state.real_time_data.previousRotation = eh.state.real_time_data.rotation;
@@ -146,9 +146,7 @@ fn main() {
                 eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
             }
 
-            // TODO: different thread
             move_lightmap = Some(create_dynamic_move_lightmaps_command_buffer(
-                // TODO: refactor
                 eh.state.allocators.clone(),
                 eh.state.queue.clone(),
                 eh.state.images.clone(),
@@ -156,9 +154,7 @@ fn main() {
             ));
         }
 
-        // TODO: separate thread
         let real_time_command_buffer = create_real_time_command_buffer(
-            // TODO: refactor
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
             eh.state.real_time_data.clone(),
@@ -230,6 +226,7 @@ fn main() {
                     image_index,
                 ),
             )
+            .boxed()
             .then_signal_fence_and_flush();
 
         eh.state.fences[image_index as usize] = match future {

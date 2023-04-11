@@ -29,7 +29,7 @@ pub(crate) struct State {
     pub(crate) images: Images,
     pub(crate) allocators: Arc<Allocators>,
     pub(crate) command_buffers: CommandBuffers,
-    pub(crate) real_time_data: shaders::ty::RealTimeBuffer,
+    pub(crate) real_time_data: shaders::ty::RealTimeBuffer, // TODO: struct abstraction
     pub(crate) fences: Fences,
 }
 

@@ -55,7 +55,7 @@ impl Data {
         Quat::from_rotation_z(-self.rotation.x) * Quat::from_rotation_x(self.rotation.y)
     }
 
-    pub(crate) fn position(&self) -> Vec3 {
+    pub(crate) fn delta_position(&self) -> Vec3 {
         let rotation = self.rotation();
 
         let right = rotation.mul_vec3(rotation::RIGHT);
