@@ -157,7 +157,7 @@ void main() {
             // FIXME: (general) level does not reach RAYS_INDIRECT
             imageStore(lightmapLevelImages[LIGHTMAP_LAYER], lmIndex.xyz, uvec4(level + 1));
 
-            if (level + 1 == RAYS_INDIRECT) {
+            if (level + 1 >= RAYS_INDIRECT) {
                 // clear `target` bit
                 imageAtomicAnd(lightmapUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK, ALL_ONES ^ target);
             }

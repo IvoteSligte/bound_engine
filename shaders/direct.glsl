@@ -78,21 +78,17 @@ void main() {
 
     uint level = imageLoad(lightmapLevelImages[lmIndex.w], lmIndex.xyz).x;
 
+    vec3 color = vec3(0.0);
     if (level == 0) {
         // TODO: separate function
         ivec3 chunk = ivec3(lmIndex.x / 32, lmIndex.yz);
         imageAtomicOr(lightmapUsedImages[lmIndex.w], chunk.xyz, 1 << (lmIndex.x % 32));
 
         imageStore(lightmapObjectHitImages[lmIndex.w], lmIndex.xyz, uvec4(ray.objectHit));
+    } else {
+        // TODO: bilinear color sampling
+        color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
     }
 
-    // TODO: bilinear color sampling
-    vec3 color;
-    if (gl_GlobalInvocationID.x < 1920 / 2) { // DEBUG
-        color = level > 0 ? imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb : vec3(0.0); // NONDEBUG
-    } else {
-        // DEBUG
-        color = vec3(level) / RAYS_INDIRECT;
-    }
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }
