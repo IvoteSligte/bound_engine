@@ -38,14 +38,14 @@ layout(binding = 6, r32ui) uniform restrict readonly uimage3D[LIGHTMAP_COUNT] li
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
-    const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * LM_UNIT_SIZE);
+    const int HALF_LM_SIZE = LIGHTMAP_SIZE / 2;
+    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.5);
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
     float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
 
-    ivec3 index = ivec3(round(v / unitSize)) + HALF_IMAGE_SIZE;
+    ivec3 index = ivec3(v / unitSize) + HALF_LM_SIZE;
 
     return ivec4(index, lightmapNum);
 }
@@ -87,7 +87,10 @@ void main() {
         imageStore(lightmapObjectHitImages[lmIndex.w], lmIndex.xyz, uvec4(ray.objectHit));
     } else {
         // TODO: bilinear color sampling (texture)
-        color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
+        //color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
+
+        // DEBUG
+        color = vec3(level) / RAYS_INDIRECT + (imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb * 0.0);
     }
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));

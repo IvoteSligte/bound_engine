@@ -43,23 +43,23 @@ layout(binding = 7) uniform restrict readonly BlueNoise {
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
-    const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_IMAGE_SIZE) * LM_UNIT_SIZE);
+    const int HALF_LM_SIZE = LIGHTMAP_SIZE / 2;
+    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.5);
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
     float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
 
-    ivec3 index = ivec3(round(v / unitSize)) + HALF_IMAGE_SIZE;
+    ivec3 index = ivec3(v / unitSize) + HALF_LM_SIZE;
 
     return ivec4(index, lightmapNum);
 }
 
 vec3 posAtLightmapIndex(ivec4 lmIndex) {
-    const int HALF_IMAGE_SIZE = imageSize(lightmapImages[0]).x >> 1;
+    const int HALF_LM_SIZE = LIGHTMAP_SIZE / 2;
 
     float unitSize = (1 << lmIndex.w) * LM_UNIT_SIZE;
-    vec3 v = (lmIndex.xyz - HALF_IMAGE_SIZE) * unitSize + rt.lightmapOrigin.xyz;
+    vec3 v = (lmIndex.xyz - HALF_LM_SIZE) * unitSize + rt.lightmapOrigin.xyz;
 
     return v;
 }
