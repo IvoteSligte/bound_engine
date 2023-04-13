@@ -78,15 +78,20 @@ pub(crate) fn create_color_image(
 #[derive(Clone)]
 pub(crate) struct LightmapImages {
     pub(crate) colors: Vec<Vec<Arc<StorageImage>>>,
-    pub(crate) syncs: Vec<Arc<StorageImage>>,
+    pub(crate) useds: Vec<Arc<StorageImage>>,
+    pub(crate) object_hits: Vec<Arc<StorageImage>>,
+    pub(crate) levels: Vec<Arc<StorageImage>>,
     pub(crate) staging_color: Arc<StorageImage>,
-    pub(crate) staging_sync: Arc<StorageImage>,
+    pub(crate) staging_useds: Arc<StorageImage>,
+    pub(crate) staging_integers: Arc<StorageImage>, // TODO: moving lightmap support for `objectHits` and `levels`
 }
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
     pub(crate) colors: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
-    pub(crate) syncs: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) useds: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) object_hits: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) levels: Vec<Arc<dyn ImageViewAbstract>>,
 }
 
 impl LightmapImages {
@@ -129,7 +134,43 @@ impl LightmapImages {
             })
             .collect::<Vec<_>>();
 
-        let syncs = (0..LIGHTMAP_COUNT)
+        let useds = (0..LIGHTMAP_COUNT)
+            .map(|_| {
+                StorageImage::with_usage(
+                    &allocators.memory,
+                    ImageDimensions::Dim3d {
+                        width: LIGHTMAP_SIZE / 32,
+                        height: LIGHTMAP_SIZE,
+                        depth: LIGHTMAP_SIZE,
+                    },
+                    Format::R32_UINT,
+                    ImageUsage {
+                        storage: true,
+                        transfer_src: true,
+                        transfer_dst: true,
+                        ..ImageUsage::empty()
+                    },
+                    ImageCreateFlags::empty(),
+                    [queue.queue_family_index()],
+                )
+                .unwrap()
+            })
+            .collect();
+
+        let object_hits = (0..LIGHTMAP_COUNT)
+            .map(|_| {
+                create_storage_image(
+                    ImageUsage {
+                        transfer_src: true,
+                        transfer_dst: true,
+                        ..ImageUsage::default()
+                    },
+                    Format::R32_UINT,
+                )
+            })
+            .collect();
+
+        let levels = (0..LIGHTMAP_COUNT)
             .map(|_| {
                 create_storage_image(
                     ImageUsage {
@@ -151,7 +192,25 @@ impl LightmapImages {
             Format::R16G16B16A16_UNORM,
         );
 
-        let staging_sync = create_storage_image(
+        let staging_useds = StorageImage::with_usage(
+            &allocators.memory,
+            ImageDimensions::Dim3d {
+                width: LIGHTMAP_SIZE / 32,
+                height: LIGHTMAP_SIZE,
+                depth: LIGHTMAP_SIZE,
+            },
+            Format::R32_UINT,
+            ImageUsage {
+                transfer_src: true,
+                transfer_dst: true,
+                ..ImageUsage::empty()
+            },
+            ImageCreateFlags::empty(),
+            [queue.queue_family_index()],
+        )
+        .unwrap();
+
+        let staging_integers = create_storage_image(
             ImageUsage {
                 transfer_src: true,
                 transfer_dst: true,
@@ -162,33 +221,29 @@ impl LightmapImages {
 
         Self {
             colors,
-            syncs,
+            useds,
+            object_hits,
+            levels,
             staging_color,
-            staging_sync,
+            staging_useds,
+            staging_integers,
         }
     }
 
     pub(crate) fn image_views(&self) -> LightmapImageViews {
+        let view = |vlm: &Arc<StorageImage>| {
+            ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
+        };
+
         LightmapImageViews {
             colors: self
                 .colors
                 .iter()
-                .map(|vec| {
-                    vec.iter()
-                        .map(|vlm| {
-                            ImageView::new_default(vlm.clone()).unwrap()
-                                as Arc<dyn ImageViewAbstract>
-                        })
-                        .collect()
-                })
+                .map(|vec| vec.iter().map(view).collect())
                 .collect(),
-            syncs: self
-                .syncs
-                .iter()
-                .map(|vlm| {
-                    ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
-                })
-                .collect(),
+            useds: self.useds.iter().map(view).collect(),
+            object_hits: self.object_hits.iter().map(view).collect(),
+            levels: self.levels.iter().map(view).collect(),
         }
     }
 }

@@ -5,7 +5,7 @@ use vec_cycle::VecCycle;
 use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, BlitImageInfo, ClearColorImageInfo, CommandBufferUsage,
-        CopyImageInfo, FillBufferInfo, ImageCopy, PrimaryAutoCommandBuffer,
+        CopyImageInfo, ImageCopy, PrimaryAutoCommandBuffer,
     },
     device::Queue,
     image::{ImageAccess, ImageSubresourceLayers},
@@ -17,10 +17,10 @@ use winit::{dpi::PhysicalSize, window::Window};
 use crate::{
     allocators::Allocators,
     buffers::Buffers,
-    descriptor_sets::{DescriptorSetCollection, create_compute_descriptor_sets},
+    descriptor_sets::{create_compute_descriptor_sets, DescriptorSets},
     images::Images,
     pipelines::Pipelines,
-    shaders::{self, ITEM_COUNT, LIGHTMAP_SIZE},
+    shaders::{self, LIGHTMAP_SIZE},
     LIGHTMAP_COUNT,
 };
 
@@ -52,7 +52,6 @@ impl CommandBuffers {
             pipelines.clone(),
             window.clone(),
             descriptor_sets.clone(),
-            buffers.clone(),
         );
 
         let swapchains =
@@ -70,8 +69,7 @@ pub(crate) fn create_pathtrace_command_buffers(
     queue: Arc<Queue>,
     pipelines: Pipelines,
     window: Arc<Window>,
-    mut descriptor_sets: DescriptorSetCollection,
-    mut buffers: Buffers,
+    descriptor_sets: DescriptorSets,
 ) -> VecCycle<Arc<PrimaryAutoCommandBuffer>> {
     let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
@@ -81,43 +79,40 @@ pub(crate) fn create_pathtrace_command_buffers(
         1,
     ];
 
-    let dispatch_buffer_rays = [ITEM_COUNT, 1, 1];
-
-    buffers.lightmap.restart();
+    let dispatch_accumulation = [
+        LIGHTMAP_COUNT * LIGHTMAP_SIZE / 32,
+        LIGHTMAP_SIZE,
+        LIGHTMAP_SIZE,
+    ];
 
     VecCycle::new(
-        (0..2)
-            .map(|_| {
-                let lm_unit = buffers.lightmap.next().unwrap();
-                let desc_unit = descriptor_sets.ray_units.next().unwrap();
-
+        (0..32)
+            .map(|i| {
                 let mut builder = AutoCommandBufferBuilder::primary(
                     &allocators.command_buffer,
                     queue.queue_family_index(),
-                    CommandBufferUsage::SimultaneousUse, // TODO: multiplesubmit
+                    CommandBufferUsage::MultipleSubmit,
                 )
                 .unwrap();
 
                 builder
-                    .fill_buffer(FillBufferInfo::dst_buffer(lm_unit[1].counters.clone())) // clear buffer
-                    .unwrap()
                     .bind_pipeline_compute(pipelines.direct.clone())
                     .bind_descriptor_sets(
                         PipelineBindPoint::Compute,
                         pipelines.direct.layout().clone(),
                         0,
-                        desc_unit.direct.clone(),
+                        descriptor_sets.direct.clone(),
                     )
                     .dispatch(dispatch_direct)
                     .unwrap()
-                    .bind_pipeline_compute(pipelines.buffer_rays.clone())
+                    .bind_pipeline_compute(pipelines.accumulation[i].clone())
                     .bind_descriptor_sets(
                         PipelineBindPoint::Compute,
-                        pipelines.buffer_rays.layout().clone(),
+                        pipelines.accumulation[0].layout().clone(),
                         0,
-                        desc_unit.buffer_rays.clone(),
+                        descriptor_sets.accumulation.clone(),
                     )
-                    .dispatch(dispatch_buffer_rays)
+                    .dispatch(dispatch_accumulation)
                     .unwrap();
 
                 Arc::new(builder.build().unwrap())
@@ -215,7 +210,7 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
         .clone()
         .into_iter()
         .for_each(|lightmaps| {
-            for i in 0..LIGHTMAP_COUNT {
+            for i in 0..(LIGHTMAP_COUNT as usize) {
                 builder
                     .copy_image(CopyImageInfo {
                         regions: [ImageCopy {
@@ -247,40 +242,77 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
             }
         });
 
-    // TODO: clear regions that are not copied to
-    for i in 0..LIGHTMAP_COUNT {
+    // TODO: remove duplication
+    for i in 0..(LIGHTMAP_COUNT as usize) {
         builder
             .clear_color_image(ClearColorImageInfo::image(
-                images.lightmap.staging_sync.clone(),
+                images.lightmap.staging_useds.clone(),
             ))
             .unwrap()
             .copy_image(CopyImageInfo {
                 regions: [ImageCopy {
                     src_subresource: ImageSubresourceLayers::from_parameters(
-                        images.lightmap.staging_sync.format(),
+                        images.lightmap.staging_useds.format(),
                         1,
                     ),
                     dst_subresource: ImageSubresourceLayers::from_parameters(
-                        images.lightmap.syncs[i].format(),
+                        images.lightmap.useds[i].format(),
                         1,
                     ),
-                    src_offset: src_offset_per_layer[i].to_array(),
-                    dst_offset: dst_offset_per_layer[i].to_array(),
-                    extent: extent_per_layer[i].to_array(),
+                    src_offset: src_offset_per_layer[i].to_array(), // FIXME: incorrect
+                    dst_offset: dst_offset_per_layer[i].to_array(), // FIXME: incorrect
+                    extent: extent_per_layer[i].to_array(), // FIXME: extent is incorrect here
                     ..ImageCopy::default()
                 }]
                 .into(),
                 ..CopyImageInfo::images(
-                    images.lightmap.syncs[i].clone(),
-                    images.lightmap.staging_sync.clone(),
+                    images.lightmap.useds[i].clone(),
+                    images.lightmap.staging_useds.clone(),
                 )
             })
             .unwrap()
             .copy_image(CopyImageInfo::images(
-                images.lightmap.staging_sync.clone(),
-                images.lightmap.syncs[i].clone(),
+                images.lightmap.staging_useds.clone(),
+                images.lightmap.useds[i].clone(),
             ))
             .unwrap();
+    }
+
+    for lightmap_images in [images.lightmap.object_hits, images.lightmap.levels] {
+        for i in 0..(LIGHTMAP_COUNT as usize) {
+            builder
+                .clear_color_image(ClearColorImageInfo::image(
+                    images.lightmap.staging_integers.clone(),
+                ))
+                .unwrap()
+                .copy_image(CopyImageInfo {
+                    regions: [ImageCopy {
+                        src_subresource: ImageSubresourceLayers::from_parameters(
+                            images.lightmap.staging_integers.format(),
+                            1,
+                        ),
+                        dst_subresource: ImageSubresourceLayers::from_parameters(
+                            lightmap_images[i].format(),
+                            1,
+                        ),
+                        src_offset: src_offset_per_layer[i].to_array(),
+                        dst_offset: dst_offset_per_layer[i].to_array(),
+                        extent: extent_per_layer[i].to_array(),
+                        ..ImageCopy::default()
+                    }]
+                    .into(),
+                    ..CopyImageInfo::images(
+                        lightmap_images[i].clone(),
+                        images.lightmap.staging_integers.clone(),
+                    )
+                })
+                .unwrap()
+                .copy_image(CopyImageInfo::images(
+                    images.lightmap.staging_integers.clone(),
+                    lightmap_images[i].clone(),
+                ))
+                .unwrap();
+        }
     }
 
     Arc::new(builder.build().unwrap())

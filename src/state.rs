@@ -64,9 +64,9 @@ impl State {
         let shaders = Shaders::load(device.clone());
 
         let pipelines = Pipelines::from_shaders(device.clone(), shaders.clone(), window.clone());
-        
+
         let allocators = Allocators::new(device.clone());
-        
+
         let buffers = Buffers::new(allocators.clone(), queue.clone());
 
         let images = Images::new(

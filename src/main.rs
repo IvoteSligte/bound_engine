@@ -140,7 +140,7 @@ fn main() {
             let delta_pos = largest_delta_pos * LARGEST_UNIT;
             eh.state.real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array();
 
-            for i in 0..LIGHTMAP_COUNT {
+            for i in 0..(LIGHTMAP_COUNT as usize) {
                 let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
                 let delta_units = (delta_pos / unit_size).as_ivec3();
                 eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();

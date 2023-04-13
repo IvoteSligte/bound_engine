@@ -400,7 +400,7 @@ impl From<CpuBVH> for crate::shaders::ty::GpuBVH {
                 child: n.child.map(|x| x as u32 + 1).unwrap_or(0),
                 next: n.next.map(|x| x as u32 + 1).unwrap_or(0),
                 material: n.material.map(|x| x as u32 + 1).unwrap_or(0),
-                _dummy0: [0u8; 4],
+                radius: n.radius,
             })
             .collect::<Vec<_>>();
 

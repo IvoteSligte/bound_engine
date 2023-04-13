@@ -11,9 +11,9 @@ use winit_event_helper::EventHelper;
 
 use crate::{
     command_buffers::{create_pathtrace_command_buffers, create_swapchain_command_buffers},
+    create_color_image,
     descriptor_sets::*,
     event_helper::Data,
-    create_color_image,
     pipelines::create_compute_pipeline,
     shaders::{self},
     FOV,
@@ -120,7 +120,6 @@ pub(crate) fn recreate_swapchain(
             eh.state.pipelines.clone(),
             eh.window.clone(),
             descriptor_sets.clone(),
-            eh.state.buffers.clone(),
         );
     }
 

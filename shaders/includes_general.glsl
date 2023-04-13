@@ -1,12 +1,7 @@
 const uint MAX_OBJECTS = 256;
 const uint MAX_MATERIALS = 256;
 
-const uint SUBBUFFER_COUNT = 256;
-const uint SUBBUFFER_LENGTH = ITEM_COUNT / SUBBUFFER_COUNT; // even division
-
 const uint ALL_ONES = 4294967295;
-const uint BIT_USED = 1 << 30; // bit 31
-const uint BITS_LEVEL = 63; // bits [0, 6]
 
 const float LM_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
 
@@ -26,6 +21,7 @@ struct Bounds {
     uint child;
     uint next;
     uint material;
+    float radius; // TODO: implement
 };
 
 struct Ray {
