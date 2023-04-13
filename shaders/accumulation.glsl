@@ -102,7 +102,7 @@ void main() {
 
     traceRayWithBVH(ray); // bottleneck
 
-    vec3 color = vec3(0.0);
+    Sample samp = Sample(vec3(0.0), true);
 
     ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin);
     uint levelSample = imageLoad(lightmapLevelImages[lmIndexSample.w], lmIndexSample.xyz).x;
@@ -114,7 +114,7 @@ void main() {
         if (sampleLevelIsEnough) {
             // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful.
             // otherwise, create an image and fill it with emission at points
-            color = level == 0 ? buf.mats[ray.materialHit].emittance : imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
+            samp.color = level == 0 ? buf.mats[ray.materialHit].emittance : imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
         } else if (levelSample == 0) {
             // TODO: separate function
             ivec3 chunkSample = ivec3(lmIndexSample.x / 32, lmIndexSample.yz);
@@ -124,40 +124,40 @@ void main() {
         }
     }
 
-    bool isValid = !inRange || sampleLevelIsEnough;
-    SharedSamples[gl_LocalInvocationID.x] = Sample(color, isValid);
+    samp.isValid = !inRange || sampleLevelIsEnough;
+    SharedSamples[gl_LocalInvocationID.x] = samp;
 
     barrier();
 
     if (gl_LocalInvocationID.x < 64) {
         for (uint i = 1; i < SAMPLES / 64; i++) {
-            Sample samp = SharedSamples[i * 64 + gl_LocalInvocationID.x];
-            color += samp.color;
-            isValid = isValid && samp.isValid;
+            Sample samp2 = SharedSamples[i * 64 + gl_LocalInvocationID.x];
+            samp.color += samp2.color;
+            samp.isValid = samp.isValid && samp2.isValid;
         }
-        SharedSamples[gl_LocalInvocationID.x] = Sample(color, isValid);
+        SharedSamples[gl_LocalInvocationID.x] = samp;
     }
 
     barrier();
 
     if (gl_LocalInvocationID.x == 0) {
         for (uint i = 1; i < 64; i++) {
-            Sample samp = SharedSamples[i];
-            color += samp.color;
-            isValid = isValid && samp.isValid;
+            Sample samp2 = SharedSamples[i];
+            samp.color += samp2.color;
+            samp.isValid = samp.isValid && samp2.isValid;
         }
 
-        if (isValid) {
+        if (samp.isValid) {
             Material material = buf.mats[nodeHit.material];
-            color = color * (material.reflectance * (1.0 / SAMPLES)) + material.emittance;
+            samp.color = samp.color * (material.reflectance * (1.0 / SAMPLES)) + material.emittance;
 
-            imageStore(lightmapImages[LIGHTMAP_COUNT * level + LIGHTMAP_LAYER], lmIndex.xyz, vec4(color, 0.0));
+            imageStore(lightmapImages[LIGHTMAP_COUNT * level + LIGHTMAP_LAYER], lmIndex.xyz, vec4(samp.color, 0.0));
 
             // FIXME: (general) level keeps going up past RAYS_INDIRECT
             // FIXME: (general) level does not reach RAYS_INDIRECT
             imageStore(lightmapLevelImages[LIGHTMAP_LAYER], lmIndex.xyz, uvec4(level + 1));
 
-            if (level + 1 >= RAYS_INDIRECT) {
+            if (level + 1 == RAYS_INDIRECT) {
                 // clear `target` bit
                 imageAtomicAnd(lightmapUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK, ALL_ONES ^ target);
             }

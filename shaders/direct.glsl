@@ -86,7 +86,7 @@ void main() {
 
         imageStore(lightmapObjectHitImages[lmIndex.w], lmIndex.xyz, uvec4(ray.objectHit));
     } else {
-        // TODO: bilinear color sampling
+        // TODO: bilinear color sampling (texture)
         color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
     }
 
