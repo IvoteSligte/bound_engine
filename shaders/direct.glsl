@@ -42,10 +42,9 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
-    float unitSize = (1 << lightmapNum) * LM_UNIT_SIZE;
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
 
-    ivec3 index = ivec3(v / unitSize) + HALF_LM_SIZE;
+    ivec3 index = ivec3(floor(v / LM_UNIT_SIZES[lightmapNum])) + HALF_LM_SIZE;
 
     return ivec4(index, lightmapNum);
 }
@@ -82,15 +81,18 @@ void main() {
     if (level == 0) {
         // TODO: separate function
         ivec3 chunk = ivec3(lmIndex.x / 32, lmIndex.yz);
-        imageAtomicOr(lightmapUsedImages[lmIndex.w], chunk.xyz, 1 << (lmIndex.x % 32));
+        uint used = imageAtomicOr(lightmapUsedImages[lmIndex.w], chunk.xyz, 1 << (lmIndex.x % 32));
 
-        imageStore(lightmapObjectHitImages[lmIndex.w], lmIndex.xyz, uvec4(ray.objectHit));
+        if ((used & (1 << (lmIndex.x % 32))) == 0) {
+            imageStore(lightmapObjectHitImages[lmIndex.w], lmIndex.xyz, uvec4(ray.objectHit));
+        }
     } else {
         // TODO: bilinear color sampling (texture)
         color = imageLoad(lightmapImages[LM_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
 
-        // DEBUG
-        color = vec3(level) / LM_RAYS;
+        // DEBUG: some rows of `Used` bits change to zero for no reason
+        // INFO 2: some far-away tiles' `objectHit` values change to zero
+        // INFO 3: far-away tiles `level` values increase past LM_RAYS
     }
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));

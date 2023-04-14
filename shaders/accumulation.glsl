@@ -47,9 +47,9 @@ ivec4 lightmapIndexAtPos(vec3 v) {
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.5001)) + 1.0);
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
 
-    ivec3 index = ivec3(v / LM_UNIT_SIZES[lightmapNum]) + HALF_LM_SIZE;
+    ivec3 index = ivec3(floor(v / LM_UNIT_SIZES[lightmapNum])) + HALF_LM_SIZE;
 
     return ivec4(index, lightmapNum);
 }
@@ -112,13 +112,19 @@ void main() {
         if (sampleLevelIsEnough) {
             // TODO: improve level 0 stuff, its behaviour is different so moving it to a different shader might be useful.
             // otherwise, create an image and fill it with emission at points
-            samp.color = level == 0 ? buf.mats[ray.materialHit].emittance : imageLoad(lightmapImages[LM_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
+            if (level == 0) {
+                samp.color = buf.mats[ray.materialHit].emittance;
+            } else {
+                samp.color = imageLoad(lightmapImages[LM_COUNT * (level - 1) + lmIndexSample.w], lmIndexSample.xyz).rgb;
+            }
         } else if (levelSample == 0) {
             // TODO: separate function
             ivec3 chunkSample = ivec3(lmIndexSample.x / 32, lmIndexSample.yz);
-            imageAtomicOr(lightmapUsedImages[lmIndexSample.w], chunkSample.xyz, 1 << (lmIndexSample.x % 32));
+            uint usedSample = imageAtomicOr(lightmapUsedImages[lmIndexSample.w], chunkSample.xyz, 1 << (lmIndexSample.x % 32));
 
-            imageStore(lightmapObjectHitImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(ray.objectHit));
+            if ((usedSample & (1 << (lmIndexSample.x % 32))) == 0) {
+                imageStore(lightmapObjectHitImages[lmIndexSample.w], lmIndexSample.xyz, uvec4(ray.objectHit));
+            }
         }
     }
 
@@ -159,7 +165,6 @@ void main() {
                 // clear `target` bit
                 imageAtomicAnd(lightmapUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK, ALL_ONES ^ target);
             }
-
         }
     }
 }
