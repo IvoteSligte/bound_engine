@@ -12,17 +12,17 @@ vulkano_shaders::shader! {
     types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
     include: ["includes_trace_ray.glsl", "includes_general.glsl"],
     define: [
-        ("RAYS_INDIRECT", "4"),
-        ("LIGHTMAP_COUNT", "6"),
-        ("LIGHTMAP_SIZE", "128"),
-        ("SAMPLES", "1024")
+        ("LM_RAYS", "4"),
+        ("LM_SAMPLES", "1024"),
+        ("LM_COUNT", "6"),
+        ("LM_SIZE", "128")
     ] // TODO: sync defines with consts
 }
 
-pub(crate) const RAYS_INDIRECT: usize = 4;
-pub(crate) const LIGHTMAP_COUNT: u32 = 6; // TODO: rename to LIGHTMAP_LAYERS
-pub(crate) const LIGHTMAP_SIZE: u32 = 128;
-pub(crate) const SAMPLES: u32 = 1024;
+pub(crate) const LM_RAYS: usize = 4;
+pub(crate) const LM_SAMPLES: u32 = 1024;
+pub(crate) const LM_COUNT: u32 = 6; // TODO: rename to LIGHTMAP_LAYERS
+pub(crate) const LM_SIZE: u32 = 128;
 
 use vulkano::device::Device;
 

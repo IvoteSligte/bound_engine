@@ -20,8 +20,8 @@ use crate::{
     descriptor_sets::{create_compute_descriptor_sets, DescriptorSets},
     images::Images,
     pipelines::Pipelines,
-    shaders::{self, LIGHTMAP_SIZE},
-    LIGHTMAP_COUNT,
+    shaders::{self, LM_SIZE},
+    LM_COUNT,
 };
 
 #[derive(Clone)]
@@ -80,9 +80,9 @@ pub(crate) fn create_pathtrace_command_buffers(
     ];
 
     let dispatch_accumulation = [
-        LIGHTMAP_COUNT * LIGHTMAP_SIZE / 32,
-        LIGHTMAP_SIZE,
-        LIGHTMAP_SIZE,
+        LM_COUNT * LM_SIZE / 32,
+        LM_SIZE,
+        LM_SIZE,
     ];
 
     VecCycle::new(
@@ -164,11 +164,11 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
     .unwrap();
 
     // TODO: check validity
-    const LIGHTMAP_SIZE_I: i32 = LIGHTMAP_SIZE as i32;
+    const LIGHTMAP_SIZE_I: i32 = LM_SIZE as i32;
 
     const SMALLEST_UNIT: f32 = 0.5;
     // TODO: check if units_moved is less than LIGHTMAP_SIZE cause otherwise this is useless
-    let units_moved_per_layer = (0..LIGHTMAP_COUNT)
+    let units_moved_per_layer = (0..LM_COUNT)
         .map(|i| SMALLEST_UNIT * 2.0f32.powi(i as i32))
         .map(|unit_size| movement.as_vec3() / unit_size)
         .map(|units_moved| units_moved.as_ivec3())
@@ -210,7 +210,7 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
         .clone()
         .into_iter()
         .for_each(|lightmaps| {
-            for i in 0..(LIGHTMAP_COUNT as usize) {
+            for i in 0..(LM_COUNT as usize) {
                 builder
                     .copy_image(CopyImageInfo {
                         regions: [ImageCopy {
@@ -243,7 +243,7 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
         });
 
     // TODO: remove duplication
-    for i in 0..(LIGHTMAP_COUNT as usize) {
+    for i in 0..(LM_COUNT as usize) {
         builder
             .clear_color_image(ClearColorImageInfo::image(
                 images.lightmap.staging_useds.clone(),
@@ -279,7 +279,7 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
     }
 
     for lightmap_images in [images.lightmap.object_hits, images.lightmap.levels] {
-        for i in 0..(LIGHTMAP_COUNT as usize) {
+        for i in 0..(LM_COUNT as usize) {
             builder
                 .clear_color_image(ClearColorImageInfo::image(
                     images.lightmap.staging_integers.clone(),

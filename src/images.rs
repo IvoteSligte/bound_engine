@@ -12,7 +12,7 @@ use winit::window::Window;
 
 use crate::{
     allocators::Allocators,
-    shaders::{LIGHTMAP_COUNT, LIGHTMAP_SIZE, RAYS_INDIRECT},
+    shaders::{LM_COUNT, LM_SIZE, LM_RAYS},
 };
 
 #[derive(Clone)]
@@ -97,9 +97,9 @@ pub(crate) struct LightmapImageViews {
 impl LightmapImages {
     pub(crate) fn new(allocators: Arc<Allocators>, queue: Arc<Queue>) -> Self {
         let dimensions = ImageDimensions::Dim3d {
-            width: LIGHTMAP_SIZE,
-            height: LIGHTMAP_SIZE,
-            depth: LIGHTMAP_SIZE,
+            width: LM_SIZE,
+            height: LM_SIZE,
+            depth: LM_SIZE,
         };
 
         let create_storage_image = |usage, format| {
@@ -117,9 +117,9 @@ impl LightmapImages {
             .unwrap()
         };
 
-        let colors = (0..RAYS_INDIRECT)
+        let colors = (0..LM_RAYS)
             .map(|_| {
-                (0..(LIGHTMAP_COUNT))
+                (0..(LM_COUNT))
                     .map(|_| {
                         create_storage_image(
                             ImageUsage {
@@ -134,14 +134,14 @@ impl LightmapImages {
             })
             .collect::<Vec<_>>();
 
-        let useds = (0..LIGHTMAP_COUNT)
+        let useds = (0..LM_COUNT)
             .map(|_| {
                 StorageImage::with_usage(
                     &allocators.memory,
                     ImageDimensions::Dim3d {
-                        width: LIGHTMAP_SIZE / 32,
-                        height: LIGHTMAP_SIZE,
-                        depth: LIGHTMAP_SIZE,
+                        width: LM_SIZE / 32,
+                        height: LM_SIZE,
+                        depth: LM_SIZE,
                     },
                     Format::R32_UINT,
                     ImageUsage {
@@ -157,7 +157,7 @@ impl LightmapImages {
             })
             .collect();
 
-        let object_hits = (0..LIGHTMAP_COUNT)
+        let object_hits = (0..LM_COUNT)
             .map(|_| {
                 create_storage_image(
                     ImageUsage {
@@ -170,7 +170,7 @@ impl LightmapImages {
             })
             .collect();
 
-        let levels = (0..LIGHTMAP_COUNT)
+        let levels = (0..LM_COUNT)
             .map(|_| {
                 create_storage_image(
                     ImageUsage {
@@ -195,9 +195,9 @@ impl LightmapImages {
         let staging_useds = StorageImage::with_usage(
             &allocators.memory,
             ImageDimensions::Dim3d {
-                width: LIGHTMAP_SIZE / 32,
-                height: LIGHTMAP_SIZE,
-                depth: LIGHTMAP_SIZE,
+                width: LM_SIZE / 32,
+                height: LM_SIZE,
+                depth: LM_SIZE,
             },
             Format::R32_UINT,
             ImageUsage {

@@ -6,7 +6,7 @@ use event_helper::create_callbacks;
 use glam::*;
 use images::create_color_image;
 
-use shaders::LIGHTMAP_COUNT;
+use shaders::LM_COUNT;
 use vulkano::{
     swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
     sync::{self, FlushError, GpuFuture},
@@ -130,7 +130,7 @@ fn main() {
 
         // FIXME:
         const SMALLEST_UNIT: f32 = 0.5;
-        const LARGEST_UNIT: f32 = (1 << (LIGHTMAP_COUNT - 1)) as f32 * SMALLEST_UNIT;
+        const LARGEST_UNIT: f32 = (1 << (LM_COUNT - 1)) as f32 * SMALLEST_UNIT;
 
         let largest_delta_pos = (new_pos - old_pos).as_vec3() / LARGEST_UNIT;
 
@@ -140,7 +140,7 @@ fn main() {
             let delta_pos = largest_delta_pos * LARGEST_UNIT;
             eh.state.real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array();
 
-            for i in 0..(LIGHTMAP_COUNT as usize) {
+            for i in 0..(LM_COUNT as usize) {
                 let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
                 let delta_units = (delta_pos / unit_size).as_ivec3();
                 eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();

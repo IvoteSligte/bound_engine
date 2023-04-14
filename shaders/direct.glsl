@@ -15,7 +15,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
     vec3 previousPosition;
     ivec3 lightmapOrigin;
-    ivec4 deltaLightmapOrigins[LIGHTMAP_COUNT];
+    ivec4 deltaLightmapOrigins[LM_COUNT];
     uint frame;
 } rt;
 
@@ -26,19 +26,19 @@ layout(binding = 1) uniform restrict readonly GpuBVH {
 
 layout(binding = 2, rgba16) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 3, rgba16) uniform restrict readonly image3D[RAYS_INDIRECT * LIGHTMAP_COUNT] lightmapImages;
+layout(binding = 3, rgba16) uniform restrict readonly image3D[LM_RAYS * LM_COUNT] lightmapImages;
 
-layout(binding = 4, r32ui) uniform restrict uimage3D[LIGHTMAP_COUNT] lightmapUsedImages;
+layout(binding = 4, r32ui) uniform restrict uimage3D[LM_COUNT] lightmapUsedImages;
 
-layout(binding = 5, r32ui) uniform restrict writeonly uimage3D[LIGHTMAP_COUNT] lightmapObjectHitImages;
+layout(binding = 5, r32ui) uniform restrict writeonly uimage3D[LM_COUNT] lightmapObjectHitImages;
 
-layout(binding = 6, r32ui) uniform restrict readonly uimage3D[LIGHTMAP_COUNT] lightmapLevelImages;
+layout(binding = 6, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lightmapLevelImages;
 
 #include "includes_trace_ray.glsl"
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v) {
-    const int HALF_LM_SIZE = LIGHTMAP_SIZE / 2;
+    const int HALF_LM_SIZE = LM_SIZE / 2;
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
 
     v -= rt.lightmapOrigin.xyz;
@@ -70,7 +70,7 @@ void main() {
 
     ivec4 lmIndex = lightmapIndexAtPos(ray.origin);
 
-    bool outOfRange = lmIndex.w >= LIGHTMAP_COUNT;
+    bool outOfRange = lmIndex.w >= LM_COUNT;
     if (outOfRange) {
         imageStore(colorImage, IPOS, vec4(0.1)); // TODO: skybox
         return;
@@ -87,10 +87,10 @@ void main() {
         imageStore(lightmapObjectHitImages[lmIndex.w], lmIndex.xyz, uvec4(ray.objectHit));
     } else {
         // TODO: bilinear color sampling (texture)
-        //color = imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
+        color = imageLoad(lightmapImages[LM_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb;
 
         // DEBUG
-        color = vec3(level) / RAYS_INDIRECT + (imageLoad(lightmapImages[LIGHTMAP_COUNT * (level - 1) + lmIndex.w], lmIndex.xyz).rgb * 0.0);
+        color = vec3(level) / LM_RAYS;
     }
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));

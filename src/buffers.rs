@@ -14,7 +14,7 @@ use vulkano::{
 use crate::{
     allocators::Allocators,
     scene::{get_materials, get_objects},
-    shaders::{self, SAMPLES},
+    shaders::{self, LM_SAMPLES},
 };
 
 #[derive(Clone)]
@@ -131,7 +131,7 @@ where
     // TODO: make this path relative or something
     let blue_noise_data = UnitSphere
         .sample_iter(rand::thread_rng())
-        .take(SAMPLES as usize)
+        .take(LM_SAMPLES as usize)
         .collect::<Vec<[f32; 3]>>()
         .into_iter()
         .map(|x| [x[0], x[1], x[2], 0.0])
