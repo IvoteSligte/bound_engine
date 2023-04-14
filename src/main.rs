@@ -154,6 +154,7 @@ fn main() {
             ));
         }
 
+        // TODO: optimize
         let real_time_command_buffer = create_real_time_command_buffer(
             eh.state.allocators.clone(),
             eh.state.queue.clone(),

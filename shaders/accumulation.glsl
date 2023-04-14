@@ -75,9 +75,8 @@ void main() {
 
     uint used = imageLoad(lightmapUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK).x;
     const uint MASK = ALL_ONES << OFFSET_USED;
-    const uint INV_MASK = ALL_ONES ^ MASK;
 
-    uvec2 lsb = findLSB(used & uvec2(MASK, INV_MASK)); // prioritizes unexplored lightmap voxels
+    uvec2 lsb = findLSB(uvec2(used & MASK, used)); // prioritizes unexplored lightmap voxels
     uint target = lsb.x == -1 ? lsb.y : lsb.x;
 
     ivec3 lmIndex = ivec3((32 * LIGHTMAP_CHUNK.x) + target, gl_WorkGroupID.yz);
