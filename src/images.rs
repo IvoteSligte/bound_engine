@@ -12,7 +12,7 @@ use winit::window::Window;
 
 use crate::{
     allocators::Allocators,
-    shaders::{LM_COUNT, LM_SIZE, LM_RAYS},
+    shaders::{LM_COUNT, LM_RAYS, LM_SIZE},
 };
 
 #[derive(Clone)]
@@ -78,9 +78,8 @@ pub(crate) fn create_color_image(
 #[derive(Clone)]
 pub(crate) struct LightmapImages {
     pub(crate) colors: Vec<Vec<Arc<StorageImage>>>,
-    pub(crate) useds: Vec<Arc<StorageImage>>,
+    pub(crate) useds: Vec<Vec<Arc<StorageImage>>>,
     pub(crate) object_hits: Vec<Arc<StorageImage>>,
-    pub(crate) levels: Vec<Arc<StorageImage>>,
     pub(crate) staging_color: Arc<StorageImage>,
     pub(crate) staging_useds: Arc<StorageImage>,
     pub(crate) staging_integers: Arc<StorageImage>, // TODO: moving lightmap support for `objectHits` and `levels`
@@ -89,9 +88,8 @@ pub(crate) struct LightmapImages {
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
     pub(crate) colors: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
-    pub(crate) useds: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) useds: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
     pub(crate) object_hits: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) levels: Vec<Arc<dyn ImageViewAbstract>>,
 }
 
 impl LightmapImages {
@@ -134,43 +132,34 @@ impl LightmapImages {
             })
             .collect::<Vec<_>>();
 
-        let useds = (0..LM_COUNT)
+        let useds = (0..LM_RAYS)
             .map(|_| {
-                StorageImage::with_usage(
-                    &allocators.memory,
-                    ImageDimensions::Dim3d {
-                        width: LM_SIZE / 32,
-                        height: LM_SIZE,
-                        depth: LM_SIZE,
-                    },
-                    Format::R32_UINT,
-                    ImageUsage {
-                        storage: true,
-                        transfer_src: true,
-                        transfer_dst: true,
-                        ..ImageUsage::empty()
-                    },
-                    ImageCreateFlags::empty(),
-                    [queue.queue_family_index()],
-                )
-                .unwrap()
+                (0..LM_COUNT)
+                    .map(|_| {
+                        StorageImage::with_usage(
+                            &allocators.memory,
+                            ImageDimensions::Dim3d {
+                                width: LM_SIZE / 32,
+                                height: LM_SIZE,
+                                depth: LM_SIZE,
+                            },
+                            Format::R32_UINT,
+                            ImageUsage {
+                                storage: true,
+                                transfer_src: true,
+                                transfer_dst: true,
+                                ..ImageUsage::empty()
+                            },
+                            ImageCreateFlags::empty(),
+                            [queue.queue_family_index()],
+                        )
+                        .unwrap()
+                    })
+                    .collect()
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         let object_hits = (0..LM_COUNT)
-            .map(|_| {
-                create_storage_image(
-                    ImageUsage {
-                        transfer_src: true,
-                        transfer_dst: true,
-                        ..ImageUsage::default()
-                    },
-                    Format::R32_UINT,
-                )
-            })
-            .collect();
-
-        let levels = (0..LM_COUNT)
             .map(|_| {
                 create_storage_image(
                     ImageUsage {
@@ -193,6 +182,7 @@ impl LightmapImages {
         );
 
         let staging_useds = StorageImage::with_usage(
+            // FIXME: copying in command_buffers
             &allocators.memory,
             ImageDimensions::Dim3d {
                 width: LM_SIZE / 32,
@@ -223,7 +213,6 @@ impl LightmapImages {
             colors,
             useds,
             object_hits,
-            levels,
             staging_color,
             staging_useds,
             staging_integers,
@@ -241,9 +230,12 @@ impl LightmapImages {
                 .iter()
                 .map(|vec| vec.iter().map(view).collect())
                 .collect(),
-            useds: self.useds.iter().map(view).collect(),
+            useds: self
+                .useds
+                .iter()
+                .map(|vec| vec.iter().map(view).collect())
+                .collect(),
             object_hits: self.object_hits.iter().map(view).collect(),
-            levels: self.levels.iter().map(view).collect(),
         }
     }
 }

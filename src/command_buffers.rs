@@ -20,7 +20,7 @@ use crate::{
     descriptor_sets::{create_compute_descriptor_sets, DescriptorSets},
     images::Images,
     pipelines::Pipelines,
-    shaders::{self, LM_SIZE},
+    shaders::{self, LM_RAYS, LM_SIZE},
     LM_COUNT,
 };
 
@@ -52,6 +52,7 @@ impl CommandBuffers {
             pipelines.clone(),
             window.clone(),
             descriptor_sets.clone(),
+            images.clone(),
         );
 
         let swapchains =
@@ -70,6 +71,7 @@ pub(crate) fn create_pathtrace_command_buffers(
     pipelines: Pipelines,
     window: Arc<Window>,
     descriptor_sets: DescriptorSets,
+    images: Images,
 ) -> VecCycle<Arc<PrimaryAutoCommandBuffer>> {
     let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
@@ -79,46 +81,85 @@ pub(crate) fn create_pathtrace_command_buffers(
         1,
     ];
 
-    let dispatch_accumulation = [
-        LM_COUNT * LM_SIZE / 32,
-        LM_SIZE,
-        LM_SIZE,
-    ];
+    let dispatch_lm = [LM_COUNT * LM_SIZE / 32, LM_SIZE, LM_SIZE];
 
-    VecCycle::new(
-        (0..32)
-            .map(|i| {
-                let mut builder = AutoCommandBufferBuilder::primary(
-                    &allocators.command_buffer,
-                    queue.queue_family_index(),
-                    CommandBufferUsage::MultipleSubmit,
+    let builder_with_direct = |offset: usize| {
+        let mut builder = AutoCommandBufferBuilder::primary(
+            &allocators.command_buffer,
+            queue.queue_family_index(),
+            CommandBufferUsage::MultipleSubmit,
+        )
+        .unwrap();
+
+        builder
+            .bind_pipeline_compute(pipelines.direct.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.direct.layout().clone(),
+                0,
+                descriptor_sets.direct[offset].clone(),
+            )
+            .dispatch(dispatch_direct)
+            .unwrap();
+
+        builder
+    };
+
+    let mut command_buffers = vec![];
+
+    for offset in 0..LM_RAYS {
+        let mut builder = builder_with_direct(offset);
+
+        let used_images = images.lightmap.useds[(offset + LM_RAYS - 1) % LM_RAYS].clone();
+        for image in used_images {
+            builder
+                .clear_color_image(ClearColorImageInfo::image(image))
+                .unwrap();
+        }
+
+        let clear = Arc::new(builder.build().unwrap());
+        command_buffers.push(clear);
+
+        for i in 0..32 {
+            let mut builder = builder_with_direct(offset);
+
+            builder
+                .bind_pipeline_compute(pipelines.lm_primary[i].clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.lm_primary[0].layout().clone(),
+                    0,
+                    descriptor_sets.lm_primary[offset].clone(),
                 )
+                .dispatch(dispatch_lm)
                 .unwrap();
 
+            let lm_primary = Arc::new(builder.build().unwrap());
+            command_buffers.push(lm_primary);
+        }
+
+        for r in 1..LM_RAYS {
+            for i in 0..32 {
+                let mut builder = builder_with_direct(offset);
+
                 builder
-                    .bind_pipeline_compute(pipelines.direct.clone())
+                    .bind_pipeline_compute(pipelines.lm_secondary[i].clone())
                     .bind_descriptor_sets(
                         PipelineBindPoint::Compute,
-                        pipelines.direct.layout().clone(),
+                        pipelines.lm_secondary[0].layout().clone(),
                         0,
-                        descriptor_sets.direct.clone(),
+                        descriptor_sets.lm_secondary[(offset + r) % LM_RAYS].clone(),
                     )
-                    .dispatch(dispatch_direct)
-                    .unwrap()
-                    .bind_pipeline_compute(pipelines.accumulation[i].clone())
-                    .bind_descriptor_sets(
-                        PipelineBindPoint::Compute,
-                        pipelines.accumulation[0].layout().clone(),
-                        0,
-                        descriptor_sets.accumulation.clone(),
-                    )
-                    .dispatch(dispatch_accumulation)
+                    .dispatch(dispatch_lm)
                     .unwrap();
 
-                Arc::new(builder.build().unwrap())
-            })
-            .collect(),
-    )
+                let lm_secondary = Arc::new(builder.build().unwrap());
+                command_buffers.push(lm_secondary);
+            }
+        }
+    }
+
+    VecCycle::new(command_buffers)
 }
 
 pub(crate) fn create_swapchain_command_buffers(
@@ -243,76 +284,76 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
         });
 
     // TODO: remove duplication
-    for i in 0..(LM_COUNT as usize) {
-        builder
-            .clear_color_image(ClearColorImageInfo::image(
-                images.lightmap.staging_useds.clone(),
-            ))
-            .unwrap()
-            .copy_image(CopyImageInfo {
-                regions: [ImageCopy {
-                    src_subresource: ImageSubresourceLayers::from_parameters(
-                        images.lightmap.staging_useds.format(),
-                        1,
-                    ),
-                    dst_subresource: ImageSubresourceLayers::from_parameters(
-                        images.lightmap.useds[i].format(),
-                        1,
-                    ),
-                    src_offset: src_offset_per_layer[i].to_array(), // FIXME: incorrect
-                    dst_offset: dst_offset_per_layer[i].to_array(), // FIXME: incorrect
-                    extent: extent_per_layer[i].to_array(), // FIXME: extent is incorrect here
-                    ..ImageCopy::default()
-                }]
-                .into(),
-                ..CopyImageInfo::images(
-                    images.lightmap.useds[i].clone(),
-                    images.lightmap.staging_useds.clone(),
-                )
-            })
-            .unwrap()
-            .copy_image(CopyImageInfo::images(
-                images.lightmap.staging_useds.clone(),
-                images.lightmap.useds[i].clone(),
-            ))
-            .unwrap();
-    }
-
-    for lightmap_images in [images.lightmap.object_hits, images.lightmap.levels] {
+    for r in 0..LM_RAYS {
         for i in 0..(LM_COUNT as usize) {
             builder
                 .clear_color_image(ClearColorImageInfo::image(
-                    images.lightmap.staging_integers.clone(),
+                    images.lightmap.staging_useds.clone(),
                 ))
                 .unwrap()
                 .copy_image(CopyImageInfo {
                     regions: [ImageCopy {
                         src_subresource: ImageSubresourceLayers::from_parameters(
-                            images.lightmap.staging_integers.format(),
+                            images.lightmap.staging_useds.format(),
                             1,
                         ),
                         dst_subresource: ImageSubresourceLayers::from_parameters(
-                            lightmap_images[i].format(),
+                            images.lightmap.useds[r][i].format(),
                             1,
                         ),
-                        src_offset: src_offset_per_layer[i].to_array(),
-                        dst_offset: dst_offset_per_layer[i].to_array(),
-                        extent: extent_per_layer[i].to_array(),
+                        src_offset: src_offset_per_layer[i].to_array(), // FIXME: incorrect
+                        dst_offset: dst_offset_per_layer[i].to_array(), // FIXME: incorrect
+                        extent: extent_per_layer[i].to_array(), // FIXME: extent is incorrect here
                         ..ImageCopy::default()
                     }]
                     .into(),
                     ..CopyImageInfo::images(
-                        lightmap_images[i].clone(),
-                        images.lightmap.staging_integers.clone(),
+                        images.lightmap.useds[r][i].clone(),
+                        images.lightmap.staging_useds.clone(),
                     )
                 })
                 .unwrap()
                 .copy_image(CopyImageInfo::images(
-                    images.lightmap.staging_integers.clone(),
-                    lightmap_images[i].clone(),
+                    images.lightmap.staging_useds.clone(),
+                    images.lightmap.useds[r][i].clone(),
                 ))
                 .unwrap();
         }
+    }
+
+    for i in 0..(LM_COUNT as usize) {
+        builder
+            .clear_color_image(ClearColorImageInfo::image(
+                images.lightmap.staging_integers.clone(),
+            ))
+            .unwrap()
+            .copy_image(CopyImageInfo {
+                regions: [ImageCopy {
+                    src_subresource: ImageSubresourceLayers::from_parameters(
+                        images.lightmap.staging_integers.format(),
+                        1,
+                    ),
+                    dst_subresource: ImageSubresourceLayers::from_parameters(
+                        images.lightmap.object_hits[i].format(),
+                        1,
+                    ),
+                    src_offset: src_offset_per_layer[i].to_array(),
+                    dst_offset: dst_offset_per_layer[i].to_array(),
+                    extent: extent_per_layer[i].to_array(),
+                    ..ImageCopy::default()
+                }]
+                .into(),
+                ..CopyImageInfo::images(
+                    images.lightmap.object_hits[i].clone(),
+                    images.lightmap.staging_integers.clone(),
+                )
+            })
+            .unwrap()
+            .copy_image(CopyImageInfo::images(
+                images.lightmap.staging_integers.clone(),
+                images.lightmap.object_hits[i].clone(),
+            ))
+            .unwrap();
     }
 
     Arc::new(builder.build().unwrap())
