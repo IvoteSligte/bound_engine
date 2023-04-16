@@ -54,3 +54,24 @@ vec3 rotateWithQuat(vec4 q, vec3 v) {
 float maximum(vec3 v) {
     return max(max(v.x, v.y), v.z);
 }
+
+/// returns an index into a lightmap image in xyz, and the image index in w
+ivec4 lightmapIndexAtPos(vec3 v, vec3 lmOrigin) {
+    const int HALF_LM_SIZE = LM_SIZE / 2;
+    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
+
+    v -= lmOrigin;
+    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
+
+    ivec3 index = ivec3(floor(v / LM_UNIT_SIZES[lightmapNum])) + HALF_LM_SIZE;
+
+    return ivec4(index, lightmapNum);
+}
+
+vec3 posAtLightmapIndex(ivec4 lmIndex, vec3 lmOrigin) {
+    const int HALF_LM_SIZE = LM_SIZE / 2;
+
+    vec3 v = (lmIndex.xyz - (HALF_LM_SIZE + 0.5)) * LM_UNIT_SIZES[lmIndex.w] + lmOrigin;
+
+    return v;
+}

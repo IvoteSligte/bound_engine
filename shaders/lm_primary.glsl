@@ -29,11 +29,9 @@ layout(binding = 3, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutpu
 
 layout(binding = 4, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmInputUsedImages;
 
-layout(binding = 5, r32ui) uniform restrict uimage3D[LM_COUNT] lmOutputUsedImages;
+layout(binding = 5, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmObjectHitImages;
 
-layout(binding = 6, r32ui) uniform restrict uimage3D[LM_COUNT] lmObjectHitImages;
-
-layout(binding = 7) uniform restrict readonly BlueNoise {
+layout(binding = 6) uniform restrict readonly BlueNoise {
     vec4 items[LM_SAMPLES];
 } bn;
 
@@ -64,7 +62,9 @@ shared vec3 SharedColors[LM_SAMPLES];
 
 void main() {
     const uint LIGHTMAP_LAYER = gl_WorkGroupID.x / (LM_SIZE / 32);
-    const ivec3 LIGHTMAP_CHUNK = ivec3(gl_WorkGroupID.x % (LM_SIZE / 32), gl_WorkGroupID.yz); // TODO: do not dispatch for ignored chunks ([2, inf) layers in the middle)
+    const ivec3 LIGHTMAP_CHUNK = ivec3(gl_WorkGroupID.x % (LM_SIZE / 32), gl_WorkGroupID.yz); // TODO: do not dispatch for ignored chunks (layers 2+ in the middle)
+
+    const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
 
     uint used = imageLoad(lmInputUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK).x;
     const uint MASK = ALL_ONES << OFFSET_USED;
@@ -78,9 +78,9 @@ void main() {
 
     ivec3 lmIndex = ivec3((32 * LIGHTMAP_CHUNK.x) + target, gl_WorkGroupID.yz);
 
-    uint nodeHitIndex = imageAtomicOr(lmObjectHitImages[LIGHTMAP_LAYER], lmIndex.xyz, 0).x; // INFO: may not work, otherwise use global 'used' image
+    uint nodeHitIndex = imageLoad(lmObjectHitImages[LIGHTMAP_LAYER], lmIndex.xyz).x;
     Bounds nodeHit = bvh.nodes[nodeHitIndex];
-    vec3 point = posAtLightmapIndex(ivec4(lmIndex.xyz, LIGHTMAP_LAYER));
+    vec3 point = posAtLightmapIndex(ivec4(lmIndex.xyz, LIGHTMAP_LAYER), LIGHTMAP_ORIGIN);
     vec3 normal = normalize(point - nodeHit.position);
 
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
@@ -92,19 +92,11 @@ void main() {
 
     vec3 color = vec3(0.0);
 
-    ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin);
+    ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin, LIGHTMAP_ORIGIN);
     bool inRange = lmIndexSample.w < LM_COUNT;
+    // TODO: remove this check, buf.mats[0].emittance == vec3(0.0)
     if (inRange) {
         color = buf.mats[ray.materialHit].emittance;
-
-        uint nodeHitSample = imageAtomicExchange(lmObjectHitImages[lmIndexSample.w], lmIndexSample.xyz, ray.objectHit);
-
-        bool isUnusedSample = nodeHitSample == 0;
-        if (isUnusedSample) {
-            ivec3 chunkSample = ivec3(lmIndexSample.x / 32, lmIndexSample.yz);
-            uint targetSample = 1 << (lmIndexSample.x % 32);
-            imageAtomicOr(lmOutputUsedImages[lmIndexSample.w], chunkSample.xyz, targetSample);
-        }
     }
 
     SharedColors[gl_LocalInvocationID.x] = color;

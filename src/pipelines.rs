@@ -31,6 +31,7 @@ where
 #[derive(Clone)]
 pub(crate) struct Pipelines {
     pub(crate) direct: Arc<ComputePipeline>,
+    pub(crate) lm_init: Arc<ComputePipeline>,
     pub(crate) lm_primary: Vec<Arc<ComputePipeline>>,
     pub(crate) lm_secondary: Vec<Arc<ComputePipeline>>,
 }
@@ -49,12 +50,14 @@ impl Pipelines {
             },
         );
 
+        let lm_init = create_compute_pipeline(device.clone(), shaders.lm_init.clone(), &());
+
         let lm_primary = (0..32)
             .map(|x| {
                 create_compute_pipeline(
                     device.clone(),
                     shaders.lm_primary.clone(),
-                    &shaders::LmSecondarySpecializationConstants { OFFSET_USED: x },
+                    &shaders::LmPrimarySpecializationConstants { OFFSET_USED: x },
                 )
             })
             .collect();
@@ -71,6 +74,7 @@ impl Pipelines {
 
         Self {
             direct,
+            lm_init,
             lm_primary,
             lm_secondary,
         }

@@ -4,6 +4,10 @@ vulkano_shaders::shader! {
             ty: "compute",
             path: "shaders/direct.glsl",
         },
+        LMInit: {
+            ty: "compute",
+            path: "shaders/lm_init.glsl",
+        },
         LMPrimary: {
             ty: "compute",
             path: "shaders/lm_primary.glsl",
@@ -37,6 +41,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub(crate) struct Shaders {
     pub(crate) direct: Arc<ShaderModule>,
+    pub(crate) lm_init: Arc<ShaderModule>,
     pub(crate) lm_primary: Arc<ShaderModule>,
     pub(crate) lm_secondary: Arc<ShaderModule>,
 }
@@ -45,6 +50,7 @@ impl Shaders {
     pub(crate) fn load(device: Arc<Device>) -> Self {
         Self {
             direct: load_Direct(device.clone()).unwrap(),
+            lm_init: load_LMInit(device.clone()).unwrap(),
             lm_primary: load_LMPrimary(device.clone()).unwrap(),
             lm_secondary: load_LMSecondary(device.clone()).unwrap(),
         }

@@ -152,6 +152,9 @@ fn main() {
                 eh.state.images.clone(),
                 delta_pos.as_ivec3(),
             ));
+
+            // FIXME: do not redo the rendering of the entire lightmap every time, but only the 'moved' part
+            eh.state.command_buffers.pathtraces.acc.restart();
         }
 
         // TODO: optimize
@@ -208,10 +211,16 @@ fn main() {
             .unwrap()
             .boxed();
 
+        // FIXME: reset eh.state.command_buffers.pathtraces.acc on move
+        let pathtrace_command_buffer = match eh.state.command_buffers.pathtraces.acc.next() {
+            Some(cmb) => cmb,
+            None => eh.state.command_buffers.pathtraces.direct.clone(),
+        };
+
         let future = future
             .then_execute(
                 eh.state.queue.clone(),
-                eh.state.command_buffers.pathtraces.next().unwrap().clone(),
+                pathtrace_command_buffer,
             )
             .unwrap()
             .then_execute(

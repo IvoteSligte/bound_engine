@@ -128,7 +128,6 @@ pub(crate) fn get_blue_noise_buffer<A>(
 where
     A: CommandBufferAllocator,
 {
-    // TODO: make this path relative or something
     let blue_noise_data = UnitSphere
         .sample_iter(rand::thread_rng())
         .take(LM_SAMPLES as usize)

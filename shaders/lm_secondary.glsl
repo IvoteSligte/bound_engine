@@ -64,7 +64,9 @@ shared vec3 SharedColors[LM_SAMPLES];
 
 void main() {
     const uint LIGHTMAP_LAYER = gl_WorkGroupID.x / (LM_SIZE / 32);
-    const ivec3 LIGHTMAP_CHUNK = ivec3(gl_WorkGroupID.x % (LM_SIZE / 32), gl_WorkGroupID.yz); // TODO: do not dispatch for ignored chunks ([2, inf) layers in the middle)
+    const ivec3 LIGHTMAP_CHUNK = ivec3(gl_WorkGroupID.x % (LM_SIZE / 32), gl_WorkGroupID.yz); // TODO: do not dispatch for ignored chunks (layers 2+ in the middle)
+
+    const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
 
     uint used = imageLoad(lmInputUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK).x;
     const uint MASK = ALL_ONES << OFFSET_USED;
@@ -80,7 +82,7 @@ void main() {
 
     uint nodeHitIndex = imageLoad(lmObjectHitImages[LIGHTMAP_LAYER], lmIndex.xyz).x;
     Bounds nodeHit = bvh.nodes[nodeHitIndex];
-    vec3 point = posAtLightmapIndex(ivec4(lmIndex.xyz, LIGHTMAP_LAYER));
+    vec3 point = posAtLightmapIndex(ivec4(lmIndex.xyz, LIGHTMAP_LAYER), LIGHTMAP_ORIGIN);
     vec3 normal = normalize(point - nodeHit.position);
 
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
@@ -92,10 +94,11 @@ void main() {
 
     vec3 color = vec3(0.0);
 
-    ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin);
+    ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin, LIGHTMAP_ORIGIN);
     bool inRange = lmIndexSample.w < LM_COUNT;
+    // TODO: remove this check, images out-of-range always return zeroes
     if (inRange) {
-        color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb;
+        color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: texture access for smoother results
     }
 
     SharedColors[gl_LocalInvocationID.x] = color;

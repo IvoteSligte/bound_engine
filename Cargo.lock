@@ -86,7 +86,7 @@ dependencies = [
  "petgraph",
  "rand",
  "rand_distr",
- "vec_cycle",
+ "vec_once",
  "vulkano",
  "vulkano-shaders",
  "vulkano-win",
@@ -1526,16 +1526,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4f5b37a154999a8f3f98cc23a628d850e154479cd94decf3414696e12e31aaf"
 
 [[package]]
-name = "vec_cycle"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "131d0b4c40ef822bb224e07880e5a610020c37ce43322bb2e14b8ff85223c028"
-
-[[package]]
 name = "vec_map"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
+
+[[package]]
+name = "vec_once"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96cb7e9e8298b82614ce273215f74958669d6d808ac0675e71fb8de93c4cd421"
 
 [[package]]
 name = "version_check"

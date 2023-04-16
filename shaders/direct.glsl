@@ -28,24 +28,7 @@ layout(binding = 2, rgba16) uniform restrict writeonly image2D colorImage;
 
 layout(binding = 3, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputColorImages;
 
-layout(binding = 4, r32ui) uniform restrict uimage3D[LM_COUNT] lmOutputUsedImages;
-
-layout(binding = 5, r32ui) uniform restrict uimage3D[LM_COUNT] lmObjectHitImages;
-
 #include "includes_trace_ray.glsl"
-
-/// returns an index into a lightmap image in xyz, and the image index in w
-ivec4 lightmapIndexAtPos(vec3 v) {
-    const int HALF_LM_SIZE = LM_SIZE / 2;
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
-
-    v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
-
-    ivec3 index = ivec3(floor(v / LM_UNIT_SIZES[lightmapNum])) + HALF_LM_SIZE;
-
-    return ivec4(index, lightmapNum);
-}
 
 void main() {
     const ivec2 VIEWPORT = ivec2(imageSize(colorImage).xy);
@@ -61,7 +44,7 @@ void main() {
 
     traceRayWithBVH(ray);
 
-    ivec4 lmIndex = lightmapIndexAtPos(ray.origin);
+    ivec4 lmIndex = lightmapIndexAtPos(ray.origin, rt.lightmapOrigin.xyz);
 
     bool outOfRange = lmIndex.w >= LM_COUNT;
     if (outOfRange) {
@@ -69,19 +52,7 @@ void main() {
         return;
     }
 
-    vec3 color = vec3(0.0);
-
-    uint nodeHit = imageAtomicExchange(lmObjectHitImages[lmIndex.w], lmIndex.xyz, ray.objectHit);
-
-    bool isUnused = nodeHit == 0;
-    if (isUnused) {
-        ivec3 chunk = ivec3(lmIndex.x / 32, lmIndex.yz);
-        uint target = 1 << (lmIndex.x % 32);
-        imageAtomicOr(lmOutputUsedImages[lmIndex.w], chunk.xyz, target);
-    } else {
-        // TODO: bilinear color sampling (texture)
-        color = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
-    }
-
+    // TODO: bilinear color sampling (texture)
+    vec3 color = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }
