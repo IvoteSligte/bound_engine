@@ -17,8 +17,7 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct Images {
-    // TODO: swapchain images
-    pub(crate) color: Arc<StorageImage>,
+    pub(crate) color: Arc<StorageImage>, // TODO: eliminate `StorageImage`s
     pub(crate) lightmap: LightmapImages,
     pub(crate) swapchain: Vec<Arc<SwapchainImage>>,
 }
@@ -82,7 +81,7 @@ pub(crate) struct LightmapImages {
     pub(crate) object_hits: Vec<Arc<StorageImage>>,
     pub(crate) staging_color: Arc<StorageImage>,
     pub(crate) staging_useds: Arc<StorageImage>,
-    pub(crate) staging_integers: Arc<StorageImage>, // TODO: moving lightmap support for `objectHits` and `levels`
+    pub(crate) staging_integers: Arc<StorageImage>,
 }
 
 #[derive(Clone)]
