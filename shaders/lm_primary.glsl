@@ -90,14 +90,7 @@ void main() {
 
     traceRayWithBVH(ray); // bottleneck
 
-    vec3 color = vec3(0.0);
-
-    ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin, LIGHTMAP_ORIGIN);
-    bool inRange = lmIndexSample.w < LM_COUNT;
-    // TODO: remove this check, buf.mats[0].emittance == vec3(0.0)
-    if (inRange) {
-        color = buf.mats[ray.materialHit].emittance;
-    }
+    vec3 color = buf.mats[ray.materialHit].emittance; // TODO: only materialHit is used, optimise the traceRayWithBVH function for this
 
     SharedColors[gl_LocalInvocationID.x] = color;
 

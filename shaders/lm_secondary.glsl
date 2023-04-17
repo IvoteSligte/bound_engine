@@ -92,14 +92,8 @@ void main() {
 
     traceRayWithBVH(ray); // bottleneck
 
-    vec3 color = vec3(0.0);
-
     ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin, LIGHTMAP_ORIGIN);
-    bool inRange = lmIndexSample.w < LM_COUNT;
-    // TODO: remove this check, images out-of-range always return zeroes
-    if (inRange) {
-        color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: texture access for smoother results
-    }
+    vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: texture access for smoother results
 
     SharedColors[gl_LocalInvocationID.x] = color;
 
