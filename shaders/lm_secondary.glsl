@@ -92,7 +92,8 @@ void main() {
     vec3 randDir = normalize(normal + bn.items[gl_LocalInvocationID.x].xyz);
     Ray ray = Ray(0, hitPoint, randDir, 0);
 
-    traceRayWithBVH(ray); // bottleneck
+    float distanceToHit = traceRayWithBVH(ray); // bottleneck
+    ray.origin = (ray.direction * distanceToHit) + ray.origin;
 
     ivec4 lmIndexSample = lightmapIndexAtPos(ray.origin, LIGHTMAP_ORIGIN);
     vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: texture access for smoother results

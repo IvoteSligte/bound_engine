@@ -11,7 +11,7 @@ bool hitsBounds(Ray ray, Bounds bnd) {
     return m.y < bnd.radiusSquared || (((-m.x) * m.x + m.y) < bnd.radiusSquared && m.x > EPSILON);
 }
 
-void traceRayWithBVH(inout Ray ray) {
+float traceRayWithBVH(inout Ray ray) {
     ray.objectHit = 0;
     ray.materialHit = 0;
     float distanceToHit = FLT_MAX;
@@ -41,5 +41,5 @@ void traceRayWithBVH(inout Ray ray) {
         currIdx = curr.next;
     }
 
-    ray.origin = (ray.direction * distanceToHit) + ray.origin;
+    return distanceToHit;
 }

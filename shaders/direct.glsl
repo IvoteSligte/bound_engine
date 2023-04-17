@@ -42,7 +42,8 @@ void main() {
 
     Ray ray = Ray(0, rt.position, viewDir, 0);
 
-    traceRayWithBVH(ray);
+    float distanceToHit = traceRayWithBVH(ray);
+    ray.origin = (ray.direction * distanceToHit) + ray.origin;
 
     ivec4 lmIndex = lightmapIndexAtPos(ray.origin, rt.lightmapOrigin.xyz);
 
