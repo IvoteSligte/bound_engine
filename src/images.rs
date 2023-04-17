@@ -78,19 +78,13 @@ pub(crate) fn create_color_image(
 pub(crate) struct LightmapImages {
     pub(crate) colors: Vec<Vec<Arc<StorageImage>>>,
     pub(crate) final_color: Vec<Arc<StorageImage>>,
-    pub(crate) used: Vec<Arc<StorageImage>>,
-    pub(crate) object_hits: Vec<Arc<StorageImage>>,
     pub(crate) staging_color: Arc<StorageImage>,
-    pub(crate) staging_used: Arc<StorageImage>,
-    pub(crate) staging_integers: Arc<StorageImage>,
 }
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
     pub(crate) colors: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
     pub(crate) final_color: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) used: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) object_hits: Vec<Arc<dyn ImageViewAbstract>>,
 }
 
 impl LightmapImages {
@@ -146,42 +140,6 @@ impl LightmapImages {
         })
         .collect::<Vec<_>>();
 
-        let used = (0..LM_COUNT)
-            .map(|_| {
-                StorageImage::with_usage(
-                    &allocators.memory,
-                    ImageDimensions::Dim3d {
-                        width: LM_SIZE / 32,
-                        height: LM_SIZE,
-                        depth: LM_SIZE,
-                    },
-                    Format::R32_UINT,
-                    ImageUsage {
-                        storage: true,
-                        transfer_src: true,
-                        transfer_dst: true,
-                        ..ImageUsage::empty()
-                    },
-                    ImageCreateFlags::empty(),
-                    [queue.queue_family_index()],
-                )
-                .unwrap()
-            })
-            .collect();
-
-        let object_hits = (0..LM_COUNT)
-            .map(|_| {
-                create_storage_image(
-                    ImageUsage {
-                        transfer_src: true,
-                        transfer_dst: true,
-                        ..ImageUsage::default()
-                    },
-                    Format::R32_UINT,
-                )
-            })
-            .collect();
-
         let staging_color = create_storage_image(
             ImageUsage {
                 transfer_src: true,
@@ -191,42 +149,10 @@ impl LightmapImages {
             Format::R16G16B16A16_UNORM,
         );
 
-        let staging_used = StorageImage::with_usage(
-            // FIXME: copying in command_buffers
-            &allocators.memory,
-            ImageDimensions::Dim3d {
-                width: LM_SIZE / 32,
-                height: LM_SIZE,
-                depth: LM_SIZE,
-            },
-            Format::R32_UINT,
-            ImageUsage {
-                transfer_src: true,
-                transfer_dst: true,
-                ..ImageUsage::empty()
-            },
-            ImageCreateFlags::empty(),
-            [queue.queue_family_index()],
-        )
-        .unwrap();
-
-        let staging_integers = create_storage_image(
-            ImageUsage {
-                transfer_src: true,
-                transfer_dst: true,
-                ..ImageUsage::default()
-            },
-            Format::R32_UINT,
-        );
-
         Self {
             colors,
             final_color,
-            used,
-            object_hits,
             staging_color,
-            staging_used,
-            staging_integers,
         }
     }
 
@@ -242,8 +168,6 @@ impl LightmapImages {
                 .map(|vec| vec.iter().map(view).collect())
                 .collect(),
             final_color: self.final_color.iter().map(view).collect(),
-            used: self.used.iter().map(view).collect(),
-            object_hits: self.object_hits.iter().map(view).collect(),
         }
     }
 }

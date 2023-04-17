@@ -5,7 +5,7 @@ use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
     command_buffer::{
         allocator::CommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+        DispatchIndirectCommand, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
     },
     device::Queue,
     sync::GpuFuture,
@@ -14,14 +14,16 @@ use vulkano::{
 use crate::{
     allocators::Allocators,
     scene::{get_materials, get_objects},
-    shaders::{self, LM_SAMPLES},
+    shaders::{self, LM_SAMPLES, LM_SIZE},
 };
 
 #[derive(Clone)]
 pub(crate) struct Buffers {
     pub(crate) real_time: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
-    pub(crate) mutable: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>,
+    pub(crate) mutable: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>, // TODO: rename to MaterialBuffer
     pub(crate) bvh: Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>>,
+    pub(crate) lm_buffer: Arc<dyn BufferAccess>,
+    pub(crate) lm_dispatch: Arc<DeviceLocalBuffer<[DispatchIndirectCommand]>>,
     pub(crate) blue_noise: Arc<dyn BufferAccess>,
 }
 
@@ -38,6 +40,8 @@ impl Buffers {
             real_time: get_real_time_buffer(allocators.clone(), &mut builder),
             mutable: get_mutable_buffer(allocators.clone(), &mut builder),
             bvh: get_bvh_buffer(allocators.clone(), &mut builder),
+            lm_buffer: get_lm_buffer(allocators.clone(), &mut builder),
+            lm_dispatch: get_lm_dispatch_buffer(allocators.clone(), &mut builder),
             blue_noise: get_blue_noise_buffer(allocators.clone(), &mut builder),
         };
 
@@ -141,6 +145,47 @@ where
         blue_noise_data,
         BufferUsage {
             uniform_buffer: true,
+            ..BufferUsage::empty()
+        },
+        alloc_command_buffer_builder,
+    )
+    .unwrap()
+}
+
+pub(crate) fn get_lm_buffer<A>(
+    allocators: Arc<Allocators>,
+    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
+) -> Arc<dyn BufferAccess>
+where
+    A: CommandBufferAllocator,
+{
+    let iter = (0..(LM_SIZE.pow(3))).map(|_| 0u32).collect::<Vec<u32>>();
+
+    DeviceLocalBuffer::from_iter(
+        &allocators.memory,
+        iter,
+        BufferUsage {
+            storage_buffer: true,
+            ..BufferUsage::empty()
+        },
+        alloc_command_buffer_builder,
+    )
+    .unwrap()
+}
+
+pub(crate) fn get_lm_dispatch_buffer<A>(
+    allocators: Arc<Allocators>,
+    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
+) -> Arc<DeviceLocalBuffer<[DispatchIndirectCommand]>>
+where
+    A: CommandBufferAllocator,
+{
+    DeviceLocalBuffer::from_iter(
+        &allocators.memory,
+        [DispatchIndirectCommand { x: 0, y: 1, z: 1 }],
+        BufferUsage {
+            storage_buffer: true,
+            indirect_buffer: true,
             ..BufferUsage::empty()
         },
         alloc_command_buffer_builder,

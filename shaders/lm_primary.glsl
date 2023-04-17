@@ -4,8 +4,6 @@
 
 layout(local_size_x = LM_SAMPLES, local_size_y = 1, local_size_z = 1) in;
 
-layout(constant_id = 0) const uint OFFSET_USED = 0;
-
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
     vec4 previousRotation;
@@ -29,11 +27,11 @@ layout(binding = 3, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutpu
 
 layout(binding = 4, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmFinalColorImages;
 
-layout(binding = 5, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmUsedImages;
+layout(binding = 5) buffer restrict readonly LMBuffer {
+    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE];
+} lmBuffer;
 
-layout(binding = 6, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmObjectHitImages;
-
-layout(binding = 7) uniform restrict readonly BlueNoise {
+layout(binding = 6) uniform restrict readonly BlueNoise {
     vec4 items[LM_SAMPLES];
 } bn;
 
@@ -62,28 +60,15 @@ vec3 posAtLightmapIndex(ivec4 lmIndex) {
 
 shared vec3 SharedColors[LM_SAMPLES];
 
-// TODO: change 'used' images' X direction to Z direction because there's a higher chance to encounter blocks in a vertical strip
 void main() {
-    const uint LIGHTMAP_LAYER = gl_WorkGroupID.x / (LM_SIZE / 32);
-    const ivec3 LIGHTMAP_CHUNK = ivec3(gl_WorkGroupID.x % (LM_SIZE / 32), gl_WorkGroupID.yz); // TODO: do not dispatch for ignored chunks (layers 2+ in the middle)
-
     const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
 
-    uint used = imageLoad(lmUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK).x;
-    const uint MASK = ALL_ONES << OFFSET_USED;
+    Voxel voxel = lmBuffer.voxels[gl_WorkGroupID.x];
+    
+    ivec4 lmIndex = ivec4(voxel.lmIndex.x % LM_SIZE, voxel.lmIndex.yz, voxel.lmIndex.x / LM_SIZE);
 
-    uvec2 lsb = findLSB(uvec2(used & MASK, used)); // prioritizes unexplored lightmap voxels
-    uint target = lsb.x == -1 ? lsb.y : lsb.x;
-
-    if (target == -1) {
-        return;
-    }
-
-    ivec3 lmIndex = ivec3((32 * LIGHTMAP_CHUNK.x) + target, gl_WorkGroupID.yz);
-
-    uint nodeHitIndex = imageLoad(lmObjectHitImages[LIGHTMAP_LAYER], lmIndex.xyz).x;
-    Bounds nodeHit = bvh.nodes[nodeHitIndex];
-    vec3 point = posAtLightmapIndex(ivec4(lmIndex.xyz, LIGHTMAP_LAYER), LIGHTMAP_ORIGIN);
+    Bounds nodeHit = bvh.nodes[voxel.objectHit];
+    vec3 point = posAtLightmapIndex(lmIndex, LIGHTMAP_ORIGIN);
     vec3 normal = normalize(point - nodeHit.position);
 
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
@@ -93,7 +78,7 @@ void main() {
 
     traceRayWithBVH(ray); // bottleneck
 
-    vec3 color = buf.mats[ray.materialHit].emittance; // TODO: only materialHit is used, optimise the traceRayWithBVH function for this
+    vec3 color = buf.mats[ray.materialHit].emittance;
 
     SharedColors[gl_LocalInvocationID.x] = color;
 
@@ -116,8 +101,8 @@ void main() {
         Material material = buf.mats[nodeHit.material];
         color = color * (material.reflectance * (1.0 / LM_SAMPLES)) + material.emittance;
 
-        imageStore(lmOutputColorImages[LIGHTMAP_LAYER], lmIndex.xyz, vec4(color, 0.0));
-        
-        imageStore(lmFinalColorImages[LIGHTMAP_LAYER], lmIndex.xyz, vec4(color, 0.0));
+        imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
+
+        imageStore(lmFinalColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
     }
 }

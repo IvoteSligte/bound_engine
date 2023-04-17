@@ -157,7 +157,8 @@ fn main() {
             eh.state.command_buffers.pathtraces.acc.restart();
         }
 
-        // TODO: optimize
+        // TODO: optimize by using only a single command buffer with a pointer pointing to a static memory location,
+        // of which only the content is altered every frame
         let real_time_command_buffer = create_real_time_command_buffer(
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
@@ -206,7 +207,6 @@ fn main() {
             .unwrap()
             .boxed();
 
-        // FIXME: reset eh.state.command_buffers.pathtraces.acc on move
         let pathtrace_command_buffer = match eh.state.command_buffers.pathtraces.acc.next() {
             Some(cmb) => cmb,
             None => eh.state.command_buffers.pathtraces.direct.clone(),

@@ -32,8 +32,8 @@ where
 pub(crate) struct Pipelines {
     pub(crate) direct: Arc<ComputePipeline>,
     pub(crate) lm_init: Arc<ComputePipeline>,
-    pub(crate) lm_primary: Vec<Arc<ComputePipeline>>,
-    pub(crate) lm_secondary: Vec<Arc<ComputePipeline>>,
+    pub(crate) lm_primary: Arc<ComputePipeline>,
+    pub(crate) lm_secondary: Arc<ComputePipeline>,
 }
 
 impl Pipelines {
@@ -52,25 +52,17 @@ impl Pipelines {
 
         let lm_init = create_compute_pipeline(device.clone(), shaders.lm_init.clone(), &());
 
-        let lm_primary = (0..32)
-            .map(|x| {
-                create_compute_pipeline(
-                    device.clone(),
-                    shaders.lm_primary.clone(),
-                    &shaders::LmPrimarySpecializationConstants { OFFSET_USED: x },
-                )
-            })
-            .collect();
+        let lm_primary = create_compute_pipeline(
+            device.clone(),
+            shaders.lm_primary.clone(),
+            &(),
+        );
 
-        let lm_secondary = (0..32)
-            .map(|x| {
-                create_compute_pipeline(
-                    device.clone(),
-                    shaders.lm_secondary.clone(),
-                    &shaders::LmSecondarySpecializationConstants { OFFSET_USED: x },
-                )
-            })
-            .collect();
+        let lm_secondary = create_compute_pipeline(
+            device.clone(),
+            shaders.lm_secondary.clone(),
+            &(),
+        );
 
         Self {
             direct,
