@@ -64,6 +64,7 @@ uint customSphereBVHIntersect(vec3 position, float radius) {
             }
         } else {
             if (abs(dist) <= radius) {
+                // TODO: do not calculate point's lighting if point is inside of an object
                 // vec3 p = curr.position + normalize(position - curr.position) * curr.radius;
 
                 // bool isContained = pointContainedInBVHMasked(p, currIdx);

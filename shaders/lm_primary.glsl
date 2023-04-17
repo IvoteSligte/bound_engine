@@ -62,6 +62,7 @@ vec3 posAtLightmapIndex(ivec4 lmIndex) {
 
 shared vec3 SharedColors[LM_SAMPLES];
 
+// TODO: change 'used' images' X direction to Z direction because there's a higher chance to encounter blocks in a vertical strip
 void main() {
     const uint LIGHTMAP_LAYER = gl_WorkGroupID.x / (LM_SIZE / 32);
     const ivec3 LIGHTMAP_CHUNK = ivec3(gl_WorkGroupID.x % (LM_SIZE / 32), gl_WorkGroupID.yz); // TODO: do not dispatch for ignored chunks (layers 2+ in the middle)
