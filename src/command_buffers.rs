@@ -85,7 +85,7 @@ pub(crate) fn create_pathtrace_command_buffers(
         1,
     ];
 
-    let dispatch_lm_init = [LM_SIZE / 4, LM_SIZE / 4, LM_SIZE / 4];
+    let dispatch_lm_init = [LM_SIZE / 4 * LM_COUNT, LM_SIZE / 4, LM_SIZE / 4];
 
     let dispatch_lm_accumulate = [LM_COUNT * LM_SIZE / 32, LM_SIZE, LM_SIZE];
 

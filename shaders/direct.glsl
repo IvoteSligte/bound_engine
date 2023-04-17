@@ -54,5 +54,6 @@ void main() {
 
     // TODO: bilinear color sampling (texture)
     vec3 color = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
+
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }

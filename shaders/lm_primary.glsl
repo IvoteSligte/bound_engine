@@ -27,7 +27,7 @@ layout(binding = 2) uniform restrict readonly MutableData {
 
 layout(binding = 3, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutputColorImages;
 
-layout(binding = 4, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmInputUsedImages;
+layout(binding = 4, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmUsedImages;
 
 layout(binding = 5, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmObjectHitImages;
 
@@ -66,7 +66,7 @@ void main() {
 
     const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
 
-    uint used = imageLoad(lmInputUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK).x;
+    uint used = imageLoad(lmUsedImages[LIGHTMAP_LAYER], LIGHTMAP_CHUNK).x;
     const uint MASK = ALL_ONES << OFFSET_USED;
 
     uvec2 lsb = findLSB(uvec2(used & MASK, used)); // prioritizes unexplored lightmap voxels

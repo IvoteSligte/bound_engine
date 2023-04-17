@@ -71,7 +71,7 @@ ivec4 lightmapIndexAtPos(vec3 v, vec3 lmOrigin) {
 vec3 posAtLightmapIndex(ivec4 lmIndex, vec3 lmOrigin) {
     const int HALF_LM_SIZE = LM_SIZE / 2;
 
-    vec3 v = (lmIndex.xyz - (HALF_LM_SIZE + 0.5)) * LM_UNIT_SIZES[lmIndex.w] + lmOrigin;
+    vec3 v = (lmIndex.xyz - (HALF_LM_SIZE - 0.5)) * LM_UNIT_SIZES[lmIndex.w] + lmOrigin;
 
     return v;
 }
