@@ -29,11 +29,13 @@ layout(binding = 3, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputC
 
 layout(binding = 4, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutputColorImages;
 
-layout(binding = 5, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmUsedImages;
+layout(binding = 5, rgba16) uniform restrict image3D[LM_COUNT] lmFinalColorImages;
 
-layout(binding = 6, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmObjectHitImages;
+layout(binding = 6, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmUsedImages;
 
-layout(binding = 7) uniform restrict readonly BlueNoise {
+layout(binding = 7, r32ui) uniform restrict readonly uimage3D[LM_COUNT] lmObjectHitImages;
+
+layout(binding = 8) uniform restrict readonly BlueNoise {
     vec4 items[LM_SAMPLES];
 } bn;
 
@@ -114,8 +116,11 @@ void main() {
         }
 
         Material material = buf.mats[nodeHit.material];
-        color = color * (material.reflectance * (1.0 / LM_SAMPLES)) + material.emittance;
+        color = color * (material.reflectance * (1.0 / LM_SAMPLES));
 
-        imageStore(lmOutputColorImages[LIGHTMAP_LAYER], lmIndex.xyz, vec4(color, 0.0));
+        imageStore(lmOutputColorImages[LIGHTMAP_LAYER], lmIndex.xyz, vec4(color + material.emittance, 0.0));
+
+        color += imageLoad(lmFinalColorImages[LIGHTMAP_LAYER], lmIndex.xyz).rgb;
+        imageStore(lmFinalColorImages[LIGHTMAP_LAYER], lmIndex.xyz, vec4(color, 0.0));
     }
 }

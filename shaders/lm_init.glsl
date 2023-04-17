@@ -85,7 +85,7 @@ void main() {
     const ivec4 LM_INDEX = ivec4(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz, gl_GlobalInvocationID.x / LM_SIZE);
 
     vec3 position = posAtLightmapIndex(LM_INDEX, LIGHTMAP_ORIGIN);
-    float radius = SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]; // FIXME: radius is probably too large
+    float radius = SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]; // FIXME: radius is too large
 
     uint nodeIntersected = customSphereBVHIntersect(position, radius); // bottleneck
     

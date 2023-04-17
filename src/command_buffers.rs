@@ -65,7 +65,7 @@ impl CommandBuffers {
 }
 
 #[derive(Clone)]
-pub(crate) struct PathtraceCommandBuffers {
+pub(crate) struct PathtraceCommandBuffers { // TODO: implement fn next(), which returns `direct` when `acc.next()` returns `None`
     pub(crate) acc: VecOnce<Arc<PrimaryAutoCommandBuffer>>,
     pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
 }

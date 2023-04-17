@@ -39,7 +39,7 @@ pub(crate) fn create_compute_descriptor_sets(
             WriteDescriptorSet::image_view_array(
                 3,
                 0,
-                image_views.lightmap.colors.last().unwrap().clone(),
+                image_views.lightmap.final_color.clone(),
             ),
         ],
     )
@@ -65,9 +65,10 @@ pub(crate) fn create_compute_descriptor_sets(
             WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
             WriteDescriptorSet::buffer(2, buffers.mutable.clone()),
             WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.colors[0].clone()), // writes to
-            WriteDescriptorSet::image_view_array(4, 0, image_views.lightmap.used.clone()), // reads from
-            WriteDescriptorSet::image_view_array(5, 0, image_views.lightmap.object_hits.clone()), // reads from
-            WriteDescriptorSet::buffer(6, buffers.blue_noise.clone()),
+            WriteDescriptorSet::image_view_array(4, 0, image_views.lightmap.final_color.clone()), // writes to
+            WriteDescriptorSet::image_view_array(5, 0, image_views.lightmap.used.clone()), // reads from
+            WriteDescriptorSet::image_view_array(6, 0, image_views.lightmap.object_hits.clone()), // reads from
+            WriteDescriptorSet::buffer(7, buffers.blue_noise.clone()),
         ],
     )
     .unwrap();
@@ -91,13 +92,14 @@ pub(crate) fn create_compute_descriptor_sets(
                         0,
                         image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(),
                     ), // writes to
-                    WriteDescriptorSet::image_view_array(5, 0, image_views.lightmap.used.clone()), // reads from
+                    WriteDescriptorSet::image_view_array(5, 0, image_views.lightmap.final_color.clone()), // writes to
+                    WriteDescriptorSet::image_view_array(6, 0, image_views.lightmap.used.clone()), // reads from
                     WriteDescriptorSet::image_view_array(
-                        6,
+                        7,
                         0,
                         image_views.lightmap.object_hits.clone(),
                     ), // reads from
-                    WriteDescriptorSet::buffer(7, buffers.blue_noise.clone()),
+                    WriteDescriptorSet::buffer(8, buffers.blue_noise.clone()),
                 ],
             )
             .unwrap()

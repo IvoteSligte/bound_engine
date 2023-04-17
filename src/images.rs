@@ -77,6 +77,7 @@ pub(crate) fn create_color_image(
 #[derive(Clone)]
 pub(crate) struct LightmapImages {
     pub(crate) colors: Vec<Vec<Arc<StorageImage>>>,
+    pub(crate) final_color: Vec<Arc<StorageImage>>,
     pub(crate) used: Vec<Arc<StorageImage>>,
     pub(crate) object_hits: Vec<Arc<StorageImage>>,
     pub(crate) staging_color: Arc<StorageImage>,
@@ -87,6 +88,7 @@ pub(crate) struct LightmapImages {
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
     pub(crate) colors: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
+    pub(crate) final_color: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) used: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) object_hits: Vec<Arc<dyn ImageViewAbstract>>,
 }
@@ -130,6 +132,19 @@ impl LightmapImages {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
+
+        let final_color = (0..(LM_COUNT))
+        .map(|_| {
+            create_storage_image(
+                ImageUsage {
+                    transfer_src: true,
+                    transfer_dst: true,
+                    ..ImageUsage::default()
+                },
+                Format::R16G16B16A16_UNORM,
+            )
+        })
+        .collect::<Vec<_>>();
 
         let used = (0..LM_COUNT)
             .map(|_| {
@@ -206,6 +221,7 @@ impl LightmapImages {
 
         Self {
             colors,
+            final_color,
             used,
             object_hits,
             staging_color,
@@ -225,6 +241,7 @@ impl LightmapImages {
                 .iter()
                 .map(|vec| vec.iter().map(view).collect())
                 .collect(),
+            final_color: self.final_color.iter().map(view).collect(),
             used: self.used.iter().map(view).collect(),
             object_hits: self.object_hits.iter().map(view).collect(),
         }

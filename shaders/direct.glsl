@@ -26,7 +26,7 @@ layout(binding = 1) uniform restrict readonly GpuBVH {
 
 layout(binding = 2, rgba16) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 3, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputColorImages;
+layout(binding = 3, rgba16) uniform restrict readonly image3D[LM_COUNT] lmFinalColorImages;
 
 #include "includes_trace_ray.glsl"
 
@@ -53,7 +53,7 @@ void main() {
     }
 
     // TODO: bilinear color sampling (texture)
-    vec3 color = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
+    vec3 color = imageLoad(lmFinalColorImages[lmIndex.w], lmIndex.xyz).rgb;
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }
