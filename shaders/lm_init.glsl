@@ -2,7 +2,7 @@
 
 #include "includes_general.glsl"
 
-layout(local_size_x = LM_SAMPLES, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
@@ -80,7 +80,7 @@ uint customSphereBVHIntersect(vec3 position, float radius) {
     return 0;
 }
 
-// TODO: break this up into multiple parts to do over time
+// TODO: break this up into multiple parts to do over time if necessary
 void main() {
     const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
 
@@ -93,14 +93,14 @@ void main() {
     
     imageStore(lmObjectHitImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(nodeIntersected));
 
-    ivec3 chunk = ivec3(LM_INDEX.x / 32, LM_INDEX.yz);
-    uint target = 1 << (LM_INDEX.x % 32);
+    const ivec3 CHUNK = ivec3(LM_INDEX.x / 32, LM_INDEX.yz);
+    const uint TARGET = 1 << (LM_INDEX.x % 32);
 
     if (nodeIntersected == 0) {
         // disable
-        imageAtomicAnd(lmOutputUsedImages[LM_INDEX.w], chunk.xyz, ALL_ONES ^ target);
+        imageAtomicAnd(lmOutputUsedImages[LM_INDEX.w], CHUNK.xyz, ALL_ONES ^ TARGET);
     } else {
         // enable
-        imageAtomicOr(lmOutputUsedImages[LM_INDEX.w], chunk.xyz, target);
+        imageAtomicOr(lmOutputUsedImages[LM_INDEX.w], CHUNK.xyz, TARGET);
     }
 }

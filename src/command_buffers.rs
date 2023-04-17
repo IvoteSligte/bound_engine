@@ -85,7 +85,7 @@ pub(crate) fn create_pathtrace_command_buffers(
         1,
     ];
 
-    let dispatch_lm_init = [LM_SIZE; 3];
+    let dispatch_lm_init = [LM_SIZE / 4, LM_SIZE / 4, LM_SIZE / 4];
 
     let dispatch_lm_accumulate = [LM_COUNT * LM_SIZE / 32, LM_SIZE, LM_SIZE];
 
@@ -111,7 +111,7 @@ pub(crate) fn create_pathtrace_command_buffers(
         builder
     };
 
-    let mut unique_command_buffers = vec![];
+    let mut command_buffers = vec![];
 
     let mut builder = builder_with_direct();
 
@@ -127,7 +127,7 @@ pub(crate) fn create_pathtrace_command_buffers(
         .unwrap();
 
     let lm_init = Arc::new(builder.build().unwrap());
-    unique_command_buffers.push(lm_init);
+    command_buffers.push(lm_init);
 
     for i in 0..32 {
         let mut builder = builder_with_direct();
@@ -144,7 +144,7 @@ pub(crate) fn create_pathtrace_command_buffers(
             .unwrap();
 
         let lm_primary = Arc::new(builder.build().unwrap());
-        unique_command_buffers.push(lm_primary);
+        command_buffers.push(lm_primary);
     }
 
     for r in 0..(LM_RAYS - 1) {
@@ -163,22 +163,14 @@ pub(crate) fn create_pathtrace_command_buffers(
                 .unwrap();
 
             let lm_accumulate = Arc::new(builder.build().unwrap());
-            unique_command_buffers.push(lm_accumulate);
+            command_buffers.push(lm_accumulate);
         }
-    }
-
-    let mut command_buffers = vec![unique_command_buffers[0].clone()];
-    for x in 0..LM_RAYS {
-        command_buffers.extend_from_slice(&unique_command_buffers[1..(1 + 32)]);
-        command_buffers
-            .extend_from_slice(&unique_command_buffers[(1 + 32)..(1 + 32 + 32 * (LM_RAYS - 1 - x))]);
     }
 
     PathtraceCommandBuffers {
         acc: VecOnce::new(command_buffers),
         direct: Arc::new(builder_with_direct().build().unwrap()),
     }
-    
 }
 
 pub(crate) fn create_swapchain_command_buffers(
@@ -303,41 +295,39 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
         });
 
     // TODO: remove duplication
-    for r in 0..LM_RAYS {
-        for i in 0..(LM_COUNT as usize) {
-            builder
-                .clear_color_image(ClearColorImageInfo::image(
-                    images.lightmap.staging_useds.clone(),
-                ))
-                .unwrap()
-                .copy_image(CopyImageInfo {
-                    regions: [ImageCopy {
-                        src_subresource: ImageSubresourceLayers::from_parameters(
-                            images.lightmap.staging_useds.format(),
-                            1,
-                        ),
-                        dst_subresource: ImageSubresourceLayers::from_parameters(
-                            images.lightmap.useds[r][i].format(),
-                            1,
-                        ),
-                        src_offset: src_offset_per_layer[i].to_array(), // FIXME: incorrect
-                        dst_offset: dst_offset_per_layer[i].to_array(), // FIXME: incorrect
-                        extent: extent_per_layer[i].to_array(), // FIXME: extent is incorrect here
-                        ..ImageCopy::default()
-                    }]
-                    .into(),
-                    ..CopyImageInfo::images(
-                        images.lightmap.useds[r][i].clone(),
-                        images.lightmap.staging_useds.clone(),
-                    )
-                })
-                .unwrap()
-                .copy_image(CopyImageInfo::images(
-                    images.lightmap.staging_useds.clone(),
-                    images.lightmap.useds[r][i].clone(),
-                ))
-                .unwrap();
-        }
+    for i in 0..(LM_COUNT as usize) {
+        builder
+            .clear_color_image(ClearColorImageInfo::image(
+                images.lightmap.staging_used.clone(),
+            ))
+            .unwrap()
+            .copy_image(CopyImageInfo {
+                regions: [ImageCopy {
+                    src_subresource: ImageSubresourceLayers::from_parameters(
+                        images.lightmap.staging_used.format(),
+                        1,
+                    ),
+                    dst_subresource: ImageSubresourceLayers::from_parameters(
+                        images.lightmap.used[i].format(),
+                        1,
+                    ),
+                    src_offset: src_offset_per_layer[i].to_array(), // FIXME: incorrect
+                    dst_offset: dst_offset_per_layer[i].to_array(), // FIXME: incorrect
+                    extent: extent_per_layer[i].to_array(), // FIXME: extent is incorrect here
+                    ..ImageCopy::default()
+                }]
+                .into(),
+                ..CopyImageInfo::images(
+                    images.lightmap.used[i].clone(),
+                    images.lightmap.staging_used.clone(),
+                )
+            })
+            .unwrap()
+            .copy_image(CopyImageInfo::images(
+                images.lightmap.staging_used.clone(),
+                images.lightmap.used[i].clone(),
+            ))
+            .unwrap();
     }
 
     for i in 0..(LM_COUNT as usize) {

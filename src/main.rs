@@ -174,6 +174,10 @@ fn main() {
             }
         }
 
+        if let Some(previous_future) = eh.state.fences.previous() {
+            previous_future.wait(None).unwrap();
+        }
+
         let (image_index, suboptimal, image_future) =
             match acquire_next_image(eh.state.swapchain.clone(), None) {
                 Ok(ok) => ok,
@@ -184,20 +188,11 @@ fn main() {
             };
         eh.recreate_swapchain |= suboptimal;
 
-        let previous_future = match eh.state.fences.previous() {
-            Some(future) => future.boxed(),
-            None => {
-                let mut future = sync::now(eh.state.device.clone());
-                future.cleanup_finished();
-                future.boxed()
-            }
-        };
-
         if let Some(image_fence) = &eh.state.fences[image_index as usize] {
             image_fence.wait(None).unwrap();
         }
 
-        let mut future = previous_future;
+        let mut future = sync::now(eh.state.device.clone()).boxed();
 
         if let Some(command_buffer) = move_lightmap {
             future = future
