@@ -4,8 +4,8 @@ use glam::{IVec3, UVec3};
 use vec_once::VecOnce;
 use vulkano::{
     command_buffer::{
-        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage,
-        CopyImageInfo, ImageCopy, PrimaryAutoCommandBuffer,
+        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo, ImageCopy,
+        PrimaryAutoCommandBuffer, DispatchIndirectCommand,
     },
     device::Queue,
     image::{ImageAccess, ImageSubresourceLayers},
@@ -66,7 +66,8 @@ impl CommandBuffers {
 }
 
 #[derive(Clone)]
-pub(crate) struct PathtraceCommandBuffers { // TODO: implement fn next(), which returns `direct` when `acc.next()` returns `None`
+pub(crate) struct PathtraceCommandBuffers {
+    // TODO: implement fn next(), which returns `direct` when `acc.next()` returns `None`
     pub(crate) acc: VecOnce<Arc<PrimaryAutoCommandBuffer>>,
     pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
 }
@@ -112,6 +113,19 @@ pub(crate) fn create_pathtrace_command_buffers(
     };
 
     let mut command_buffers = vec![];
+
+    let mut builder = builder_with_direct();
+
+    builder
+        .update_buffer(
+            &[DispatchIndirectCommand { x: 0, y: 1, z: 1 }][..],
+            buffers.lm_dispatch.clone(),
+            0,
+        )
+        .unwrap();
+
+    let lm_clear_dispatch = Arc::new(builder.build().unwrap());
+    command_buffers.push(lm_clear_dispatch);
 
     let mut builder = builder_with_direct();
 

@@ -30,7 +30,7 @@ layout(binding = 4, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutpu
 layout(binding = 5, rgba16) uniform restrict image3D[LM_COUNT] lmFinalColorImages;
 
 layout(binding = 6) buffer restrict readonly LMBuffer {
-    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE];
+    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
 } lmBuffer;
 
 layout(binding = 7) uniform restrict readonly BlueNoise {

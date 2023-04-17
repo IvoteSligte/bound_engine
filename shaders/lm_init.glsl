@@ -20,11 +20,11 @@ layout(binding = 1) uniform restrict readonly GpuBVH {
 } bvh;
 
 layout(binding = 2) buffer restrict LMBuffer {
-    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE];
+    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
 } lmBuffer;
 
 layout(binding = 3) buffer restrict LMDispatches {
-    uint dispatches[3];// TODO: clear on restart -> initial values are [0, 1, 1]
+    uint dispatches[3];
 } lmDispatches;
 
 const float SQRT_2 = 1.41421356;
@@ -93,7 +93,7 @@ void main() {
     const ivec4 LM_INDEX = ivec4(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz, gl_GlobalInvocationID.x / LM_SIZE);
 
     vec3 position = posAtLightmapIndex(LM_INDEX, LIGHTMAP_ORIGIN);
-    float radius = SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]; // FIXME: radius is too large
+    float radius = SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w];
 
     uint nodeIntersected = customSphereBVHIntersect(position, radius); // bottleneck
 
