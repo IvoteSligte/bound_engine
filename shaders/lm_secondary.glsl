@@ -32,31 +32,10 @@ layout(binding = 5) buffer restrict readonly LMBuffer {
 } lmBuffer;
 
 layout(binding = 6) uniform restrict readonly BlueNoise {
-    vec4 items[LM_SAMPLES];
+    vec4 items[LM_SAMPLES / 4][4];
 } bn;
 
 #include "includes_trace_ray.glsl"
-
-/// returns an index into a lightmap image in xyz, and the image index in w
-ivec4 lightmapIndexAtPos(vec3 v) {
-    const int HALF_LM_SIZE = LM_SIZE / 2;
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
-
-    v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
-
-    ivec3 index = ivec3(floor(v / LM_UNIT_SIZES[lightmapNum])) + HALF_LM_SIZE;
-
-    return ivec4(index, lightmapNum);
-}
-
-vec3 posAtLightmapIndex(ivec4 lmIndex) {
-    const int HALF_LM_SIZE = LM_SIZE / 2;
-
-    vec3 v = (lmIndex.xyz - (HALF_LM_SIZE + 0.5)) * LM_UNIT_SIZES[lmIndex.w] + rt.lightmapOrigin.xyz;
-
-    return v;
-}
 
 shared vec3 SharedColors[gl_WorkGroupSize.x];
 
@@ -73,18 +52,13 @@ void main() {
 
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
 
-    vec3[4] rands = vec3[4]( // TODO: use a subarray in bn.items of 4 elements
-        bn.items[gl_LocalInvocationID.x * 4].xyz,
-        bn.items[gl_LocalInvocationID.x * 4 + 1].xyz,
-        bn.items[gl_LocalInvocationID.x * 4 + 2].xyz,
-        bn.items[gl_LocalInvocationID.x * 4 + 3].xyz
-    );
+    vec4[4] rands = bn.items[gl_LocalInvocationID.x];
 
     mat4x3 randDirs = mat4x3( // TODO: optimize?
-        normalize(normal + rands[0]),
-        normalize(normal + rands[1]),
-        normalize(normal + rands[2]),
-        normalize(normal + rands[3])
+        normalize(normal + rands[0].xyz),
+        normalize(normal + rands[1].xyz),
+        normalize(normal + rands[2].xyz),
+        normalize(normal + rands[3].xyz)
     );
 
     RayResult results[4] = traceRayWithBVH4(hitPoint, randDirs); // bottleneck

@@ -132,7 +132,7 @@ pub(crate) fn get_blue_noise_buffer<A>(
 where
     A: CommandBufferAllocator,
 {
-    let blue_noise_data = UnitSphere
+    let blue_noise_data = UnitSphere // TODO: sort so similar directions are grouped together
         .sample_iter(rand::thread_rng())
         .take(LM_SAMPLES as usize)
         .collect::<Vec<[f32; 3]>>()

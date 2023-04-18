@@ -30,7 +30,7 @@ layout(binding = 4) buffer restrict readonly LMBuffer {
 } lmBuffer;
 
 layout(binding = 5) uniform restrict readonly BlueNoise {
-    vec4 items[LM_SAMPLES];
+    vec4 items[LM_SAMPLES / 4][4];
 } bn;
 
 #include "includes_trace_ray.glsl"
@@ -71,18 +71,13 @@ void main() {
 
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
 
-    vec3[4] rands = vec3[4]( // TODO: use a subarray in bn.items of 4 elements
-        bn.items[gl_LocalInvocationID.x * 4].xyz,
-        bn.items[gl_LocalInvocationID.x * 4 + 1].xyz,
-        bn.items[gl_LocalInvocationID.x * 4 + 2].xyz,
-        bn.items[gl_LocalInvocationID.x * 4 + 3].xyz
-    );
+    vec4[4] rands = bn.items[gl_LocalInvocationID.x];
 
     mat4x3 randDirs = mat4x3(
-        normalize(normal + rands[0]),
-        normalize(normal + rands[1]),
-        normalize(normal + rands[2]),
-        normalize(normal + rands[3])
+        normalize(normal + rands[0].xyz),
+        normalize(normal + rands[1].xyz),
+        normalize(normal + rands[2].xyz),
+        normalize(normal + rands[3].xyz)
     );
 
     RayResult results[4] = traceRayWithBVH4(hitPoint, randDirs); // bottleneck
