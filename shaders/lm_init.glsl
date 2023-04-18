@@ -83,7 +83,29 @@ uint customSphereBVHIntersect(vec3 position, float radius) {
     return 0;
 }
 
-// TODO: octree type convergence
+// TODO: octree type convergence using BufferSlice and indirect_dispatch and this function
+// uint customSphereBVHIntersectPrimary(vec3 position, float radius) {
+//     uint currIdx = bvh.root;
+
+//     while (currIdx != 0) {
+//         Bounds curr = bvh.nodes[currIdx];
+
+//         float dist = distance(position, curr.position) - curr.radius;
+
+//         if (dist <= radius) {
+//             if (curr.material == 0) {
+//                 currIdx = curr.child;
+//                 continue;
+//             } else {
+//                 return currIdx;
+//             }
+//         }
+//         currIdx = curr.next;
+//     }
+
+//     return 0;
+// }
+
 // TODO: break this up into multiple parts to do over time if necessary
 void main() {
     // TODO: find a way to remove this, binding is declared invalid when not reading from the buffer

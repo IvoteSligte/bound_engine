@@ -30,6 +30,7 @@ layout(binding = 3, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputC
 
 #include "includes_trace_ray.glsl"
 
+// TODO: change to fragment shader
 void main() {
     const ivec2 VIEWPORT = ivec2(imageSize(colorImage).xy);
     const ivec2 IPOS = ivec2(gl_GlobalInvocationID.xy);
