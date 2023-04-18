@@ -25,13 +25,11 @@ layout(binding = 2) uniform restrict readonly MutableData {
 
 layout(binding = 3, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutputColorImages;
 
-layout(binding = 4, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmFinalColorImages;
-
-layout(binding = 5) buffer restrict readonly LMBuffer {
+layout(binding = 4) buffer restrict readonly LMBuffer {
     Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
 } lmBuffer;
 
-layout(binding = 6) uniform restrict readonly BlueNoise {
+layout(binding = 5) uniform restrict readonly BlueNoise {
     vec4 items[LM_SAMPLES];
 } bn;
 
@@ -102,7 +100,5 @@ void main() {
         color = color * (material.reflectance * (1.0 / LM_SAMPLES)) + material.emittance;
 
         imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
-
-        imageStore(lmFinalColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
     }
 }

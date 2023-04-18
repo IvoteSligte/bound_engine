@@ -36,7 +36,7 @@ pub(crate) fn create_compute_descriptor_sets(
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
             WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
             WriteDescriptorSet::image_view(2, image_views.color.clone()),
-            WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.final_color.clone()),
+            WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.colors.last().unwrap().clone()),
         ],
     )
     .unwrap();
@@ -61,14 +61,13 @@ pub(crate) fn create_compute_descriptor_sets(
             WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
             WriteDescriptorSet::buffer(2, buffers.mutable.clone()),
             WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.colors[0].clone()), // writes to
-            WriteDescriptorSet::image_view_array(4, 0, image_views.lightmap.final_color.clone()), // writes to
-            WriteDescriptorSet::buffer(5, buffers.lm_buffer.clone()), // reads from
-            WriteDescriptorSet::buffer(6, buffers.blue_noise.clone()),
+            WriteDescriptorSet::buffer(4, buffers.lm_buffer.clone()), // reads from
+            WriteDescriptorSet::buffer(5, buffers.blue_noise.clone()),
         ],
     )
     .unwrap();
 
-    let lm_secondary = (1..LM_RAYS)
+    let lm_secondary = (0..(LM_RAYS - 1))
         .map(|r| {
             PersistentDescriptorSet::new(
                 &allocators.descriptor_set,
@@ -87,13 +86,8 @@ pub(crate) fn create_compute_descriptor_sets(
                         0,
                         image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(),
                     ), // writes to
-                    WriteDescriptorSet::image_view_array(
-                        5,
-                        0,
-                        image_views.lightmap.final_color.clone(),
-                    ), // writes to
-                    WriteDescriptorSet::buffer(6, buffers.lm_buffer.clone()), // reads from
-                    WriteDescriptorSet::buffer(7, buffers.blue_noise.clone()),
+                    WriteDescriptorSet::buffer(5, buffers.lm_buffer.clone()), // reads from
+                    WriteDescriptorSet::buffer(6, buffers.blue_noise.clone()),
                 ],
             )
             .unwrap()
