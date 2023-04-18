@@ -49,7 +49,7 @@ void main() {
 
     bool outOfRange = lmIndex.w >= LM_COUNT;
     if (outOfRange) {
-        imageStore(colorImage, IPOS, vec4(0.1)); // TODO: skybox
+        imageStore(colorImage, IPOS, vec4(0.0)); // TODO: skybox
         return;
     }
 

@@ -83,6 +83,7 @@ uint customSphereBVHIntersect(vec3 position, float radius) {
     return 0;
 }
 
+// TODO: octree type convergence
 // TODO: break this up into multiple parts to do over time if necessary
 void main() {
     // TODO: find a way to remove this, binding is declared invalid when not reading from the buffer

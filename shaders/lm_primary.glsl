@@ -72,7 +72,7 @@ void main() {
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
 
     vec3 randDir = normalize(normal + bn.items[gl_LocalInvocationID.x].xyz);
-    Ray ray = Ray(0, hitPoint, randDir, 0);
+    Ray ray = Ray(0, hitPoint, randDir, 0); // TODO: add hitPoint, normal, lmIndex, material to 8 byte buffer
 
     traceRayWithBVH(ray); // bottleneck
 
