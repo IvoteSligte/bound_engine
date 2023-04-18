@@ -8,7 +8,8 @@ use vulkano::{
 pub(crate) fn create_instance() -> Arc<Instance> {
     let library = VulkanLibrary::new().unwrap();
     let required_extensions = vulkano_win::required_extensions(&library);
-    let instance = Instance::new(
+    
+    Instance::new(
         library,
         InstanceCreateInfo {
             enabled_extensions: required_extensions,
@@ -16,6 +17,5 @@ pub(crate) fn create_instance() -> Arc<Instance> {
             ..Default::default()
         },
     )
-    .unwrap();
-    instance
+    .unwrap()
 }

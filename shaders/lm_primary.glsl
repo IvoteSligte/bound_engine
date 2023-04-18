@@ -2,7 +2,7 @@
 
 #include "includes_general.glsl"
 
-layout(local_size_x = LM_SAMPLES, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = LM_SAMPLES / 4, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
@@ -56,7 +56,7 @@ vec3 posAtLightmapIndex(ivec4 lmIndex) {
     return v;
 }
 
-shared vec3 SharedColors[LM_SAMPLES];
+shared vec3 SharedColors[gl_WorkGroupSize.x];
 
 void main() {
     const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
@@ -67,23 +67,37 @@ void main() {
 
     Bounds nodeHit = bvh.nodes[voxel.objectHit];
     vec3 point = posAtLightmapIndex(lmIndex, LIGHTMAP_ORIGIN);
-    vec3 normal = normalize(point - nodeHit.position);
+    vec3 normal = normalize(point - nodeHit.position); // TODO: add hitPoint, normal, lmIndex, material to 8 byte buffer so it doesn't need to be recalculated every time
 
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
 
-    vec3 randDir = normalize(normal + bn.items[gl_LocalInvocationID.x].xyz);
-    Ray ray = Ray(0, hitPoint, randDir, 0); // TODO: add hitPoint, normal, lmIndex, material to 8 byte buffer
+    vec3[4] rands = vec3[4]( // TODO: use a subarray in bn.items of 4 elements
+        bn.items[gl_LocalInvocationID.x * 4].xyz,
+        bn.items[gl_LocalInvocationID.x * 4 + 1].xyz,
+        bn.items[gl_LocalInvocationID.x * 4 + 2].xyz,
+        bn.items[gl_LocalInvocationID.x * 4 + 3].xyz
+    );
 
-    traceRayWithBVH(ray); // bottleneck
+    mat4x3 randDirs = mat4x3(
+        normalize(normal + rands[0]),
+        normalize(normal + rands[1]),
+        normalize(normal + rands[2]),
+        normalize(normal + rands[3])
+    );
 
-    vec3 color = buf.mats[ray.materialHit].emittance;
+    RayResult results[4] = traceRayWithBVH4(hitPoint, randDirs); // bottleneck
+
+    vec3 color = vec3(0.0);
+    for (uint i = 0; i < 4; i++) {
+        color += buf.mats[results[i].materialHit].emittance; // TODO: copy materials to shared memory?
+    }
 
     SharedColors[gl_LocalInvocationID.x] = color;
 
     barrier();
 
     if (gl_LocalInvocationID.x < 64) {
-        for (uint i = 1; i < LM_SAMPLES / 64; i++) {
+        for (uint i = 1; i < gl_WorkGroupSize.x / 64; i++) {
             color += SharedColors[i * 64 + gl_LocalInvocationID.x];
         }
         SharedColors[gl_LocalInvocationID.x] = color;
