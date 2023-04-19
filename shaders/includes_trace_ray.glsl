@@ -58,37 +58,3 @@ bool hitsBounds4(vec3 origin, mat4x3 dirs, Bounds bnd) {
     uvec4 cond2 = uvec4(greaterThan(m, vec4(EPSILON)));
     return a < bnd.radiusSquared || any(bvec4(cond1 & cond2));
 }
-
-RayResult[4] traceRayWithBVH4(vec3 origin, mat4x3 dirs) {
-    RayResult results[4] = RayResult[4](
-        RayResult(FLT_MAX, 0, 0),
-        RayResult(FLT_MAX, 0, 0),
-        RayResult(FLT_MAX, 0, 0),
-        RayResult(FLT_MAX, 0, 0)
-    );
-
-    uint currIdx = bvh.root;
-
-    while (currIdx != 0) {
-        Bounds curr = bvh.nodes[currIdx];
-
-        if (curr.material == 0) {
-            currIdx = hitsBounds4(origin, dirs, curr) ? curr.child : curr.next;
-            continue;
-        }
-
-        float[4] dists = distanceToObject4(origin, dirs, curr);
-
-        for (uint i = 0; i < 4; i++) {
-            if (dists[i] > EPSILON && dists[i] < results[i].distanceToHit) {
-                // is a leaf, store data
-                results[i] = RayResult(dists[i], currIdx, curr.material);
-            }
-        }
-
-        // move to next node
-        currIdx = curr.next;
-    }
-
-    return results;
-}
