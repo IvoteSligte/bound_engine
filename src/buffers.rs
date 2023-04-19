@@ -182,7 +182,7 @@ pub(crate) fn get_lm_buffer<A>(
 where
     A: CommandBufferAllocator,
 {
-    let iter = (0..(LM_SIZE.pow(3))).map(|_| 0u32).collect::<Vec<u32>>();
+    let iter = (0..(LM_SIZE.pow(3))).map(|_| shaders::ty::Voxel::default());
 
     DeviceLocalBuffer::from_iter(
         &allocators.memory,

@@ -89,29 +89,22 @@ void main() {
     barrier();
     
     SharedStruct sData = SharedData;
-    
-    ivec4 lmIndex = ivec4(sData.voxel.lmIndex.x % LM_SIZE, sData.voxel.lmIndex.yz, sData.voxel.lmIndex.x / LM_SIZE);
-
-    Bounds nodeHit = SharedBVH.nodes[sData.voxel.objectHit];
-    vec3 point = posAtLightmapIndex(lmIndex, sData.lightmapOrigin);
-    vec3 normal = normalize(point - nodeHit.position);
-
-    vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
+    Voxel voxel = sData.voxel;
 
     vec4[4] rands = noise.items[gl_LocalInvocationID.x];
 
     mat4x3 randDirs = mat4x3( // TODO: optimize?
-        normalize(normal + rands[0].xyz),
-        normalize(normal + rands[1].xyz),
-        normalize(normal + rands[2].xyz),
-        normalize(normal + rands[3].xyz)
+        normalize(voxel.normal + rands[0].xyz),
+        normalize(voxel.normal + rands[1].xyz),
+        normalize(voxel.normal + rands[2].xyz),
+        normalize(voxel.normal + rands[3].xyz)
     );
 
-    RayResult results[4] = traceRayWithBVH4(hitPoint, randDirs); // bottleneck
+    RayResult results[4] = traceRayWithBVH4(voxel.hitPoint, randDirs); // bottleneck
 
     vec3 color = vec3(0.0);
     for (uint i = 0; i < 4; i++) {
-        vec3 p = (randDirs[i] * results[i].distanceToHit) + hitPoint;
+        vec3 p = (randDirs[i] * results[i].distanceToHit) + voxel.hitPoint;
         ivec4 lmIndexSample = lightmapIndexAtPos(p, sData.lightmapOrigin);
         color += imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: texture access for smoother results
     }
@@ -134,9 +127,9 @@ void main() {
             color += SharedColors[i];
         }
 
-        Material material = buf.mats[nodeHit.material];
+        Material material = buf.mats[voxel.materialHit];
         color = color * (material.reflectance * (1.0 / LM_SAMPLES) + material.emittance);
 
-        imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 0.0));
+        imageStore(lmOutputColorImages[voxel.lmIndex.w], voxel.lmIndex.xyz, vec4(color, 0.0));
     }
 }

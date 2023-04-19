@@ -53,7 +53,7 @@ bool pointContainedInBVHMasked(vec3 position, uint mask) {
     return false;
 }
 
-uint customSphereBVHIntersect(vec3 position, float radius) {
+bool customSphereBVHIntersect(vec3 position, float radius, out Bounds nodeIntersected) {
     uint currIdx = bvh.root;
 
     while (currIdx != 0) {
@@ -73,14 +73,15 @@ uint customSphereBVHIntersect(vec3 position, float radius) {
 
                 // bool isContained = pointContainedInBVHMasked(p, currIdx);
                 // if (!isContained) {
-                    return currIdx;
+                    nodeIntersected = curr;
+                    return true;
                 // }
             }
         }
         currIdx = curr.next;
     }
 
-    return 0;
+    return false;
 }
 
 // TODO: octree type convergence using BufferSlice and indirect_dispatch and this function
@@ -118,10 +119,19 @@ void main() {
     vec3 position = posAtLightmapIndex(LM_INDEX, LIGHTMAP_ORIGIN);
     float radius = SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w];
 
-    uint nodeIntersected = customSphereBVHIntersect(position, radius); // bottleneck
+    Bounds nodeIntersected;
+    bool intersected = customSphereBVHIntersect(position, radius, nodeIntersected); // bottleneck // TODO: copy BVH to shared memory
 
-    if (nodeIntersected != 0) {
+    if (intersected) {
+        vec3 normal = normalize(position - nodeIntersected.position);
+        vec3 hitPoint = normal * nodeIntersected.radius + nodeIntersected.position;
+
         uint index = atomicAdd(lmDispatches.dispatches[0], 1);
-        lmBuffer.voxels[index] = Voxel(gl_GlobalInvocationID.xyz, nodeIntersected);
+        lmBuffer.voxels[index] = Voxel(
+            LM_INDEX,
+            nodeIntersected.material,
+            hitPoint,
+            normal
+        );
     }
 }

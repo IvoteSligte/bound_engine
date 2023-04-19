@@ -47,8 +47,10 @@ struct HitItem {
 };
 
 struct Voxel {
-    uvec3 lmIndex;
-    uint objectHit;
+    ivec4 lmIndex;
+    uint materialHit;
+    vec3 hitPoint;
+    vec3 normal;
 };
 
 struct SharedStruct {
