@@ -143,21 +143,22 @@ where
 
     let mut sorted_points = vec![];
 
-    while let Some(p) = points.pop() { // TODO: make this more efficient
+    while !points.is_empty() {
+        let p = points.swap_remove(0);
         sorted_points.push(p);
 
         let mut sorted = points
-            .iter()
-            .enumerate()
-            .map(|(i, p2)| (i, p.distance(*p2)))
+            .into_iter()
+            .map(|p2| (p.distance(p2), p2))
             .collect::<Vec<_>>();
-        sorted.sort_by(|(_, dist1), (_, dist2)| dist1.total_cmp(dist2));
-        let new_points = sorted[0..3].into_iter().map(|(i, _)| points.swap_remove(*i));
-
+        sorted.sort_by(|(dist1, _), (dist2, _)| dist1.total_cmp(dist2));
+        points = sorted[3..].into_iter().map(|(_, p2)| *p2).collect();
+        
+        let new_points = sorted[0..3].into_iter().map(|(_, p2)| *p2);
         sorted_points.extend(new_points);
     }
 
-    let noise_data = sorted_points
+    let noise_data = sorted_points // TODO: store in file and use include_bytes! macro
         .into_iter()
         .map(|v| v.extend(0.0).to_array())
         .collect::<Vec<[f32; 4]>>();
