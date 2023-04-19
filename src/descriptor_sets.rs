@@ -62,7 +62,7 @@ pub(crate) fn create_compute_descriptor_sets(
             WriteDescriptorSet::buffer(2, buffers.mutable.clone()),
             WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.colors[0].clone()), // writes to
             WriteDescriptorSet::buffer(4, buffers.lm_buffer.clone()), // reads from
-            WriteDescriptorSet::buffer(5, buffers.blue_noise.clone()),
+            WriteDescriptorSet::buffer(5, buffers.noise.clone()),
         ],
     )
     .unwrap();
@@ -87,7 +87,7 @@ pub(crate) fn create_compute_descriptor_sets(
                         image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(),
                     ), // writes to
                     WriteDescriptorSet::buffer(5, buffers.lm_buffer.clone()), // reads from
-                    WriteDescriptorSet::buffer(6, buffers.blue_noise.clone()),
+                    WriteDescriptorSet::buffer(6, buffers.noise.clone()),
                 ],
             )
             .unwrap()

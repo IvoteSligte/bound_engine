@@ -39,14 +39,16 @@ void main() {
     const vec2 NORM_COORD = RATIO * (IPOS * 2.0 / VIEWPORT - 1.0);
     const vec3 DIRECTION = normalize(vec3(NORM_COORD.x, 1.0, NORM_COORD.y));
 
-    vec3 viewDir = rotateWithQuat(rt.rotation, DIRECTION);
+    vec3 position = rt.position;
+    vec4 rotation = rt.rotation;
+    vec3 lightmapOrigin = rt.lightmapOrigin;
 
-    Ray ray = Ray(0, rt.position, viewDir, 0);
+    vec3 viewDir = rotateWithQuat(rotation, DIRECTION);
 
-    float distanceToHit = traceRayWithBVH(ray);
-    ray.origin = (ray.direction * distanceToHit) + ray.origin;
+    RayResult result = traceRayWithBVH(position, viewDir);
 
-    ivec4 lmIndex = lightmapIndexAtPos(ray.origin, rt.lightmapOrigin.xyz);
+    vec3 p = (viewDir * result.distanceToHit) + position;
+    ivec4 lmIndex = lightmapIndexAtPos(p, lightmapOrigin);
 
     bool outOfRange = lmIndex.w >= LM_COUNT;
     if (outOfRange) {

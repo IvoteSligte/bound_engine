@@ -29,49 +29,32 @@ layout(binding = 4) buffer restrict readonly LMBuffer {
     Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
 } lmBuffer;
 
-layout(binding = 5) uniform restrict readonly BlueNoise {
+layout(binding = 5) uniform restrict readonly NoiseBuffer {
     vec4 items[LM_SAMPLES / 4][4];
-} bn;
+} noise;
 
 #include "includes_trace_ray.glsl"
 
-/// returns an index into a lightmap image in xyz, and the image index in w
-ivec4 lightmapIndexAtPos(vec3 v) {
-    const int HALF_LM_SIZE = LM_SIZE / 2;
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
-
-    v -= rt.lightmapOrigin.xyz;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
-
-    ivec3 index = ivec3(floor(v / LM_UNIT_SIZES[lightmapNum])) + HALF_LM_SIZE;
-
-    return ivec4(index, lightmapNum);
-}
-
-vec3 posAtLightmapIndex(ivec4 lmIndex) {
-    const int HALF_LM_SIZE = LM_SIZE / 2;
-
-    vec3 v = (lmIndex.xyz - (HALF_LM_SIZE + 0.5)) * LM_UNIT_SIZES[lmIndex.w] + rt.lightmapOrigin.xyz;
-
-    return v;
-}
-
+shared SharedStruct SharedData;
 shared vec3 SharedColors[gl_WorkGroupSize.x];
 
 void main() {
-    const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
-
-    Voxel voxel = lmBuffer.voxels[gl_WorkGroupID.x];
+    if (gl_LocalInvocationID.x == 0) {
+        SharedData = SharedStruct(lmBuffer.voxels[gl_WorkGroupID.x], rt.lightmapOrigin);
+    }
+    barrier();
     
-    ivec4 lmIndex = ivec4(voxel.lmIndex.x % LM_SIZE, voxel.lmIndex.yz, voxel.lmIndex.x / LM_SIZE);
+    SharedStruct sData = SharedData;
 
-    Bounds nodeHit = bvh.nodes[voxel.objectHit];
-    vec3 point = posAtLightmapIndex(lmIndex, LIGHTMAP_ORIGIN);
+    ivec4 lmIndex = ivec4(sData.voxel.lmIndex.x % LM_SIZE, sData.voxel.lmIndex.yz, sData.voxel.lmIndex.x / LM_SIZE);
+
+    Bounds nodeHit = bvh.nodes[sData.voxel.objectHit];
+    vec3 point = posAtLightmapIndex(lmIndex, sData.lightmapOrigin);
     vec3 normal = normalize(point - nodeHit.position); // TODO: add hitPoint, normal, lmIndex, material to 8 byte buffer so it doesn't need to be recalculated every time
 
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
 
-    vec4[4] rands = bn.items[gl_LocalInvocationID.x];
+    vec4[4] rands = noise.items[gl_LocalInvocationID.x];
 
     mat4x3 randDirs = mat4x3(
         normalize(normal + rands[0].xyz),

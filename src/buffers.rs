@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use glam::Vec3;
 use rand_distr::{Distribution, UnitSphere};
 use vulkano::{
     buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
@@ -24,7 +25,7 @@ pub(crate) struct Buffers {
     pub(crate) bvh: Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>>,
     pub(crate) lm_buffer: Arc<dyn BufferAccess>,
     pub(crate) lm_dispatch: Arc<DeviceLocalBuffer<[DispatchIndirectCommand]>>,
-    pub(crate) blue_noise: Arc<dyn BufferAccess>,
+    pub(crate) noise: Arc<dyn BufferAccess>,
 }
 
 impl Buffers {
@@ -42,7 +43,7 @@ impl Buffers {
             bvh: get_bvh_buffer(allocators.clone(), &mut builder),
             lm_buffer: get_lm_buffer(allocators.clone(), &mut builder),
             lm_dispatch: get_lm_dispatch_buffer(allocators.clone(), &mut builder),
-            blue_noise: get_blue_noise_buffer(allocators.clone(), &mut builder),
+            noise: get_noise_buffer(allocators.clone(), &mut builder),
         };
 
         builder
@@ -125,24 +126,45 @@ where
     .unwrap()
 }
 
-pub(crate) fn get_blue_noise_buffer<A>(
+pub(crate) fn get_noise_buffer<A>(
     allocators: Arc<Allocators>,
     alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
 ) -> Arc<dyn BufferAccess>
 where
     A: CommandBufferAllocator,
 {
-    let blue_noise_data = UnitSphere // TODO: sort so similar directions are grouped together
+    let mut points = UnitSphere // TODO: sort so similar directions are grouped together
         .sample_iter(rand::thread_rng())
         .take(LM_SAMPLES as usize)
         .collect::<Vec<[f32; 3]>>()
         .into_iter()
-        .map(|x| [x[0], x[1], x[2], 0.0])
+        .map(Vec3::from_array)
+        .collect::<Vec<Vec3>>();
+
+    let mut sorted_points = vec![];
+
+    while let Some(p) = points.pop() { // TODO: make this more efficient
+        sorted_points.push(p);
+
+        let mut sorted = points
+            .iter()
+            .enumerate()
+            .map(|(i, p2)| (i, p.distance(*p2)))
+            .collect::<Vec<_>>();
+        sorted.sort_by(|(_, dist1), (_, dist2)| dist1.total_cmp(dist2));
+        let new_points = sorted[0..3].into_iter().map(|(i, _)| points.swap_remove(*i));
+
+        sorted_points.extend(new_points);
+    }
+
+    let noise_data = sorted_points
+        .into_iter()
+        .map(|v| v.extend(0.0).to_array())
         .collect::<Vec<[f32; 4]>>();
 
     DeviceLocalBuffer::from_iter(
         &allocators.memory,
-        blue_noise_data,
+        noise_data,
         BufferUsage {
             uniform_buffer: true,
             ..BufferUsage::empty()

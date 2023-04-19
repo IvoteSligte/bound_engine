@@ -51,6 +51,17 @@ struct Voxel {
     uint objectHit;
 };
 
+struct SharedStruct {
+    Voxel voxel;
+    vec3 lightmapOrigin;
+};
+
+struct RayResult {
+    float distanceToHit;
+    uint objectHit;
+    uint materialHit;
+};
+
 vec3 rotateWithQuat(vec4 q, vec3 v) {
     vec3 t = q.w * v + cross(q.xyz, v);
     return 2.0 * cross(q.xyz, t) + v;

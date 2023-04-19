@@ -31,28 +31,32 @@ layout(binding = 5) buffer restrict readonly LMBuffer {
     Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
 } lmBuffer;
 
-layout(binding = 6) uniform restrict readonly BlueNoise {
+layout(binding = 6) uniform restrict readonly NoiseBuffer {
     vec4 items[LM_SAMPLES / 4][4];
-} bn;
+} noise;
 
 #include "includes_trace_ray.glsl"
 
+shared SharedStruct SharedData;
 shared vec3 SharedColors[gl_WorkGroupSize.x];
 
 void main() {
-    const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
-
-    Voxel voxel = lmBuffer.voxels[gl_WorkGroupID.x];
+    if (gl_LocalInvocationID.x == 0) {
+        SharedData = SharedStruct(lmBuffer.voxels[gl_WorkGroupID.x], rt.lightmapOrigin);
+    }
+    barrier();
     
-    ivec4 lmIndex = ivec4(voxel.lmIndex.x % LM_SIZE, voxel.lmIndex.yz, voxel.lmIndex.x / LM_SIZE);
+    SharedStruct sData = SharedData;
+    
+    ivec4 lmIndex = ivec4(sData.voxel.lmIndex.x % LM_SIZE, sData.voxel.lmIndex.yz, sData.voxel.lmIndex.x / LM_SIZE);
 
-    Bounds nodeHit = bvh.nodes[voxel.objectHit];
-    vec3 point = posAtLightmapIndex(lmIndex, LIGHTMAP_ORIGIN);
+    Bounds nodeHit = bvh.nodes[sData.voxel.objectHit];
+    vec3 point = posAtLightmapIndex(lmIndex, sData.lightmapOrigin);
     vec3 normal = normalize(point - nodeHit.position);
 
     vec3 hitPoint = normal * nodeHit.radius + nodeHit.position;
 
-    vec4[4] rands = bn.items[gl_LocalInvocationID.x];
+    vec4[4] rands = noise.items[gl_LocalInvocationID.x];
 
     mat4x3 randDirs = mat4x3( // TODO: optimize?
         normalize(normal + rands[0].xyz),
@@ -66,7 +70,7 @@ void main() {
     vec3 color = vec3(0.0);
     for (uint i = 0; i < 4; i++) {
         vec3 p = (randDirs[i] * results[i].distanceToHit) + hitPoint;
-        ivec4 lmIndexSample = lightmapIndexAtPos(p, LIGHTMAP_ORIGIN);
+        ivec4 lmIndexSample = lightmapIndexAtPos(p, sData.lightmapOrigin);
         color += imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: texture access for smoother results
     }
 
