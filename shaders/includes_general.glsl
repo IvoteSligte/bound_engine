@@ -64,6 +64,23 @@ struct RayResult {
     uint materialHit;
 };
 
+struct Directions {
+    mat4x3 directions;
+    vec3 averageDirection;
+    float radius;
+};
+
+struct CPUDirections {
+    vec4 directions[4];
+    vec3 averageDirection;
+    float radius;
+};
+
+struct SharedGpuBVH {
+    uint root;
+    Bounds nodes[2 * MAX_OBJECTS];
+};
+
 vec3 rotateWithQuat(vec4 q, vec3 v) {
     vec3 t = q.w * v + cross(q.xyz, v);
     return 2.0 * cross(q.xyz, t) + v;

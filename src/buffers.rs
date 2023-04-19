@@ -145,7 +145,6 @@ where
 
     while !points.is_empty() {
         let p = points.swap_remove(0);
-        sorted_points.push(p);
 
         let mut sorted = points
             .into_iter()
@@ -153,15 +152,32 @@ where
             .collect::<Vec<_>>();
         sorted.sort_by(|(dist1, _), (dist2, _)| dist1.total_cmp(dist2));
         points = sorted[3..].into_iter().map(|(_, p2)| *p2).collect();
-        
-        let new_points = sorted[0..3].into_iter().map(|(_, p2)| *p2);
-        sorted_points.extend(new_points);
+
+        let new_points = sorted[0..3]
+            .into_iter()
+            .map(|(_, p2)| *p2)
+            .collect::<Vec<Vec3>>();
+        sorted_points.push([p, new_points[0], new_points[1], new_points[2]]);
     }
 
     let noise_data = sorted_points // TODO: store in file and use include_bytes! macro
         .into_iter()
-        .map(|v| v.extend(0.0).to_array())
-        .collect::<Vec<[f32; 4]>>();
+        .map(|array| {
+            let sum: Vec3 = array.iter().sum();
+            let average = sum.normalize();
+            let radius = array
+                .iter()
+                .map(|v| v.distance(average))
+                .max_by(|a, b| a.total_cmp(b))
+                .unwrap();
+
+            shaders::ty::CPUDirections {
+                directions: array.map(|v| v.extend(0.0).to_array()),
+                averageDirection: average.to_array(),
+                radius,
+            }
+        })
+        .collect::<Vec<_>>();
 
     DeviceLocalBuffer::from_iter(
         &allocators.memory,

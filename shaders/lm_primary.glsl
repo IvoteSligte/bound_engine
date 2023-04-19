@@ -30,13 +30,8 @@ layout(binding = 4) buffer restrict readonly LMBuffer {
 } lmBuffer;
 
 layout(binding = 5) uniform restrict readonly NoiseBuffer {
-    vec4 items[LM_SAMPLES / 4][4];
+    CPUDirections dirs[gl_WorkGroupSize.x]; // DEBUG:
 } noise;
-
-struct SharedGpuBVH {
-    uint root;
-    Bounds nodes[2 * MAX_OBJECTS];
-};
 
 shared SharedGpuBVH SharedBVH;
 
@@ -45,7 +40,7 @@ shared SharedGpuBVH SharedBVH;
 shared SharedStruct SharedData;
 shared vec3 SharedColors[gl_WorkGroupSize.x];
 
-RayResult[4] traceRayWithBVH4(vec3 origin, mat4x3 dirs) {
+RayResult[4] traceRayWithBVH4(vec3 origin, Directions dirs) {
     RayResult results[4] = RayResult[4](
         RayResult(FLT_MAX, 0, 0),
         RayResult(FLT_MAX, 0, 0),
@@ -59,11 +54,11 @@ RayResult[4] traceRayWithBVH4(vec3 origin, mat4x3 dirs) {
         Bounds curr = SharedBVH.nodes[currIdx];
 
         if (curr.material == 0) {
-            currIdx = hitsBounds4(origin, dirs, curr) ? curr.child : curr.next;
+            currIdx = hitsBounds4(origin, dirs.directions, curr) ? curr.child : curr.next;
             continue;
         }
 
-        float[4] dists = distanceToObject4(origin, dirs, curr);
+        float[4] dists = distanceToObject4(origin, dirs.directions, curr);
 
         for (uint i = 0; i < 4; i++) {
             if (dists[i] > EPSILON && dists[i] < results[i].distanceToHit) {
@@ -89,16 +84,20 @@ void main() {
     SharedStruct sData = SharedData;
     Voxel voxel = sData.voxel;
 
-    vec4[4] rands = noise.items[gl_LocalInvocationID.x];
+    CPUDirections cpuDirs = noise.dirs[gl_LocalInvocationID.x];
 
-    mat4x3 randDirs = mat4x3(
-        normalize(voxel.normal + rands[0].xyz),
-        normalize(voxel.normal + rands[1].xyz),
-        normalize(voxel.normal + rands[2].xyz),
-        normalize(voxel.normal + rands[3].xyz)
+    Directions dirs = Directions(
+        mat4x3(
+            normalize(voxel.normal + cpuDirs.directions[0].xyz),
+            normalize(voxel.normal + cpuDirs.directions[1].xyz),
+            normalize(voxel.normal + cpuDirs.directions[2].xyz),
+            normalize(voxel.normal + cpuDirs.directions[3].xyz)
+        ),
+        cpuDirs.averageDirection,
+        cpuDirs.radius
     );
 
-    RayResult results[4] = traceRayWithBVH4(voxel.hitPoint, randDirs); // bottleneck
+    RayResult results[4] = traceRayWithBVH4(voxel.hitPoint, dirs); // bottleneck
 
     vec3 color = vec3(0.0);
     for (uint i = 0; i < 4; i++) {

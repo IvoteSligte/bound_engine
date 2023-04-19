@@ -50,11 +50,11 @@ float[4] distanceToObject4(vec3 origin, mat4x3 dirs, Bounds bnd) {
     );
 }
 
-bool hitsBounds4(vec3 origin, mat4x3 dirs, Bounds bnd) {
+bool hitsBounds4(vec3 origin, mat4x3 dirs, Bounds bnd) { // FIXME:
     vec3 v = bnd.position - origin;
     float a = dot(v, v);
     vec4 m = v * dirs; // dot products calculated using one matrix multiplication
-    uvec4 cond1 = uvec4(lessThan((-m) * m, vec4(bnd.radiusSquared - a)));
+    uvec4 cond1 = uvec4(lessThan((-m) * m + a, vec4(bnd.radiusSquared)));
     uvec4 cond2 = uvec4(greaterThan(m, vec4(EPSILON)));
     return a < bnd.radiusSquared || any(bvec4(cond1 & cond2));
 }
