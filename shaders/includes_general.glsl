@@ -64,18 +64,6 @@ struct RayResult {
     uint materialHit;
 };
 
-struct Directions {
-    mat4x3 directions;
-    vec3 averageDirection;
-    float radius;
-};
-
-struct CPUDirections {
-    vec4 directions[4];
-    vec3 averageDirection;
-    float radius;
-};
-
 struct SharedGpuBVH {
     uint root;
     Bounds nodes[2 * MAX_OBJECTS];

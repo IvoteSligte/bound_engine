@@ -162,21 +162,7 @@ where
 
     let noise_data = sorted_points // TODO: store in file and use include_bytes! macro
         .into_iter()
-        .map(|array| {
-            let sum: Vec3 = array.iter().sum();
-            let average = sum.normalize();
-            let radius = array
-                .iter()
-                .map(|v| v.distance(average))
-                .max_by(|a, b| a.total_cmp(b))
-                .unwrap();
-
-            shaders::ty::CPUDirections {
-                directions: array.map(|v| v.extend(0.0).to_array()),
-                averageDirection: average.to_array(),
-                radius,
-            }
-        })
+        .map(|array| array.map(|v| v.extend(0.0).to_array()))
         .collect::<Vec<_>>();
 
     DeviceLocalBuffer::from_iter(
