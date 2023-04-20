@@ -1,5 +1,3 @@
-mod bvh;
-
 use std::{f32::consts::PI, sync::Arc};
 
 use event_helper::create_callbacks;

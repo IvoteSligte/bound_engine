@@ -1,9 +1,6 @@
 use std::f32::consts::PI;
 
-use crate::{
-    bvh::{self},
-    shaders,
-};
+use crate::shaders;
 
 use glam::*;
 
@@ -90,25 +87,24 @@ pub(crate) struct CpuObject {
     material: usize,
 }
 
-impl From<bvh::CpuNode> for CpuObject {
-    fn from(value: bvh::CpuNode) -> Self {
+impl From<shaders::ty::Object> for CpuObject {
+    fn from(value: shaders::ty::Object) -> Self {
         Self {
-            position: value.position,
+            position: Vec3::from_array(value.position),
             radius: value.radius,
-            material: value.material.unwrap(),
+            material: value.material as usize,
         }
     }
 }
 
-impl Into<bvh::CpuNode> for CpuObject {
-    fn into(self) -> bvh::CpuNode {
-        bvh::CpuNode {
-            position: self.position,
-            radius: self.radius,
-            material: Some(self.material),
-            child: None,
-            next: None,
-            parent: None,
+impl From<CpuObject> for shaders::ty::Object {
+    fn from(value: CpuObject) -> Self {
+        Self {
+            position: value.position.to_array(),
+            radius: value.radius,
+            radiusSquared: value.radius * value.radius,
+            material: value.material as u32,
+            _dummy0: [0; 8],
         }
     }
 }
@@ -146,15 +142,8 @@ fn custom_objects() -> Vec<CpuObject> {
     objects
 }
 
-pub(crate) fn get_objects() -> shaders::ty::GpuBVH {
+pub(crate) fn get_objects() -> Vec<shaders::ty::Object> {
     let objects = custom_objects();
 
-    let mut bvh: bvh::CpuBVH =
-        bvh::CpuBVH::from(<CpuObject as Into<bvh::CpuNode>>::into(objects[0].clone()));
-
-    for n in objects[1..].iter() {
-        bvh.merge_in_place(<CpuObject as Into<bvh::CpuNode>>::into(n.clone()).into());
-    }
-
-    bvh.into()
+    objects.into_iter().map(|cpu_obj| cpu_obj.into()).collect::<Vec<_>>()
 }

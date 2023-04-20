@@ -22,7 +22,7 @@ use crate::{
 pub(crate) struct Buffers {
     pub(crate) real_time: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
     pub(crate) mutable: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>, // TODO: rename to MaterialBuffer
-    pub(crate) bvh: Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>>,
+    pub(crate) objects: Arc<DeviceLocalBuffer<[shaders::ty::Object]>>,
     pub(crate) lm_buffer: Arc<dyn BufferAccess>,
     pub(crate) lm_dispatch: Arc<DeviceLocalBuffer<[DispatchIndirectCommand]>>,
     pub(crate) noise: Arc<dyn BufferAccess>,
@@ -40,7 +40,7 @@ impl Buffers {
         let buffers = Self {
             real_time: get_real_time_buffer(allocators.clone(), &mut builder),
             mutable: get_mutable_buffer(allocators.clone(), &mut builder),
-            bvh: get_bvh_buffer(allocators.clone(), &mut builder),
+            objects: get_object_buffer(allocators.clone(), &mut builder),
             lm_buffer: get_lm_buffer(allocators.clone(), &mut builder),
             lm_dispatch: get_lm_dispatch_buffer(allocators.clone(), &mut builder),
             noise: get_noise_buffer(allocators.clone(), &mut builder),
@@ -105,18 +105,18 @@ where
     .unwrap()
 }
 
-pub(crate) fn get_bvh_buffer<A>(
+pub(crate) fn get_object_buffer<A>(
     allocators: Arc<Allocators>,
     alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
-) -> Arc<DeviceLocalBuffer<shaders::ty::GpuBVH>>
+) -> Arc<DeviceLocalBuffer<[shaders::ty::Object]>>
 where
     A: CommandBufferAllocator,
 {
-    let bvh = get_objects();
+    let objects = get_objects();
 
-    DeviceLocalBuffer::<shaders::ty::GpuBVH>::from_data(
+    DeviceLocalBuffer::<[shaders::ty::Object]>::from_iter(
         &allocators.memory,
-        bvh,
+        objects,
         BufferUsage {
             uniform_buffer: true,
             ..BufferUsage::empty()

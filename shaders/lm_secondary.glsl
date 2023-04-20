@@ -14,10 +14,9 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     uint frame;
 } rt;
 
-layout(binding = 1) uniform restrict readonly GpuBVH {
-    uint root;
-    Bounds nodes[2 * MAX_OBJECTS];
-} bvh;
+layout(binding = 1) uniform restrict readonly ObjectBuffer {
+    Object objects[MAX_OBJECTS];
+} objBuffer;
 
 layout(binding = 2) uniform restrict readonly MutableData {
     Material mats[MAX_MATERIALS];
@@ -35,14 +34,12 @@ layout(binding = 6) uniform restrict readonly NoiseBuffer {
     vec4 dirs[gl_WorkGroupSize.x][4];
 } noise;
 
-shared SharedGpuBVH SharedBVH;
-
 #include "includes_trace_ray.glsl"
 
 shared SharedStruct SharedData;
 shared vec3 SharedColors[gl_WorkGroupSize.x];
 
-RayResult[4] traceRayWithBVH4(vec3 origin, mat4x3 dirs) {
+RayResult[4] traceRay4(vec3 origin, mat4x3 dirs) {
     RayResult results[4] = RayResult[4](
         RayResult(FLT_MAX, 0, 0),
         RayResult(FLT_MAX, 0, 0),
@@ -50,27 +47,17 @@ RayResult[4] traceRayWithBVH4(vec3 origin, mat4x3 dirs) {
         RayResult(FLT_MAX, 0, 0)
     );
 
-    uint currIdx = SharedBVH.root;
+    for (uint i = 0; i < MAX_OBJECTS; i++) {
+        Object obj = objBuffer.objects[i]; // TODO: shared memory
 
-    while (currIdx != 0) {
-        Bounds curr = SharedBVH.nodes[currIdx];
+        float[4] dists = distanceToObject4(origin, dirs, obj);
 
-        if (curr.material == 0) {
-            currIdx = hitsBounds4(origin, dirs, curr) ? curr.child : curr.next;
-            continue;
-        }
-
-        float[4] dists = distanceToObject4(origin, dirs, curr);
-
-        for (uint i = 0; i < 4; i++) {
-            if (dists[i] > EPSILON && dists[i] < results[i].distanceToHit) {
+        for (uint j = 0; j < 4; i++) {
+            if (dists[j] > EPSILON && dists[j] < results[j].distanceToHit) {
                 // is a leaf, store data
-                results[i] = RayResult(dists[i], currIdx, curr.material);
+                results[j] = RayResult(dists[i], i, obj.material);
             }
         }
-
-        // move to next node
-        currIdx = curr.next;
     }
 
     return results;
@@ -79,7 +66,6 @@ RayResult[4] traceRayWithBVH4(vec3 origin, mat4x3 dirs) {
 void main() {
     if (gl_LocalInvocationID.x == 0) {
         SharedData = SharedStruct(lmBuffer.voxels[gl_WorkGroupID.x], rt.lightmapOrigin);
-        SharedBVH = SharedGpuBVH(bvh.root, bvh.nodes);
     }
     barrier();
     
@@ -95,7 +81,7 @@ void main() {
         normalize(voxel.normal + randDirs[3].xyz)
     );
 
-    RayResult results[4] = traceRayWithBVH4(voxel.hitPoint, dirMat); // bottleneck
+    RayResult results[4] = traceRay4(voxel.hitPoint, dirMat); // bottleneck
 
     vec3 color = vec3(0.0);
     for (uint i = 0; i < 4; i++) {

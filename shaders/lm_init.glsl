@@ -14,10 +14,9 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     uint frame;
 } rt;
 
-layout(binding = 1) uniform restrict readonly GpuBVH {
-    uint root;
-    Bounds nodes[2 * MAX_OBJECTS];
-} bvh;
+layout(binding = 1) uniform restrict readonly ObjectBuffer {
+    Object objects[MAX_OBJECTS];
+} objBuffer;
 
 layout(binding = 2) buffer restrict LMBuffer {
     Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
@@ -29,83 +28,20 @@ layout(binding = 3) buffer restrict LMDispatches {
 
 const float SQRT_2 = 1.41421356;
 
-bool pointContainedInBVHMasked(vec3 position, uint mask) {
-    uint currIdx = bvh.root;
+bool customSphereIntersect(vec3 position, float radius, out Object objIntersected) {
+    for (uint i = 0; i < MAX_OBJECTS; i++) {
+        Object obj = objBuffer.objects[i];
 
-    while (currIdx != 0) {
-        Bounds curr = bvh.nodes[currIdx];
+        float dist = distance(position, obj.position) - obj.radius;
 
-        float pointDistSquared = dot(position, curr.position);
-
-        if ((pointDistSquared > curr.radiusSquared) || currIdx == mask) {
-            currIdx = curr.next;
-            continue;
-        }
-
-        if (curr.material == 0) {
-            currIdx = curr.child;
-        } else {
+        if (abs(dist) <= radius) {
+            // TODO: do not calculate point's lighting if point is inside of an object
+            objIntersected = obj;
             return true;
-            currIdx = curr.next;
         }
     }
-
     return false;
 }
-
-bool customSphereBVHIntersect(vec3 position, float radius, out Bounds nodeIntersected) {
-    uint currIdx = bvh.root;
-
-    while (currIdx != 0) {
-        Bounds curr = bvh.nodes[currIdx];
-
-        float dist = distance(position, curr.position) - curr.radius;
-
-        if (curr.material == 0) {
-            if (dist <= radius) {
-                currIdx = curr.child;
-                continue;
-            }
-        } else {
-            if (abs(dist) <= radius) {
-                // TODO: do not calculate point's lighting if point is inside of an object
-                // vec3 p = curr.position + normalize(position - curr.position) * curr.radius;
-
-                // bool isContained = pointContainedInBVHMasked(p, currIdx);
-                // if (!isContained) {
-                    nodeIntersected = curr;
-                    return true;
-                // }
-            }
-        }
-        currIdx = curr.next;
-    }
-
-    return false;
-}
-
-// TODO: octree type convergence using BufferSlice and indirect_dispatch and this function
-// uint customSphereBVHIntersectPrimary(vec3 position, float radius) {
-//     uint currIdx = bvh.root;
-
-//     while (currIdx != 0) {
-//         Bounds curr = bvh.nodes[currIdx];
-
-//         float dist = distance(position, curr.position) - curr.radius;
-
-//         if (dist <= radius) {
-//             if (curr.material == 0) {
-//                 currIdx = curr.child;
-//                 continue;
-//             } else {
-//                 return currIdx;
-//             }
-//         }
-//         currIdx = curr.next;
-//     }
-
-//     return 0;
-// }
 
 // TODO: break this up into multiple parts to do over time if necessary
 void main() {
@@ -119,17 +55,17 @@ void main() {
     vec3 position = posAtLightmapIndex(LM_INDEX, LIGHTMAP_ORIGIN);
     float radius = SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w];
 
-    Bounds nodeIntersected;
-    bool intersected = customSphereBVHIntersect(position, radius, nodeIntersected); // bottleneck // TODO: copy BVH to shared memory
+    Object objIntersected;
+    bool intersected = customSphereIntersect(position, radius, objIntersected); // bottleneck // TODO: copy BVH to shared memory
 
     if (intersected) {
-        vec3 normal = normalize(position - nodeIntersected.position);
-        vec3 hitPoint = normal * nodeIntersected.radius + nodeIntersected.position;
+        vec3 normal = normalize(position - objIntersected.position);
+        vec3 hitPoint = normal * objIntersected.radius + objIntersected.position;
 
         uint index = atomicAdd(lmDispatches.dispatches[0], 1);
         lmBuffer.voxels[index] = Voxel(
             LM_INDEX,
-            nodeIntersected.material,
+            objIntersected.material,
             hitPoint,
             normal
         );

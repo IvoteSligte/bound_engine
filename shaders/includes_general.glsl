@@ -1,5 +1,5 @@
-const uint MAX_OBJECTS = 256;
-const uint MAX_MATERIALS = 256;
+const uint MAX_OBJECTS = 128;
+const uint MAX_MATERIALS = 32;
 
 const uint ALL_ONES = 4294967295;
 
@@ -23,14 +23,11 @@ struct Material {
     vec3 emittance;
 };
 
-/// node of a bvh
-struct Bounds {
+struct Object {
     vec3 position;
+    float radius;
     float radiusSquared;
-    uint child;
-    uint next;
     uint material;
-    float radius; // TODO: implement
 };
 
 struct Ray {
@@ -62,11 +59,6 @@ struct RayResult {
     float distanceToHit;
     uint objectHit;
     uint materialHit;
-};
-
-struct SharedGpuBVH {
-    uint root;
-    Bounds nodes[2 * MAX_OBJECTS];
 };
 
 vec3 rotateWithQuat(vec4 q, vec3 v) {

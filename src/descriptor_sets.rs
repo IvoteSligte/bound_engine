@@ -34,7 +34,7 @@ pub(crate) fn create_compute_descriptor_sets(
         pipelines.direct.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-            WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
+            WriteDescriptorSet::buffer(1, buffers.objects.clone()),
             WriteDescriptorSet::image_view(2, image_views.color.clone()),
             WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.colors.last().unwrap().clone()),
         ],
@@ -46,7 +46,7 @@ pub(crate) fn create_compute_descriptor_sets(
         pipelines.lm_init.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-            WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
+            WriteDescriptorSet::buffer(1, buffers.objects.clone()),
             WriteDescriptorSet::buffer(2, buffers.lm_buffer.clone()), // writes to
             WriteDescriptorSet::buffer(3, buffers.lm_dispatch.clone()), // writes to and reads from
         ],
@@ -58,7 +58,7 @@ pub(crate) fn create_compute_descriptor_sets(
         pipelines.lm_primary.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-            WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
+            WriteDescriptorSet::buffer(1, buffers.objects.clone()),
             WriteDescriptorSet::buffer(2, buffers.mutable.clone()),
             WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.colors[0].clone()), // writes to
             WriteDescriptorSet::buffer(4, buffers.lm_buffer.clone()), // reads from
@@ -74,7 +74,7 @@ pub(crate) fn create_compute_descriptor_sets(
                 pipelines.lm_secondary.layout().set_layouts()[0].clone(),
                 [
                     WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                    WriteDescriptorSet::buffer(1, buffers.bvh.clone()),
+                    WriteDescriptorSet::buffer(1, buffers.objects.clone()),
                     WriteDescriptorSet::buffer(2, buffers.mutable.clone()),
                     WriteDescriptorSet::image_view_array(
                         3,

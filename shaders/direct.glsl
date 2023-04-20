@@ -19,10 +19,9 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     uint frame;
 } rt;
 
-layout(binding = 1) uniform restrict readonly GpuBVH {
-    uint root;
-    Bounds nodes[2 * MAX_OBJECTS];
-} bvh;
+layout(binding = 1) uniform restrict readonly ObjectBuffer {
+    Object objects[MAX_OBJECTS];
+} objBuffer;
 
 layout(binding = 2, rgba16) uniform restrict writeonly image2D colorImage;
 
@@ -45,7 +44,7 @@ void main() {
 
     vec3 viewDir = rotateWithQuat(rotation, DIRECTION);
 
-    RayResult result = traceRayWithBVH(position, viewDir);
+    RayResult result = traceRay(position, viewDir);
 
     vec3 p = (viewDir * result.distanceToHit) + position;
     ivec4 lmIndex = lightmapIndexAtPos(p, lightmapOrigin);
