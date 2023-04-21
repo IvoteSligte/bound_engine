@@ -34,12 +34,15 @@ layout(binding = 6, r32ui) uniform restrict readonly uimage3D materialImages[LM_
 
 #include "includes_trace_ray.glsl"
 
+shared Material SharedMaterials[MAX_MATERIALS];
+
 shared SharedStruct SharedData;
 shared vec3 SharedColors[gl_WorkGroupSize.x];
 
 void main() {
     if (gl_LocalInvocationID.x == 0) {
         SharedData = SharedStruct(lmBuffer.voxels[gl_WorkGroupID.x], rt.lightmapOrigin);
+        SharedMaterials = buf.mats;
     }
     barrier();
     
@@ -55,7 +58,7 @@ void main() {
 
     ivec4 lmIndexSample = lightmapIndexAtPos(position, sData.lightmapOrigin);
     uint material = imageLoad(materialImages[lmIndexSample.w], lmIndexSample.xyz).x;
-    vec3 color = buf.mats[material].emittance; // TODO: copy materials to shared memory
+    vec3 color = SharedMaterials[material].emittance; // TODO: copy materials to shared memory
 
     SharedColors[gl_LocalInvocationID.x] = color;
 
@@ -76,7 +79,7 @@ void main() {
         }
 
         Material material = buf.mats[voxel.material];
-        color = color * (material.reflectance * (1.0 / LM_SAMPLES)) + material.emittance;
+        color = color * material.reflectance * (1.0 / float(LM_SAMPLES)) + material.emittance;
 
         imageStore(lmOutputColorImages[voxel.lmIndex.w], voxel.lmIndex.xyz, vec4(color, 0.0));
     }

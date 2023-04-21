@@ -7,9 +7,9 @@ bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin) {
         dist = texture(SDFImages[lmLayer], pos * (1.0 / 256.0) * LM_UNIT_SIZES[lmLayer] + 0.5).x;
         pos += dir * dist;
 
-        if (lmLayer >= LM_COUNT) {
+        if (lmLayer >= LM_COUNT) { // out of bounds
             return false;
-        } else if (dist <= THRESHOLD) {
+        } else if (dist <= THRESHOLD) { // hit
             return true;
         }
     }

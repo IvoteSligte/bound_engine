@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use vulkano::{
     device::{Device, DeviceExtensions, Queue},
-    sampler::{Sampler, SamplerAddressMode, SamplerCreateInfo, BorderColor},
+    sampler::{BorderColor, Sampler, SamplerAddressMode, SamplerCreateInfo},
     swapchain::Swapchain,
 };
 use winit::window::Window;
@@ -16,7 +16,7 @@ use crate::{
     images::Images,
     instance::create_instance,
     pipelines::Pipelines,
-    shaders::{self, Shaders},
+    shaders::{self, Shaders, LM_COUNT},
     swapchain::create_swapchain,
 };
 
@@ -70,22 +70,27 @@ impl State {
 
         let buffers = Buffers::new(allocators.clone(), queue.clone());
 
-        let sampler = Sampler::new(
-            device.clone(),
-            SamplerCreateInfo {
-                address_mode: [SamplerAddressMode::ClampToBorder; 3],
-                border_color: BorderColor::FloatTransparentBlack,
-                ..SamplerCreateInfo::simple_repeat_linear()
-            },
-        )
-        .unwrap();
+        // TODO: clean up
+        let samplers = (0..LM_COUNT)
+            .map(|_| {
+                Sampler::new(
+                    device.clone(),
+                    SamplerCreateInfo {
+                        address_mode: [SamplerAddressMode::ClampToBorder; 3],
+                        border_color: BorderColor::FloatTransparentBlack,
+                        ..SamplerCreateInfo::simple_repeat_linear()
+                    },
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
 
         let images = Images::new(
             allocators.clone(),
             window.clone(),
             queue.clone(),
             swapchain_images.clone(),
-            sampler.clone(),
+            samplers.clone(),
         );
 
         let command_buffers = CommandBuffers::new(

@@ -29,11 +29,12 @@ pub(crate) fn create_compute_descriptor_sets(
 ) -> DescriptorSets {
     let image_views = images.image_views();
 
-    let combined_image_sampler_sdfs = image_views
+    let combined_image_sampler_sdfs = image_views // TODO: look up if multiple samplers are required
         .lightmap
         .sdfs
-        .iter()
-        .map(|img| (img.clone(), images.sampler()))
+        .clone()
+        .into_iter()
+        .zip(images.samplers())
         .collect::<Vec<_>>();
 
     let direct = PersistentDescriptorSet::new(

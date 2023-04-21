@@ -42,9 +42,9 @@ void main() {
 
     vec3 viewDir = rotateWithQuat(rotation, DIRECTION);
 
-    bool isInRange = marchRay(position, viewDir, lightmapOrigin);
+    bool isHit = marchRay(position, viewDir, lightmapOrigin);
 
-    if (!isInRange) {
+    if (!isHit) {
         imageStore(colorImage, IPOS, vec4(0.0)); // TODO: skybox
         return;
     }
@@ -53,7 +53,6 @@ void main() {
 
     // TODO: bilinear color sampling (texture)
     vec3 color = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
-    // color = vec3(length(position) / 500.0); // DEBUG:
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }

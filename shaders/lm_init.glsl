@@ -32,11 +32,13 @@ layout(binding = 5, r32ui) uniform restrict writeonly uimage3D materialImages[LM
 
 const float SQRT_2 = 1.41421356;
 
+shared Object SharedObjects[MAX_OBJECTS];
+
 float calculateSDF(vec3 position, out Object objectHit) { // FIXME: return Object
     float minDist = FLT_MAX;
 
     for (uint i = 0; i < MAX_OBJECTS; i++) {
-        Object obj = objBuffer.objects[i];
+        Object obj = SharedObjects[i];
 
         float dist = distance(position, obj.position) - obj.radius;
 
@@ -54,29 +56,35 @@ void main() {
     // TODO: find a way to remove this, binding is declared invalid when not reading from the buffer
     Voxel _USELESS = lmBuffer.voxels[0];
 
-    const vec3 LIGHTMAP_ORIGIN = rt.lightmapOrigin.xyz;
+    if (gl_LocalInvocationID == uvec3(0)) {
+        SharedObjects = objBuffer.objects;
+    }
+    barrier();
 
     const ivec4 LM_INDEX = ivec4(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz, gl_GlobalInvocationID.x / LM_SIZE);
 
-    vec3 position = posAtLightmapIndex(LM_INDEX, LIGHTMAP_ORIGIN);
+    vec3 position = posAtLightmapIndex(LM_INDEX, rt.lightmapOrigin.xyz);
 
-    Object objectHit;
-    float dist = calculateSDF(position, objectHit); // bottleneck // TODO: copy objects to shared memory (precalc step which separates objects into areas)
+    Object closestObj;
+    float dist = calculateSDF(position, closestObj); // bottleneck // TODO: copy objects to shared memory (precalc step which separates objects into areas)
 
-    const float SQRT_2 = 1.41421356237;
+    uint material = 0;
+
     if (abs(dist) < SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]) {
-        vec3 normal = normalize(position - objectHit.position);
-        vec3 position = normal * objectHit.radius + objectHit.position;
+        material = closestObj.material;
+
+        vec3 normal = normalize(position - closestObj.position);
+        vec3 position = normal * closestObj.radius + closestObj.position;
 
         uint index = atomicAdd(lmDispatches.dispatches[0], 1);
         lmBuffer.voxels[index] = Voxel(
             LM_INDEX,
-            objectHit.material,
+            material,
             position,
             normal
         );
     }
 
     imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
-    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(objectHit.material));
+    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(material));
 }

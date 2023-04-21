@@ -49,11 +49,11 @@ void main() {
     vec4 randDir = noise.dirs[gl_LocalInvocationID.x];
     vec3 dir = normalize(voxel.normal + randDir.xyz);
 
-    vec3 position = voxel.position; // TODO: rename hitPoint
+    vec3 position = voxel.position + dir;
     bool isHit = marchRay(position, dir, sData.lightmapOrigin); // bottleneck
 
     ivec4 lmIndexSample = lightmapIndexAtPos(position, sData.lightmapOrigin);
-    vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: texture access for smoother results
+    vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: trilinear interpolation with neighbours for smoother results
 
     SharedColors[gl_LocalInvocationID.x] = color;
 
@@ -74,7 +74,7 @@ void main() {
         }
 
         Material material = buf.mats[voxel.material];
-        color = color * (material.reflectance * (1.0 / LM_SAMPLES) + material.emittance);
+        color = color * material.reflectance * (1.0 / float(LM_SAMPLES)) + material.emittance;
 
         imageStore(lmOutputColorImages[voxel.lmIndex.w], voxel.lmIndex.xyz, vec4(color, 0.0));
     }

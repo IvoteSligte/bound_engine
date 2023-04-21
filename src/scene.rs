@@ -92,7 +92,7 @@ impl From<shaders::ty::Object> for CpuObject {
         Self {
             position: Vec3::from_array(value.position),
             radius: value.radius,
-            material: value.material as usize,
+            material: value.material as usize - 1,
         }
     }
 }
@@ -103,7 +103,7 @@ impl From<CpuObject> for shaders::ty::Object {
             position: value.position.to_array(),
             radius: value.radius,
             radiusSquared: value.radius * value.radius,
-            material: value.material as u32,
+            material: value.material as u32 + 1,
             _dummy0: [0; 8],
         }
     }

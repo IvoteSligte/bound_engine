@@ -20,7 +20,7 @@ pub(crate) struct Images {
     pub(crate) color: Arc<StorageImage>,
     pub(crate) lightmap: LightmapImages,
     pub(crate) swapchain: Vec<Arc<SwapchainImage>>,
-    pub(crate) sampler: Arc<Sampler>,
+    pub(crate) samplers: Vec<Arc<Sampler>>,
 }
 
 impl Images {
@@ -29,13 +29,13 @@ impl Images {
         window: Arc<Window>,
         queue: Arc<Queue>,
         swapchain_images: Vec<Arc<SwapchainImage>>,
-        sampler: Arc<Sampler>,
+        samplers: Vec<Arc<Sampler>>,
     ) -> Self {
         Self {
             color: create_color_image(allocators.clone(), window, queue.clone()),
             lightmap: LightmapImages::new(allocators.clone(), queue.clone()),
             swapchain: swapchain_images,
-            sampler,
+            samplers,
         }
     }
 
@@ -46,8 +46,8 @@ impl Images {
         }
     }
 
-    pub(crate) fn sampler(&self) -> Arc<Sampler> {
-        self.sampler.clone()
+    pub(crate) fn samplers(&self) -> Vec<Arc<Sampler>> {
+        self.samplers.clone()
     }
 }
 
