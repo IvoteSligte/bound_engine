@@ -14,14 +14,14 @@ use vulkano::{
 
 use crate::{
     allocators::Allocators,
-    scene::{get_materials, get_objects},
+    scene::{get_objects, get_materials},
     shaders::{self, LM_SAMPLES, LM_SIZE},
 };
 
 #[derive(Clone)]
 pub(crate) struct Buffers {
     pub(crate) real_time: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
-    pub(crate) mutable: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>, // TODO: rename to MaterialBuffer
+    pub(crate) mutable: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>, // TODO: rename to MaterialBuffer // DEBUG: uncomment
     pub(crate) objects: Arc<DeviceLocalBuffer<[shaders::ty::Object]>>,
     pub(crate) lm_buffer: Arc<dyn BufferAccess>,
     pub(crate) lm_dispatch: Arc<DeviceLocalBuffer<[DispatchIndirectCommand]>>,

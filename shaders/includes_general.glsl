@@ -45,20 +45,14 @@ struct HitItem {
 
 struct Voxel {
     ivec4 lmIndex;
-    uint materialHit;
-    vec3 hitPoint;
+    uint material;
+    vec3 position;
     vec3 normal;
 };
 
 struct SharedStruct {
     Voxel voxel;
     vec3 lightmapOrigin;
-};
-
-struct RayResult {
-    float distanceToHit;
-    uint objectHit;
-    uint materialHit;
 };
 
 vec3 rotateWithQuat(vec4 q, vec3 v) {
@@ -70,17 +64,22 @@ float maximum(vec3 v) {
     return max(max(v.x, v.y), v.z);
 }
 
+int lightmapLayerAtPos(vec3 v, vec3 lmOrigin) {
+    const int HALF_LM_SIZE = LM_SIZE / 2;
+    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
+    
+    return int(log2(max(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
+}
+
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lightmapIndexAtPos(vec3 v, vec3 lmOrigin) {
     const int HALF_LM_SIZE = LM_SIZE / 2;
     const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
 
-    v -= lmOrigin;
-    uint lightmapNum = uint(log2(max(maximum(abs(v)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
+    uint lmLayer = lightmapLayerAtPos(v, lmOrigin);
+    ivec3 index = ivec3(floor((v - lmOrigin) / LM_UNIT_SIZES[lmLayer])) + HALF_LM_SIZE; // FIXME: where is the -0.5 offset that exists in posAtLightmapIndex
 
-    ivec3 index = ivec3(floor(v / LM_UNIT_SIZES[lightmapNum])) + HALF_LM_SIZE;
-
-    return ivec4(index, lightmapNum);
+    return ivec4(index, lmLayer);
 }
 
 vec3 posAtLightmapIndex(ivec4 lmIndex, vec3 lmOrigin) {

@@ -6,7 +6,7 @@ use vulkano::{
     image::{
         view::ImageView, ImageCreateFlags, ImageDimensions, ImageUsage, ImageViewAbstract,
         StorageImage, SwapchainImage,
-    },
+    }, sampler::Sampler,
 };
 use winit::window::Window;
 
@@ -20,6 +20,7 @@ pub(crate) struct Images {
     pub(crate) color: Arc<StorageImage>,
     pub(crate) lightmap: LightmapImages,
     pub(crate) swapchain: Vec<Arc<SwapchainImage>>,
+    pub(crate) sampler: Arc<Sampler>,
 }
 
 impl Images {
@@ -28,11 +29,13 @@ impl Images {
         window: Arc<Window>,
         queue: Arc<Queue>,
         swapchain_images: Vec<Arc<SwapchainImage>>,
+        sampler: Arc<Sampler>,
     ) -> Self {
         Self {
             color: create_color_image(allocators.clone(), window, queue.clone()),
             lightmap: LightmapImages::new(allocators.clone(), queue.clone()),
             swapchain: swapchain_images,
+            sampler,
         }
     }
 
@@ -41,6 +44,10 @@ impl Images {
             color: ImageView::new_default(self.color.clone()).unwrap(),
             lightmap: self.lightmap.image_views(),
         }
+    }
+
+    pub(crate) fn sampler(&self) -> Arc<Sampler> {
+        self.sampler.clone()
     }
 }
 
@@ -78,11 +85,15 @@ pub(crate) fn create_color_image(
 pub(crate) struct LightmapImages {
     pub(crate) colors: Vec<Vec<Arc<StorageImage>>>,
     pub(crate) staging_color: Arc<StorageImage>,
+    pub(crate) sdfs: Vec<Arc<StorageImage>>,
+    pub(crate) materials: Vec<Arc<StorageImage>>,
 }
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
     pub(crate) colors: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
+    pub(crate) sdfs: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) materials: Vec<Arc<dyn ImageViewAbstract>>,
 }
 
 impl LightmapImages {
@@ -134,9 +145,39 @@ impl LightmapImages {
             Format::R16G16B16A16_UNORM,
         );
 
+        // FIXME: sdf staging + moving
+        let sdfs = (0..(LM_COUNT))
+            .map(|_| {
+                create_storage_image(
+                    ImageUsage {
+                        transfer_src: true,
+                        transfer_dst: true,
+                        sampled: true,
+                        ..ImageUsage::default()
+                    },
+                    Format::R32_SFLOAT,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let materials = (0..(LM_COUNT))
+            .map(|_| {
+                create_storage_image(
+                    ImageUsage {
+                        transfer_src: true,
+                        transfer_dst: true,
+                        ..ImageUsage::default()
+                    },
+                    Format::R32_UINT,
+                )
+            })
+            .collect::<Vec<_>>();
+
         Self {
             colors,
             staging_color,
+            sdfs,
+            materials,
         }
     }
 
@@ -151,6 +192,8 @@ impl LightmapImages {
                 .iter()
                 .map(|vec| vec.iter().map(view).collect())
                 .collect(),
+            sdfs: self.sdfs.iter().map(view).collect(),
+            materials: self.materials.iter().map(view).collect(),
         }
     }
 }

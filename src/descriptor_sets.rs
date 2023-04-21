@@ -29,14 +29,25 @@ pub(crate) fn create_compute_descriptor_sets(
 ) -> DescriptorSets {
     let image_views = images.image_views();
 
+    let combined_image_sampler_sdfs = image_views
+        .lightmap
+        .sdfs
+        .iter()
+        .map(|img| (img.clone(), images.sampler()))
+        .collect::<Vec<_>>();
+
     let direct = PersistentDescriptorSet::new(
         &allocators.descriptor_set,
         pipelines.direct.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-            WriteDescriptorSet::buffer(1, buffers.objects.clone()),
-            WriteDescriptorSet::image_view(2, image_views.color.clone()),
-            WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.colors.last().unwrap().clone()),
+            WriteDescriptorSet::image_view(1, image_views.color.clone()),
+            WriteDescriptorSet::image_view_array(
+                2,
+                0,
+                image_views.lightmap.colors.last().unwrap().clone(),
+            ),
+            WriteDescriptorSet::image_view_sampler_array(3, 0, combined_image_sampler_sdfs.clone()),
         ],
     )
     .unwrap();
@@ -49,6 +60,8 @@ pub(crate) fn create_compute_descriptor_sets(
             WriteDescriptorSet::buffer(1, buffers.objects.clone()),
             WriteDescriptorSet::buffer(2, buffers.lm_buffer.clone()), // writes to
             WriteDescriptorSet::buffer(3, buffers.lm_dispatch.clone()), // writes to and reads from
+            WriteDescriptorSet::image_view_array(4, 0, image_views.lightmap.sdfs.clone()),
+            WriteDescriptorSet::image_view_array(5, 0, image_views.lightmap.materials.clone()),
         ],
     )
     .unwrap();
@@ -58,11 +71,12 @@ pub(crate) fn create_compute_descriptor_sets(
         pipelines.lm_primary.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-            WriteDescriptorSet::buffer(1, buffers.objects.clone()),
-            WriteDescriptorSet::buffer(2, buffers.mutable.clone()),
-            WriteDescriptorSet::image_view_array(3, 0, image_views.lightmap.colors[0].clone()), // writes to
-            WriteDescriptorSet::buffer(4, buffers.lm_buffer.clone()), // reads from
-            WriteDescriptorSet::buffer(5, buffers.noise.clone()),
+            WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
+            WriteDescriptorSet::image_view_array(2, 0, image_views.lightmap.colors[0].clone()), // writes to
+            WriteDescriptorSet::buffer(3, buffers.lm_buffer.clone()), // reads from
+            WriteDescriptorSet::buffer(4, buffers.noise.clone()),
+            WriteDescriptorSet::image_view_sampler_array(5, 0, combined_image_sampler_sdfs.clone()),
+            WriteDescriptorSet::image_view_array(6, 0, image_views.lightmap.materials.clone()),
         ],
     )
     .unwrap();
@@ -74,20 +88,20 @@ pub(crate) fn create_compute_descriptor_sets(
                 pipelines.lm_secondary.layout().set_layouts()[0].clone(),
                 [
                     WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                    WriteDescriptorSet::buffer(1, buffers.objects.clone()),
-                    WriteDescriptorSet::buffer(2, buffers.mutable.clone()),
+                    WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
                     WriteDescriptorSet::image_view_array(
-                        3,
+                        2,
                         0,
                         image_views.lightmap.colors[r].clone(),
                     ), // reads from
                     WriteDescriptorSet::image_view_array(
-                        4,
+                        3,
                         0,
                         image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(),
                     ), // writes to
-                    WriteDescriptorSet::buffer(5, buffers.lm_buffer.clone()), // reads from
-                    WriteDescriptorSet::buffer(6, buffers.noise.clone()),
+                    WriteDescriptorSet::buffer(4, buffers.lm_buffer.clone()), // reads from
+                    WriteDescriptorSet::buffer(5, buffers.noise.clone()),
+                    WriteDescriptorSet::image_view_sampler_array(6, 0, combined_image_sampler_sdfs.clone()),
                 ],
             )
             .unwrap()

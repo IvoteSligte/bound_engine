@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use vulkano::{
     device::{Device, DeviceExtensions, Queue},
+    sampler::{Sampler, SamplerAddressMode, SamplerCreateInfo, BorderColor},
     swapchain::Swapchain,
 };
 use winit::window::Window;
@@ -69,11 +70,22 @@ impl State {
 
         let buffers = Buffers::new(allocators.clone(), queue.clone());
 
+        let sampler = Sampler::new(
+            device.clone(),
+            SamplerCreateInfo {
+                address_mode: [SamplerAddressMode::ClampToBorder; 3],
+                border_color: BorderColor::FloatTransparentBlack,
+                ..SamplerCreateInfo::simple_repeat_linear()
+            },
+        )
+        .unwrap();
+
         let images = Images::new(
             allocators.clone(),
             window.clone(),
             queue.clone(),
             swapchain_images.clone(),
+            sampler.clone(),
         );
 
         let command_buffers = CommandBuffers::new(

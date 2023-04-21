@@ -2,7 +2,7 @@
 
 #include "includes_general.glsl"
 
-layout(local_size_x = LM_SAMPLES / 4, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = LM_SAMPLES, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
@@ -14,52 +14,28 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     uint frame;
 } rt;
 
-layout(binding = 1) uniform restrict readonly ObjectBuffer {
-    Object objects[MAX_OBJECTS];
-} objBuffer;
-
-layout(binding = 2) uniform restrict readonly MutableData {
+layout(binding = 1) uniform restrict readonly MutableData {
     Material mats[MAX_MATERIALS];
 } buf;
 
-layout(binding = 3, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutputColorImages;
+layout(binding = 2, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutputColorImages;
 
-layout(binding = 4) buffer restrict readonly LMBuffer {
+layout(binding = 3) buffer restrict readonly LMBuffer {
     Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
 } lmBuffer;
 
-layout(binding = 5) uniform restrict readonly NoiseBuffer {
-    vec4 dirs[gl_WorkGroupSize.x][4]; // DEBUG:
+layout(binding = 4) uniform restrict readonly NoiseBuffer {
+    vec4 dirs[gl_WorkGroupSize.x];
 } noise;
+
+layout(binding = 5) uniform sampler3D SDFImages[LM_COUNT]; // TODO: descriptor set
+
+layout(binding = 6, r32ui) uniform restrict readonly uimage3D materialImages[LM_COUNT];
 
 #include "includes_trace_ray.glsl"
 
 shared SharedStruct SharedData;
 shared vec3 SharedColors[gl_WorkGroupSize.x];
-
-RayResult[4] traceRay4(vec3 origin, mat4x3 dirs) {
-    RayResult results[4] = RayResult[4](
-        RayResult(FLT_MAX, 0, 0),
-        RayResult(FLT_MAX, 0, 0),
-        RayResult(FLT_MAX, 0, 0),
-        RayResult(FLT_MAX, 0, 0)
-    );
-
-    for (uint i = 0; i < MAX_OBJECTS; i++) {
-        Object obj = objBuffer.objects[i]; // TODO: shared memory
-
-        float[4] dists = distanceToObject4(origin, dirs, obj);
-
-        for (uint j = 0; j < 4; i++) {
-            if (dists[j] > EPSILON && dists[j] < results[j].distanceToHit) {
-                // is a leaf, store data
-                results[j] = RayResult(dists[i], i, obj.material);
-            }
-        }
-    }
-
-    return results;
-}
 
 void main() {
     if (gl_LocalInvocationID.x == 0) {
@@ -70,21 +46,16 @@ void main() {
     SharedStruct sData = SharedData;
     Voxel voxel = sData.voxel;
 
-    vec4 randDirs[4] = noise.dirs[gl_LocalInvocationID.x];
+    vec4 randDir = noise.dirs[gl_LocalInvocationID.x];
+    vec3 dir = normalize(voxel.normal + randDir.xyz);
 
-    mat4x3 dirMat = mat4x3(
-        normalize(voxel.normal + randDirs[0].xyz),
-        normalize(voxel.normal + randDirs[1].xyz),
-        normalize(voxel.normal + randDirs[2].xyz),
-        normalize(voxel.normal + randDirs[3].xyz)
-    );
+    vec3 position = voxel.position + dir;
+    // FIXME: the initial offset is roughly zero cause the voxel which intersects an edge is the starting point and first sample
+    bool isHit = marchRay(position, dir, sData.lightmapOrigin); // bottleneck
 
-    RayResult results[4] = traceRay4(voxel.hitPoint, dirMat); // bottleneck
-
-    vec3 color = vec3(0.0);
-    for (uint i = 0; i < 4; i++) {
-        color += buf.mats[results[i].materialHit].emittance; // TODO: copy materials to shared memory?
-    }
+    ivec4 lmIndexSample = lightmapIndexAtPos(position, sData.lightmapOrigin);
+    uint material = imageLoad(materialImages[lmIndexSample.w], lmIndexSample.xyz).x;
+    vec3 color = buf.mats[material].emittance; // TODO: copy materials to shared memory
 
     SharedColors[gl_LocalInvocationID.x] = color;
 
@@ -104,7 +75,7 @@ void main() {
             color += SharedColors[i];
         }
 
-        Material material = buf.mats[voxel.materialHit];
+        Material material = buf.mats[voxel.material];
         color = color * (material.reflectance * (1.0 / LM_SAMPLES)) + material.emittance;
 
         imageStore(lmOutputColorImages[voxel.lmIndex.w], voxel.lmIndex.xyz, vec4(color, 0.0));

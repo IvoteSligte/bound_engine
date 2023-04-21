@@ -19,15 +19,13 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     uint frame;
 } rt;
 
-layout(binding = 1) uniform restrict readonly ObjectBuffer {
-    Object objects[MAX_OBJECTS];
-} objBuffer;
+layout(binding = 1, rgba16) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 2, rgba16) uniform restrict writeonly image2D colorImage;
+layout(binding = 2, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputColorImages;
 
-layout(binding = 3, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputColorImages;
+layout(binding = 3) uniform sampler3D SDFImages[LM_COUNT];
 
-#include "includes_trace_ray.glsl"
+#include "includes_trace_ray.glsl" // TODO: rename to includes_march_ray.glsl
 
 // TODO: change to fragment shader
 void main() {
@@ -44,19 +42,18 @@ void main() {
 
     vec3 viewDir = rotateWithQuat(rotation, DIRECTION);
 
-    RayResult result = traceRay(position, viewDir);
+    bool isInRange = marchRay(position, viewDir, lightmapOrigin);
 
-    vec3 p = (viewDir * result.distanceToHit) + position;
-    ivec4 lmIndex = lightmapIndexAtPos(p, lightmapOrigin);
-
-    bool outOfRange = lmIndex.w >= LM_COUNT;
-    if (outOfRange) {
+    if (!isInRange) {
         imageStore(colorImage, IPOS, vec4(0.0)); // TODO: skybox
         return;
     }
 
+    ivec4 lmIndex = lightmapIndexAtPos(position, lightmapOrigin);
+
     // TODO: bilinear color sampling (texture)
     vec3 color = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
+    // color = vec3(length(position) / 500.0); // DEBUG:
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }

@@ -14,7 +14,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     uint frame;
 } rt;
 
-layout(binding = 1) uniform restrict readonly ObjectBuffer {
+layout(binding = 1) uniform restrict readonly InitBuffer {
     Object objects[MAX_OBJECTS];
 } objBuffer;
 
@@ -26,21 +26,27 @@ layout(binding = 3) buffer restrict LMDispatches {
     uint dispatches[3];
 } lmDispatches;
 
+layout(binding = 4, r32f) uniform restrict writeonly image3D SDFImages[LM_COUNT]; // TODO: descriptor set, calculations
+
+layout(binding = 5, r32ui) uniform restrict writeonly uimage3D materialImages[LM_COUNT]; // TODO: descriptor set, r16ui?
+
 const float SQRT_2 = 1.41421356;
 
-bool customSphereIntersect(vec3 position, float radius, out Object objIntersected) {
+float calculateSDF(vec3 position, out Object objectHit) { // FIXME: return Object
+    float minDist = FLT_MAX;
+
     for (uint i = 0; i < MAX_OBJECTS; i++) {
         Object obj = objBuffer.objects[i];
 
         float dist = distance(position, obj.position) - obj.radius;
 
-        if (abs(dist) <= radius) {
-            // TODO: do not calculate point's lighting if point is inside of an object
-            objIntersected = obj;
-            return true;
+        if (dist < minDist) {
+            minDist = dist;
+            objectHit = obj;
         }
     }
-    return false;
+
+    return minDist;
 }
 
 // TODO: break this up into multiple parts to do over time if necessary
@@ -53,21 +59,24 @@ void main() {
     const ivec4 LM_INDEX = ivec4(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz, gl_GlobalInvocationID.x / LM_SIZE);
 
     vec3 position = posAtLightmapIndex(LM_INDEX, LIGHTMAP_ORIGIN);
-    float radius = SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w];
 
-    Object objIntersected;
-    bool intersected = customSphereIntersect(position, radius, objIntersected); // bottleneck // TODO: copy BVH to shared memory
+    Object objectHit;
+    float dist = calculateSDF(position, objectHit); // bottleneck // TODO: copy objects to shared memory (precalc step which separates objects into areas)
 
-    if (intersected) {
-        vec3 normal = normalize(position - objIntersected.position);
-        vec3 hitPoint = normal * objIntersected.radius + objIntersected.position;
+    const float SQRT_2 = 1.41421356237;
+    if (abs(dist) < SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]) {
+        vec3 normal = normalize(position - objectHit.position);
+        vec3 position = normal * objectHit.radius + objectHit.position;
 
         uint index = atomicAdd(lmDispatches.dispatches[0], 1);
         lmBuffer.voxels[index] = Voxel(
             LM_INDEX,
-            objIntersected.material,
-            hitPoint,
+            objectHit.material,
+            position,
             normal
         );
     }
+
+    imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
+    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(objectHit.material));
 }
