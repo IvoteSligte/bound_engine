@@ -6,12 +6,12 @@ const uint ALL_ONES = 4294967295;
 const float LM_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
 
 const float LM_UNIT_SIZES[LM_COUNT] = float[](
-    (1 << 0) * LM_UNIT_SIZE,
-    (1 << 1) * LM_UNIT_SIZE,
-    (1 << 2) * LM_UNIT_SIZE,
-    (1 << 3) * LM_UNIT_SIZE,
-    (1 << 4) * LM_UNIT_SIZE,
-    (1 << 5) * LM_UNIT_SIZE
+    float(1 << 0) * LM_UNIT_SIZE,
+    float(1 << 1) * LM_UNIT_SIZE,
+    float(1 << 2) * LM_UNIT_SIZE,
+    float(1 << 3) * LM_UNIT_SIZE,
+    float(1 << 4) * LM_UNIT_SIZE,
+    float(1 << 5) * LM_UNIT_SIZE
 );
 
 #define FLT_MAX 3.402823466e+38
@@ -68,7 +68,7 @@ const int HALF_LM_SIZE = LM_SIZE / 2;
 const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
 
 int lmLayerAtPos(vec3 v, vec3 lmOrigin) {
-    return int(log2(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE + 1.0));
+    return int(log2(max(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE, 0.5)) + 1.001);
 }
 
 /// returns an index into a lightmap image in xyz, and the image index in w
@@ -80,9 +80,5 @@ ivec4 lmIndexAtPos(vec3 v, vec3 lmOrigin) {
 }
 
 vec3 posAtLightmapIndex(ivec4 lmIndex, vec3 lmOrigin) {
-    const int HALF_LM_SIZE = LM_SIZE / 2;
-
-    vec3 v = vec3(lmIndex.xyz - HALF_LM_SIZE) * LM_UNIT_SIZES[lmIndex.w] + lmOrigin;
-
-    return v;
+    return (vec3(lmIndex.xyz - HALF_LM_SIZE) + 0.5) * LM_UNIT_SIZES[lmIndex.w] + lmOrigin;
 }

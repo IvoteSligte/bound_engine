@@ -53,6 +53,7 @@ void main() {
     vec3 dir = normalize(voxel.normal + randDir.xyz);
 
     vec3 position = voxel.position + dir * 2.0 * LM_UNIT_SIZES[voxel.lmIndex.w]; // starts in next cell on ray
+    // TODO: do tracing in multiple iterations, splitting every ray into 4 rays every time there is an intersection
     bool isHit = marchRay(position, dir, sData.lightmapOrigin); // bottleneck
 
     ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);

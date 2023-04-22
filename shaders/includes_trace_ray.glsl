@@ -5,8 +5,7 @@ bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin) {
     float dist;
     for (uint i = 0; i < 100; i++) {
         int lmLayer = lmLayerAtPos(pos, lmOrigin);
-        // INFO: higher `lmLayer`s than 1 do not seem to work sometimes, presumably cause their points are inside the object
-        vec3 idx = pos * (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[lmLayer] + 0.5;
+        vec3 idx = (pos - lmOrigin) * ((1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[lmLayer]) + 0.5;
         dist = texture(SDFImages[lmLayer], idx).x;
         totalDist += dist;
         pos += dir * dist;
