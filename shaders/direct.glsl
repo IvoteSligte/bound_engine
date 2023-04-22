@@ -27,7 +27,7 @@ layout(binding = 3) uniform sampler3D SDFImages[LM_COUNT];
 
 #include "includes_trace_ray.glsl" // TODO: rename to includes_march_ray.glsl
 
-// TODO: change to fragment shader
+// TODO: change to fragment shader if beneficial
 void main() {
     const ivec2 VIEWPORT = ivec2(imageSize(colorImage).xy);
     const ivec2 IPOS = ivec2(gl_GlobalInvocationID.xy);

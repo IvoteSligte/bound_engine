@@ -28,7 +28,7 @@ layout(binding = 4) uniform restrict readonly NoiseBuffer {
     vec4 dirs[gl_WorkGroupSize.x];
 } noise;
 
-layout(binding = 5) uniform sampler3D SDFImages[LM_COUNT]; // TODO: descriptor set
+layout(binding = 5) uniform sampler3D SDFImages[LM_COUNT];
 
 layout(binding = 6, r32ui) uniform restrict readonly uimage3D materialImages[LM_COUNT];
 

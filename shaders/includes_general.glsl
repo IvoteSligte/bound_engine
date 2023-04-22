@@ -74,7 +74,7 @@ int lmLayerAtPos(vec3 v, vec3 lmOrigin) {
 /// returns an index into a lightmap image in xyz, and the image index in w
 ivec4 lmIndexAtPos(vec3 v, vec3 lmOrigin) {
     uint lmLayer = lmLayerAtPos(v, lmOrigin);
-    ivec3 index = ivec3(floor((v - lmOrigin) / LM_UNIT_SIZES[lmLayer])) + HALF_LM_SIZE; // FIXME: where is the -0.5 offset that exists in posAtLightmapIndex
+    ivec3 index = ivec3(floor((v - lmOrigin) / LM_UNIT_SIZES[lmLayer])) + HALF_LM_SIZE;
 
     return ivec4(index, lmLayer);
 }
