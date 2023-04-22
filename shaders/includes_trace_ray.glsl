@@ -1,5 +1,5 @@
 bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin) {
-    const float THRESHOLD = 0.0;
+    const float THRESHOLD = 2e-4;
 
     float dist;
     for (uint i = 0; i < 1000; i++) {
