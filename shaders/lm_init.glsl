@@ -37,7 +37,7 @@ shared Object SharedObjects[MAX_OBJECTS];
 float calculateSDF(vec3 position, out Object closestObj) {
     float minDist = FLT_MAX;
 
-    for (uint i = 1; i < MAX_OBJECTS; i++) {
+    for (uint i = 0; i < MAX_OBJECTS; i++) {
         Object obj = SharedObjects[i];
 
         float dist = distance(position, obj.position) - obj.radius;

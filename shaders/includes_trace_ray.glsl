@@ -3,7 +3,7 @@ bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin) {
 
     float dist;
     for (uint i = 0; i < 1000; i++) {
-        int lmLayer = lmLayerAtPos(pos, lmOrigin); // FIXME: seems to only return N < 2 ???
+        int lmLayer = lmLayerAtPos(pos, lmOrigin);
         vec3 idx = pos * (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[lmLayer] + 0.5;
         dist = texture(SDFImages[lmLayer], idx).x;
         pos += dir * dist;
