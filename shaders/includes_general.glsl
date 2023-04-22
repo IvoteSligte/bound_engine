@@ -68,7 +68,7 @@ const int HALF_LM_SIZE = LM_SIZE / 2;
 const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
 
 int lmLayerAtPos(vec3 v, vec3 lmOrigin) {
-    return int(log2(floor(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE + 1.0)));
+    return int(log2(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE + 1.0));
 }
 
 /// returns an index into a lightmap image in xyz, and the image index in w
