@@ -52,7 +52,7 @@ void main() {
     vec3 position = voxel.position + dir;
     bool isHit = marchRay(position, dir, sData.lightmapOrigin); // bottleneck
 
-    ivec4 lmIndexSample = lightmapIndexAtPos(position, sData.lightmapOrigin);
+    ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
     vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: trilinear interpolation with neighbours for smoother results
 
     SharedColors[gl_LocalInvocationID.x] = color;

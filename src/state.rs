@@ -78,7 +78,7 @@ impl State {
                     SamplerCreateInfo {
                         address_mode: [SamplerAddressMode::ClampToBorder; 3],
                         border_color: BorderColor::FloatTransparentBlack,
-                        ..SamplerCreateInfo::simple_repeat_linear()
+                        ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
                     },
                 )
                 .unwrap()

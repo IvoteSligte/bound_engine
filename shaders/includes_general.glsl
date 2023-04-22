@@ -64,19 +64,16 @@ float maximum(vec3 v) {
     return max(max(v.x, v.y), v.z);
 }
 
-int lightmapLayerAtPos(vec3 v, vec3 lmOrigin) {
-    const int HALF_LM_SIZE = LM_SIZE / 2;
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
-    
-    return int(log2(max(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE, 0.500001)) + 1.0);
+const int HALF_LM_SIZE = LM_SIZE / 2;
+const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
+
+int lmLayerAtPos(vec3 v, vec3 lmOrigin) {
+    return int(log2(floor(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE + 1.0)));
 }
 
 /// returns an index into a lightmap image in xyz, and the image index in w
-ivec4 lightmapIndexAtPos(vec3 v, vec3 lmOrigin) {
-    const int HALF_LM_SIZE = LM_SIZE / 2;
-    const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
-
-    uint lmLayer = lightmapLayerAtPos(v, lmOrigin);
+ivec4 lmIndexAtPos(vec3 v, vec3 lmOrigin) {
+    uint lmLayer = lmLayerAtPos(v, lmOrigin);
     ivec3 index = ivec3(floor((v - lmOrigin) / LM_UNIT_SIZES[lmLayer])) + HALF_LM_SIZE; // FIXME: where is the -0.5 offset that exists in posAtLightmapIndex
 
     return ivec4(index, lmLayer);

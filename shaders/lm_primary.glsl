@@ -56,7 +56,7 @@ void main() {
     // FIXME: the initial offset is roughly zero cause the voxel which intersects an edge is the starting point and first sample
     bool isHit = marchRay(position, dir, sData.lightmapOrigin); // bottleneck
 
-    ivec4 lmIndexSample = lightmapIndexAtPos(position, sData.lightmapOrigin);
+    ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
     uint material = imageLoad(materialImages[lmIndexSample.w], lmIndexSample.xyz).x;
     vec3 color = SharedMaterials[material].emittance; // TODO: copy materials to shared memory
 

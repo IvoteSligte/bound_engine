@@ -34,17 +34,17 @@ const float SQRT_2 = 1.41421356;
 
 shared Object SharedObjects[MAX_OBJECTS];
 
-float calculateSDF(vec3 position, out Object objectHit) { // FIXME: return Object
+float calculateSDF(vec3 position, out Object closestObj) {
     float minDist = FLT_MAX;
 
-    for (uint i = 0; i < MAX_OBJECTS; i++) {
+    for (uint i = 1; i < MAX_OBJECTS; i++) {
         Object obj = SharedObjects[i];
 
         float dist = distance(position, obj.position) - obj.radius;
 
         if (dist < minDist) {
             minDist = dist;
-            objectHit = obj;
+            closestObj = obj;
         }
     }
 
@@ -79,12 +79,12 @@ void main() {
         uint index = atomicAdd(lmDispatches.dispatches[0], 1);
         lmBuffer.voxels[index] = Voxel(
             LM_INDEX,
-            material,
+            closestObj.material,
             position,
             normal
         );
     }
 
     imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
-    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(material));
+    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(material)); // FIXME: materials do not appear to be correct on objects
 }

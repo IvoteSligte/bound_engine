@@ -49,7 +49,7 @@ void main() {
         return;
     }
 
-    ivec4 lmIndex = lightmapIndexAtPos(position, lightmapOrigin);
+    ivec4 lmIndex = lmIndexAtPos(position, lightmapOrigin);
 
     // TODO: bilinear color sampling (texture)
     vec3 color = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
