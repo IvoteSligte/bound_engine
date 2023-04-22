@@ -52,13 +52,12 @@ void main() {
     vec4 randDir = noise.dirs[gl_LocalInvocationID.x];
     vec3 dir = normalize(voxel.normal + randDir.xyz);
 
-    vec3 position = voxel.position + dir;
-    // FIXME: the initial offset is roughly zero cause the voxel which intersects an edge is the starting point and first sample
+    vec3 position = voxel.position + dir * 2.0 * LM_UNIT_SIZES[voxel.lmIndex.w]; // starts in next cell on ray
     bool isHit = marchRay(position, dir, sData.lightmapOrigin); // bottleneck
 
     ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
     uint material = imageLoad(materialImages[lmIndexSample.w], lmIndexSample.xyz).x;
-    vec3 color = SharedMaterials[material].emittance; // TODO: copy materials to shared memory
+    vec3 color = SharedMaterials[material].emittance;
 
     SharedColors[gl_LocalInvocationID.x] = color;
 

@@ -68,11 +68,7 @@ void main() {
     Object closestObj;
     float dist = calculateSDF(position, closestObj); // bottleneck // TODO: copy objects to shared memory (precalc step which separates objects into areas)
 
-    uint material = 0;
-
     if (abs(dist) < SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]) {
-        material = closestObj.material;
-
         vec3 normal = normalize(position - closestObj.position);
         vec3 position = normal * closestObj.radius + closestObj.position;
 
@@ -86,5 +82,5 @@ void main() {
     }
 
     imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
-    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(material)); // FIXME: materials do not appear to be correct on objects
+    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(closestObj.material)); // FIXME: materials do not appear to be correct on objects
 }
