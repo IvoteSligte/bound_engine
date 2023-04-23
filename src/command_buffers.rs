@@ -4,8 +4,8 @@ use glam::{IVec3, UVec3};
 use vec_once::VecOnce;
 use vulkano::{
     command_buffer::{
-        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo, ImageCopy,
-        PrimaryAutoCommandBuffer, DispatchIndirectCommand,
+        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo,
+        DispatchIndirectCommand, ImageCopy, PrimaryAutoCommandBuffer,
     },
     device::Queue,
     image::{ImageAccess, ImageSubresourceLayers},
@@ -104,9 +104,8 @@ pub(crate) fn create_pathtrace_command_buffers(
     let mut builder = create_builder();
     builder
         .update_buffer(
-            &[DispatchIndirectCommand { x: 0, y: 1, z: 1 }][..],
             buffers.lm_dispatch.clone(),
-            0,
+            &[DispatchIndirectCommand { x: 0, y: 1, z: 1 }][..],
         )
         .unwrap();
 
@@ -162,15 +161,15 @@ pub(crate) fn create_pathtrace_command_buffers(
 
     let mut builder = create_builder();
     builder
-            .bind_pipeline_compute(pipelines.direct.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.direct.layout().clone(),
-                0,
-                descriptor_sets.direct.clone(),
-            )
-            .dispatch(dispatch_direct)
-            .unwrap();
+        .bind_pipeline_compute(pipelines.direct.clone())
+        .bind_descriptor_sets(
+            PipelineBindPoint::Compute,
+            pipelines.direct.layout().clone(),
+            0,
+            descriptor_sets.direct.clone(),
+        )
+        .dispatch(dispatch_direct)
+        .unwrap();
 
     let direct = Arc::new(builder.build().unwrap());
 
@@ -309,7 +308,7 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
 pub(crate) fn create_real_time_command_buffer(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
-    real_time_data: shaders::ty::RealTimeBuffer,
+    real_time_data: shaders::RealTimeBuffer,
     buffers: Buffers,
 ) -> PrimaryAutoCommandBuffer {
     let mut real_time_command_buffer_builder = AutoCommandBufferBuilder::primary(
@@ -320,7 +319,7 @@ pub(crate) fn create_real_time_command_buffer(
     .unwrap();
 
     real_time_command_buffer_builder
-        .update_buffer(Arc::new(real_time_data), buffers.real_time.clone(), 0)
+        .update_buffer(buffers.real_time.clone(), Arc::new(real_time_data))
         .unwrap();
 
     real_time_command_buffer_builder.build().unwrap()

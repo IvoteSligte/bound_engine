@@ -1,6 +1,3 @@
-const uint MAX_OBJECTS = 128;
-const uint MAX_MATERIALS = 32;
-
 const uint ALL_ONES = 4294967295;
 
 const float LM_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
@@ -26,7 +23,6 @@ struct Material {
 struct Object {
     vec3 position;
     float radius;
-    float radiusSquared;
     uint material;
 };
 

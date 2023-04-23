@@ -6,7 +6,8 @@ use vulkano::{
     image::{
         view::ImageView, ImageCreateFlags, ImageDimensions, ImageUsage, ImageViewAbstract,
         StorageImage, SwapchainImage,
-    }, sampler::Sampler,
+    },
+    sampler::Sampler,
 };
 use winit::window::Window;
 
@@ -70,11 +71,7 @@ pub(crate) fn create_color_image(
             array_layers: 1,
         },
         Format::R16G16B16A16_UNORM, // double precision for copying to srgb
-        ImageUsage {
-            storage: true,
-            transfer_src: true,
-            ..ImageUsage::empty()
-        },
+        ImageUsage::STORAGE | ImageUsage::TRANSFER_SRC,
         ImageCreateFlags::empty(),
         [queue.queue_family_index()],
     )
@@ -103,16 +100,14 @@ impl LightmapImages {
             height: LM_SIZE,
             depth: LM_SIZE,
         };
-
+        
+        // TODO: layout optimisation for storage
         let create_storage_image = |usage, format| {
             StorageImage::with_usage(
                 &allocators.memory,
                 dimensions,
                 format,
-                ImageUsage {
-                    storage: true,
-                    ..usage
-                },
+                ImageUsage::STORAGE | usage,
                 ImageCreateFlags::empty(),
                 [queue.queue_family_index()],
             )
@@ -124,11 +119,7 @@ impl LightmapImages {
                 (0..(LM_COUNT))
                     .map(|_| {
                         create_storage_image(
-                            ImageUsage {
-                                transfer_src: true,
-                                transfer_dst: true,
-                                ..ImageUsage::default()
-                            },
+                            ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
                             Format::R16G16B16A16_UNORM,
                         )
                     })
@@ -137,11 +128,7 @@ impl LightmapImages {
             .collect::<Vec<_>>();
 
         let staging_color = create_storage_image(
-            ImageUsage {
-                transfer_src: true,
-                transfer_dst: true,
-                ..ImageUsage::default()
-            },
+            ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
             Format::R16G16B16A16_UNORM,
         );
 
@@ -149,12 +136,7 @@ impl LightmapImages {
         let sdfs = (0..(LM_COUNT))
             .map(|_| {
                 create_storage_image(
-                    ImageUsage {
-                        transfer_src: true,
-                        transfer_dst: true,
-                        sampled: true,
-                        ..ImageUsage::default()
-                    },
+                    ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
                     Format::R32_SFLOAT,
                 )
             })
@@ -163,11 +145,7 @@ impl LightmapImages {
         let materials = (0..(LM_COUNT))
             .map(|_| {
                 create_storage_image(
-                    ImageUsage {
-                        transfer_src: true,
-                        transfer_dst: true,
-                        ..ImageUsage::default()
-                    },
+                    ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
                     Format::R32_UINT,
                 )
             })

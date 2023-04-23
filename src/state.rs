@@ -30,7 +30,7 @@ pub(crate) struct State {
     pub(crate) images: Images,
     pub(crate) allocators: Arc<Allocators>,
     pub(crate) command_buffers: CommandBuffers,
-    pub(crate) real_time_data: shaders::ty::RealTimeBuffer, // TODO: struct abstraction
+    pub(crate) real_time_data: shaders::RealTimeBuffer, // TODO: struct abstraction
     pub(crate) fences: Fences,
 }
 
@@ -98,7 +98,14 @@ impl State {
             images.clone(),
         );
 
-        let real_time_data = shaders::ty::RealTimeBuffer::default();
+        let real_time_data = shaders::RealTimeBuffer {
+            rotation: Default::default(),
+            previousRotation: Default::default(),
+            position: Default::default(),
+            previousPosition: Default::default(),
+            lightmapOrigin: Default::default(),
+            deltaLightmapOrigins: Default::default(),
+        };
 
         let fences = Fences::new(images.swapchain.len());
 

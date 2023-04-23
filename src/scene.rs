@@ -1,38 +1,22 @@
 use std::f32::consts::PI;
 
-use crate::shaders;
+use crate::shaders::{self, MAX_OBJECTS, MAX_MATERIALS};
 
 use glam::*;
+use vulkano::{padded::Padded, buffer::BufferContents};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct CpuMaterial {
     reflectance: Vec3,
     emittance: Vec3,
 }
 
-impl From<shaders::ty::Material> for CpuMaterial {
-    fn from(value: shaders::ty::Material) -> Self {
-        Self {
-            reflectance: Vec3::from_array(value.reflectance),
-            emittance: Vec3::from_array(value.emittance),
-        }
-    }
-}
-
-impl Into<shaders::ty::Material> for CpuMaterial {
-    fn into(self) -> shaders::ty::Material {
-        shaders::ty::Material {
-            reflectance: self.reflectance.to_array(),
+impl Into<shaders::Material> for CpuMaterial {
+    fn into(self) -> shaders::Material {
+        shaders::Material {
+            reflectance: self.reflectance.to_array().into(),
             emittance: self.emittance.to_array(),
-            _dummy0: [0; 4],
-            _dummy1: [0; 4],
         }
-    }
-}
-
-impl CpuMaterial {
-    pub(crate) fn to_pod(vec: Vec<Self>) -> Vec<shaders::ty::Material> {
-        vec.into_iter().map(|x| x.into()).collect()
     }
 }
 
@@ -66,7 +50,7 @@ fn custom_materials() -> Vec<CpuMaterial> {
     materials
 }
 
-pub(crate) fn get_materials() -> Vec<shaders::ty::Material> {
+pub(crate) fn get_materials() -> Vec<shaders::Material> {
     let mut materials = custom_materials();
 
     materials.insert(
@@ -77,18 +61,23 @@ pub(crate) fn get_materials() -> Vec<shaders::ty::Material> {
         },
     );
 
-    CpuMaterial::to_pod(materials)
+    materials.resize(MAX_MATERIALS, CpuMaterial {
+        reflectance: Vec3::splat(0.0),
+        emittance: Vec3::splat(0.0),
+    });
+
+    materials.into_iter().map(|m| m.into()).collect()
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct CpuObject {
     position: Vec3,
     radius: f32,
     material: usize,
 }
 
-impl From<shaders::ty::Object> for CpuObject {
-    fn from(value: shaders::ty::Object) -> Self {
+impl From<shaders::Object> for CpuObject {
+    fn from(value: shaders::Object) -> Self {
         Self {
             position: Vec3::from_array(value.position),
             radius: value.radius,
@@ -97,14 +86,12 @@ impl From<shaders::ty::Object> for CpuObject {
     }
 }
 
-impl From<CpuObject> for shaders::ty::Object {
+impl From<CpuObject> for shaders::Object {
     fn from(value: CpuObject) -> Self {
         Self {
             position: value.position.to_array(),
             radius: value.radius,
-            radiusSquared: value.radius * value.radius,
             material: value.material as u32 + 1,
-            _dummy0: [0; 8],
         }
     }
 }
@@ -142,8 +129,33 @@ fn custom_objects() -> Vec<CpuObject> {
     objects
 }
 
-pub(crate) fn get_objects() -> Vec<shaders::ty::Object> {
-    let objects = custom_objects();
+pub(crate) fn get_objects() -> Vec<RawObject> {
+    let mut objects = custom_objects();
 
-    objects.into_iter().map(|cpu_obj| cpu_obj.into()).collect::<Vec<_>>()
+    objects.resize(MAX_OBJECTS, CpuObject {
+        position: Vec3::splat(0.0),
+        radius: 0.0,
+        material: 0,
+    });
+
+    objects.into_iter().map(|obj| obj.into()).collect::<Vec<_>>()
+}
+
+#[derive(Clone, Debug, BufferContents)]
+#[repr(C)]
+/// Required for proper alignment in the shader. shaders::Object does not work properly.
+pub(crate) struct RawObject {
+    position: [f32; 3],
+    radius: f32,
+    material: Padded<usize, 8>,
+}
+
+impl From<CpuObject> for RawObject {
+    fn from(value: CpuObject) -> Self {
+        Self {
+            position: value.position.to_array(),
+            radius: value.radius,
+            material: (value.material + 1).into(),
+        }
+    }
 }

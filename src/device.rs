@@ -3,11 +3,10 @@ use std::sync::Arc;
 use vulkano::{
     device::{
         physical::{PhysicalDevice, PhysicalDeviceType},
-        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo,
+        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
     },
     instance::Instance,
     swapchain::Surface,
-    sync::PipelineStage,
 };
 
 pub(crate) fn select_physical_device<'a>(
@@ -23,12 +22,7 @@ pub(crate) fn select_physical_device<'a>(
         .find_map(|p| {
             p.queue_family_properties()
                 .iter()
-                .position(|q| {
-                    q.supports_stage(PipelineStage::ComputeShader)
-                        && q.supports_stage(PipelineStage::Host)
-                    //&& q.supports_stage(PipelineStage::Copy)
-                    //&& q.supports_stage(PipelineStage::Blit)
-                })
+                .position(|q| q.queue_flags.contains(QueueFlags::COMPUTE))
                 .map(|q| (p, q as u32))
                 .filter(|(p, q)| p.surface_support(*q, surface).unwrap_or(false))
         })

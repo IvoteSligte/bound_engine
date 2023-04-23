@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use vulkano::sync::{FenceSignalFuture, GpuFuture};
+use vulkano::sync::{future::FenceSignalFuture, GpuFuture};
 
 type NestedFence = FenceSignalFuture<Box<dyn GpuFuture>>;
 

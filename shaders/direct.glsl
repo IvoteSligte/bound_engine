@@ -16,7 +16,6 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 previousPosition;
     ivec3 lightmapOrigin;
     ivec4 deltaLightmapOrigins[LM_COUNT];
-    uint frame;
 } rt;
 
 layout(binding = 1, rgba16) uniform restrict writeonly image2D colorImage;

@@ -3,29 +3,30 @@ use std::sync::Arc;
 use glam::Vec3;
 use rand_distr::{Distribution, UnitSphere};
 use vulkano::{
-    buffer::{BufferAccess, BufferUsage, DeviceLocalBuffer},
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        allocator::CommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        DispatchIndirectCommand, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, DispatchIndirectCommand,
+        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
     },
     device::Queue,
+    memory::allocator::{AllocationCreateInfo, MemoryUsage},
     sync::GpuFuture,
 };
 
 use crate::{
     allocators::Allocators,
-    scene::{get_objects, get_materials},
+    scene::{get_materials, get_objects, RawObject},
     shaders::{self, LM_SAMPLES, LM_SIZE},
 };
 
 #[derive(Clone)]
 pub(crate) struct Buffers {
-    pub(crate) real_time: Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>,
-    pub(crate) mutable: Arc<DeviceLocalBuffer<shaders::ty::MutableData>>, // TODO: rename to MaterialBuffer // DEBUG: uncomment
-    pub(crate) objects: Arc<DeviceLocalBuffer<[shaders::ty::Object]>>,
-    pub(crate) lm_buffer: Arc<dyn BufferAccess>,
-    pub(crate) lm_dispatch: Arc<DeviceLocalBuffer<[DispatchIndirectCommand]>>,
-    pub(crate) noise: Arc<dyn BufferAccess>,
+    pub(crate) real_time: Subbuffer<shaders::RealTimeBuffer>,
+    pub(crate) mutable: Subbuffer<shaders::MutableData>, // TODO: rename to MaterialBuffer
+    pub(crate) objects: Subbuffer<[RawObject]>,
+    pub(crate) lm_buffer: Subbuffer<[shaders::Voxel]>,
+    pub(crate) lm_dispatch: Subbuffer<[DispatchIndirectCommand]>,
+    pub(crate) noise: Subbuffer<[[f32; 4]]>,
 }
 
 impl Buffers {
@@ -38,7 +39,7 @@ impl Buffers {
         .unwrap();
 
         let buffers = Self {
-            real_time: get_real_time_buffer(allocators.clone(), &mut builder),
+            real_time: get_real_time_buffer(allocators.clone()), // DEBUG: buffer with 1024 elements (presumably noise) is half-empty
             mutable: get_mutable_buffer(allocators.clone(), &mut builder),
             objects: get_object_buffer(allocators.clone(), &mut builder),
             lm_buffer: get_lm_buffer(allocators.clone(), &mut builder),
@@ -60,80 +61,150 @@ impl Buffers {
     }
 }
 
-pub(crate) fn get_real_time_buffer<A>(
+fn stage_buffer_with_data<T: BufferContents>(
     allocators: Arc<Allocators>,
-    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
-) -> Arc<DeviceLocalBuffer<shaders::ty::RealTimeBuffer>>
-where
-    A: CommandBufferAllocator,
-{
-    DeviceLocalBuffer::from_data(
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    buffer: Subbuffer<T>,
+    data: T,
+) {
+    let staging = Buffer::from_data(
         &allocators.memory,
-        shaders::ty::RealTimeBuffer::default(),
-        BufferUsage {
-            uniform_buffer: true,
-            transfer_dst: true,
-            ..BufferUsage::empty()
+        BufferCreateInfo {
+            usage: BufferUsage::TRANSFER_SRC,
+            ..Default::default()
         },
-        alloc_command_buffer_builder,
+        AllocationCreateInfo {
+            usage: MemoryUsage::Upload,
+            ..Default::default()
+        },
+        data,
+    )
+    .unwrap();
+
+    cmb_builder
+        .copy_buffer(CopyBufferInfo::buffers(staging, buffer))
+        .unwrap();
+}
+
+fn stage_buffer_with_iter<T, I>(
+    allocators: Arc<Allocators>,
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    buffer: Subbuffer<[T]>,
+    iter: I,
+) where
+    T: BufferContents,
+    I: IntoIterator<Item = T>,
+    I::IntoIter: ExactSizeIterator,
+{
+    let staging = Buffer::from_iter(
+        &allocators.memory,
+        BufferCreateInfo {
+            usage: BufferUsage::TRANSFER_SRC,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            usage: MemoryUsage::Upload,
+            ..Default::default()
+        },
+        iter,
+    )
+    .unwrap();
+
+    cmb_builder
+        .copy_buffer(CopyBufferInfo::buffers(staging, buffer))
+        .unwrap();
+}
+
+pub(crate) fn get_real_time_buffer(
+    allocators: Arc<Allocators>,
+) -> Subbuffer<shaders::RealTimeBuffer> {
+    Buffer::from_data(
+        &allocators.memory,
+        BufferCreateInfo {
+            usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
+            ..BufferCreateInfo::default()
+        },
+        AllocationCreateInfo {
+            usage: MemoryUsage::Upload, // TODO: DeviceOnly ?
+            ..AllocationCreateInfo::default()
+        },
+        shaders::RealTimeBuffer {
+            rotation: Default::default(),
+            previousRotation: Default::default(),
+            position: Default::default(),
+            previousPosition: Default::default(),
+            lightmapOrigin: Default::default(),
+            deltaLightmapOrigins: Default::default(),
+        },
     )
     .unwrap()
 }
 
-pub(crate) fn get_mutable_buffer<A>(
+pub(crate) fn get_mutable_buffer(
     allocators: Arc<Allocators>,
-    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
-) -> Arc<DeviceLocalBuffer<shaders::ty::MutableData>>
-where
-    A: CommandBufferAllocator,
-{
-    let mut mutable_data = shaders::ty::MutableData {
-        ..Default::default()
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> Subbuffer<shaders::MutableData> {
+    let mut mutable_data = shaders::MutableData {
+        mats: [shaders::Material {
+            emittance: Default::default(),
+            reflectance: Default::default(),
+        }
+        .into(); 32], // TODO: dynamic size
     };
-    let materials = get_materials();
+    let materials = get_materials()
+        .into_iter()
+        .map(|x| x.into())
+        .collect::<Vec<_>>();
     mutable_data.mats[..materials.len()].copy_from_slice(&materials);
 
-    DeviceLocalBuffer::from_data(
+    let buffer = Buffer::new_sized(
         &allocators.memory,
-        mutable_data,
-        BufferUsage {
-            uniform_buffer: true,
-            ..BufferUsage::empty()
+        BufferCreateInfo {
+            usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
+            ..Default::default()
         },
-        alloc_command_buffer_builder,
+        AllocationCreateInfo {
+            usage: MemoryUsage::DeviceOnly,
+            ..Default::default()
+        },
     )
-    .unwrap()
+    .unwrap();
+
+    stage_buffer_with_data(allocators, cmb_builder, buffer.clone(), mutable_data);
+
+    buffer
 }
 
-pub(crate) fn get_object_buffer<A>(
+pub(crate) fn get_object_buffer(
     allocators: Arc<Allocators>,
-    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
-) -> Arc<DeviceLocalBuffer<[shaders::ty::Object]>>
-where
-    A: CommandBufferAllocator,
-{
-    let objects = get_objects();
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> Subbuffer<[RawObject]> {
+    let object_data = get_objects();
 
-    DeviceLocalBuffer::<[shaders::ty::Object]>::from_iter(
+    let buffer = Buffer::new_slice(
         &allocators.memory,
-        objects,
-        BufferUsage {
-            uniform_buffer: true,
-            ..BufferUsage::empty()
+        BufferCreateInfo {
+            usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
+            ..Default::default()
         },
-        alloc_command_buffer_builder,
+        AllocationCreateInfo {
+            usage: MemoryUsage::DeviceOnly,
+            ..Default::default()
+        },
+        object_data.len() as u64,
     )
-    .unwrap()
+    .unwrap();
+
+    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), object_data);
+
+    buffer
 }
 
-pub(crate) fn get_noise_buffer<A>(
+pub(crate) fn get_noise_buffer(
     allocators: Arc<Allocators>,
-    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
-) -> Arc<dyn BufferAccess>
-where
-    A: CommandBufferAllocator,
-{
-    let mut points = UnitSphere // TODO: sort so similar directions are grouped together
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> Subbuffer<[[f32; 4]]> {
+    let points = UnitSphere // TODO: sort so similar directions are grouped together
         .sample_iter(rand::thread_rng())
         .take(LM_SAMPLES as usize)
         .collect::<Vec<[f32; 3]>>()
@@ -141,79 +212,83 @@ where
         .map(Vec3::from_array)
         .collect::<Vec<Vec3>>();
 
-    let mut sorted_points = vec![];
-
-    while !points.is_empty() {
-        let p = points.swap_remove(0);
-
-        let mut sorted = points
-            .into_iter()
-            .map(|p2| (p.distance(p2), p2))
-            .collect::<Vec<_>>();
-        sorted.sort_by(|(dist1, _), (dist2, _)| dist1.total_cmp(dist2));
-        points = sorted[3..].into_iter().map(|(_, p2)| *p2).collect();
-
-        let new_points = sorted[0..3]
-            .into_iter()
-            .map(|(_, p2)| *p2)
-            .collect::<Vec<Vec3>>();
-        sorted_points.push([p, new_points[0], new_points[1], new_points[2]]);
-    }
-
-    let noise_data = sorted_points // TODO: store in file and use include_bytes! macro
+    let noise_data = points // TODO: store in file and use include_bytes! macro
         .into_iter()
-        .map(|array| array.map(|v| v.extend(0.0).to_array()))
+        .map(|v| v.extend(0.0).to_array())
         .collect::<Vec<_>>();
 
-    DeviceLocalBuffer::from_iter(
+    let buffer = Buffer::new_slice(
         &allocators.memory,
-        noise_data,
-        BufferUsage {
-            uniform_buffer: true,
-            ..BufferUsage::empty()
+        BufferCreateInfo {
+            usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
+            ..Default::default()
         },
-        alloc_command_buffer_builder,
+        AllocationCreateInfo {
+            usage: MemoryUsage::DeviceOnly,
+            ..Default::default()
+        },
+        noise_data.len() as u64,
     )
-    .unwrap()
+    .unwrap();
+
+    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), noise_data);
+
+    buffer
 }
 
-pub(crate) fn get_lm_buffer<A>(
+pub(crate) fn get_lm_buffer(
     allocators: Arc<Allocators>,
-    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
-) -> Arc<dyn BufferAccess>
-where
-    A: CommandBufferAllocator,
-{
-    let iter = (0..(LM_SIZE.pow(3))).map(|_| shaders::ty::Voxel::default());
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> Subbuffer<[shaders::Voxel]> {
+    let iter = (0..(LM_SIZE.pow(3)))
+        .map(|_| shaders::Voxel {
+            lmIndex: Default::default(),
+            material: Default::default(),
+            position: Default::default(),
+            normal: Default::default(),
+        })
+        .collect::<Vec<_>>();
 
-    DeviceLocalBuffer::from_iter(
+    let buffer = Buffer::new_slice(
         &allocators.memory,
-        iter,
-        BufferUsage {
-            storage_buffer: true,
-            ..BufferUsage::empty()
+        BufferCreateInfo {
+            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
+            ..Default::default()
         },
-        alloc_command_buffer_builder,
+        AllocationCreateInfo {
+            usage: MemoryUsage::DeviceOnly,
+            ..Default::default()
+        },
+        iter.len() as u64,
     )
-    .unwrap()
+    .unwrap();
+
+    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), iter);
+
+    buffer
 }
 
-pub(crate) fn get_lm_dispatch_buffer<A>(
+pub(crate) fn get_lm_dispatch_buffer(
     allocators: Arc<Allocators>,
-    alloc_command_buffer_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, A>,
-) -> Arc<DeviceLocalBuffer<[DispatchIndirectCommand]>>
-where
-    A: CommandBufferAllocator,
-{
-    DeviceLocalBuffer::from_iter(
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> Subbuffer<[DispatchIndirectCommand]> {
+    let data = [DispatchIndirectCommand { x: 0, y: 1, z: 1 }];
+    
+    let buffer = Buffer::new_slice(
         &allocators.memory,
-        [DispatchIndirectCommand { x: 0, y: 1, z: 1 }],
-        BufferUsage {
-            storage_buffer: true,
-            indirect_buffer: true,
-            ..BufferUsage::empty()
+        BufferCreateInfo {
+            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::INDIRECT_BUFFER | BufferUsage::TRANSFER_DST,
+            ..Default::default()
         },
-        alloc_command_buffer_builder,
+        AllocationCreateInfo {
+            usage: MemoryUsage::DeviceOnly,
+            ..Default::default()
+        },
+        data.len() as u64,
     )
-    .unwrap()
+    .unwrap();
+
+    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), data);
+
+    buffer
 }

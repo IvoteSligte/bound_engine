@@ -47,10 +47,7 @@ pub(crate) fn create_swapchain(
             min_image_count: capabilities.min_image_count + 1, // TODO: improve
             image_format: Some(image_format),
             image_extent: window.inner_size().into(),
-            image_usage: ImageUsage {
-                transfer_dst: true,
-                ..ImageUsage::empty()
-            },
+            image_usage: ImageUsage::TRANSFER_DST,
             ..Default::default()
         },
     )

@@ -112,18 +112,16 @@ fn main() {
             eh.delta_position.z += delta_mov;
         }
 
-        let new_position = Vec3::from_array(eh.state.real_time_data.position) + eh.delta_position();
+        let new_position = Vec3::from_array(*eh.state.real_time_data.position.as_ref()) + eh.delta_position();
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
         eh.state.real_time_data.previousRotation = eh.state.real_time_data.rotation;
         eh.state.real_time_data.previousPosition = eh.state.real_time_data.position;
         eh.state.real_time_data.rotation = eh.rotation().to_array();
-        eh.state.real_time_data.position = new_position.to_array();
+        eh.state.real_time_data.position = new_position.to_array().into();
         eh.delta_position = Vec3::ZERO;
 
-        eh.state.real_time_data.frame += 1;
-
-        let old_pos = IVec3::from_array(eh.state.real_time_data.lightmapOrigin);
+        let old_pos = IVec3::from_array(*eh.state.real_time_data.lightmapOrigin.as_ref());
         let new_pos = new_position.as_ivec3();
 
         // FIXME:
@@ -136,7 +134,7 @@ fn main() {
 
         if largest_delta_pos.abs().cmpge(Vec3::splat(1.0)).any() {
             let delta_pos = largest_delta_pos * LARGEST_UNIT;
-            eh.state.real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array();
+            eh.state.real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array().into();
 
             for i in 0..(LM_COUNT as usize) {
                 let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
