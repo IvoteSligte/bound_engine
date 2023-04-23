@@ -16,7 +16,7 @@ use crate::{
     images::Images,
     instance::create_instance,
     pipelines::Pipelines,
-    shaders::{self, Shaders, LM_COUNT},
+    shaders::{self, Shaders},
     swapchain::create_swapchain,
 };
 
@@ -71,26 +71,22 @@ impl State {
         let buffers = Buffers::new(allocators.clone(), queue.clone());
 
         // TODO: clean up
-        let samplers = (0..LM_COUNT)
-            .map(|_| {
-                Sampler::new(
-                    device.clone(),
-                    SamplerCreateInfo {
-                        address_mode: [SamplerAddressMode::ClampToBorder; 3],
-                        border_color: BorderColor::FloatTransparentBlack,
-                        ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
-                    },
-                )
-                .unwrap()
-            })
-            .collect::<Vec<_>>();
+        let sampler = Sampler::new(
+            device.clone(),
+            SamplerCreateInfo {
+                address_mode: [SamplerAddressMode::ClampToBorder; 3],
+                border_color: BorderColor::FloatTransparentBlack,
+                ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
+            },
+        )
+        .unwrap();
 
         let images = Images::new(
             allocators.clone(),
             window.clone(),
             queue.clone(),
             swapchain_images.clone(),
-            samplers.clone(),
+            sampler.clone(),
         );
 
         let command_buffers = CommandBuffers::new(

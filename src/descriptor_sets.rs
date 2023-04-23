@@ -34,7 +34,7 @@ pub(crate) fn create_compute_descriptor_sets(
         .sdfs
         .clone()
         .into_iter()
-        .zip(images.samplers())
+        .map(|img| (img, images.sampler()))
         .collect::<Vec<_>>();
 
     let direct = PersistentDescriptorSet::new(
