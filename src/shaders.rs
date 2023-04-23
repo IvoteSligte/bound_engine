@@ -24,7 +24,9 @@ vulkano_shaders::shader! {
         ("LM_SAMPLES", "1024"),
         ("LM_COUNT", "6"),
         ("LM_SIZE", "128")
-    ] // TODO: sync defines with consts
+    ], // TODO: sync defines with consts
+    vulkan_version: "1.2", // TODO: vulkan 1.3
+    spirv_version: "1.6"
 }
 
 pub(crate) const LM_RAYS: usize = 4;
