@@ -32,7 +32,7 @@ layout(binding = 5) uniform sampler3D SDFImages[LM_COUNT];
 
 layout(binding = 6, r32ui) uniform restrict readonly uimage3D materialImages[LM_COUNT];
 
-#include "includes_trace_ray.glsl"
+#include "includes_march_ray.glsl"
 
 shared Material SharedMaterials[MAX_MATERIALS];
 

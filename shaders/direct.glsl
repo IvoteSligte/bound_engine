@@ -25,7 +25,7 @@ layout(binding = 2, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputC
 
 layout(binding = 3) uniform sampler3D SDFImages[LM_COUNT];
 
-#include "includes_trace_ray.glsl" // TODO: rename to includes_march_ray.glsl
+#include "includes_march_ray.glsl"
 
 // TODO: change to fragment shader if beneficial
 void main() {

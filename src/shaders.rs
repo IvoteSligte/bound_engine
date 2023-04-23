@@ -18,7 +18,7 @@ vulkano_shaders::shader! {
         },
     },
     types_meta: { #[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)] },
-    include: ["includes_trace_ray.glsl", "includes_general.glsl"],
+    include: ["includes_march_ray.glsl", "includes_general.glsl"],
     define: [
         ("LM_RAYS", "4"),
         ("LM_SAMPLES", "1024"),

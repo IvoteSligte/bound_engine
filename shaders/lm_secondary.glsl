@@ -32,7 +32,7 @@ layout(binding = 5) uniform restrict readonly NoiseBuffer {
 
 layout(binding = 6) uniform sampler3D SDFImages[LM_COUNT]; // TODO: descriptor set
 
-#include "includes_trace_ray.glsl"
+#include "includes_march_ray.glsl"
 
 shared SharedStruct SharedData;
 shared vec3 SharedColors[gl_WorkGroupSize.x];
