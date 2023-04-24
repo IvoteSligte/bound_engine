@@ -1,6 +1,4 @@
-bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin) {
-    const float THRESHOLD = 1e-3;
-
+bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin, float threshold) {
     float totalDist = 0.0;
     float dist;
     for (uint i = 0; i < 100; i++) {
@@ -12,7 +10,7 @@ bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin) {
 
         if (lmLayer >= LM_COUNT) { // out of bounds
             return false;
-        } else if (dist <= THRESHOLD * totalDist) { // hit
+        } else if (dist <= threshold * totalDist) { // hit
             return true;
         }
     }
