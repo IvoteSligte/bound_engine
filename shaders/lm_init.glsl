@@ -27,7 +27,7 @@ layout(binding = 3) buffer restrict LMDispatches {
 
 layout(binding = 4, r16f) uniform restrict writeonly image3D SDFImages[LM_COUNT];
 
-layout(binding = 5, r32ui) uniform restrict writeonly uimage3D materialImages[LM_COUNT]; // TODO: r16ui?
+layout(binding = 5, r16ui) uniform restrict writeonly uimage3D materialImages[LM_COUNT];
 
 const float SQRT_2 = 1.41421356;
 

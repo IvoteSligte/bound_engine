@@ -146,7 +146,7 @@ impl LightmapImages {
             .map(|_| {
                 create_storage_image(
                     ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
-                    Format::R32_UINT,
+                    Format::R16_UINT,
                 )
             })
             .collect::<Vec<_>>();
