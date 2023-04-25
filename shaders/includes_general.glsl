@@ -1,6 +1,6 @@
 const uint ALL_ONES = 4294967295;
 
-const float LM_UNIT_SIZE = 0.5; // TODO: adapt this into the rust code, currently a base unit size of 1 is used there
+const float LM_UNIT_SIZE = 0.5; // TODO: sync this with the rust code (defines)
 
 const float LM_UNIT_SIZES[LM_COUNT] = float[](
     float(1 << 0) * LM_UNIT_SIZE,

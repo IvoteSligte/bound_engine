@@ -1,4 +1,4 @@
-use crate::shaders::Shaders;
+use crate::shaders::{Shaders, LM_BUFFER_SLICES, LM_COUNT, LM_SIZE};
 use crate::{shaders, FOV};
 
 use vulkano::pipeline::ComputePipeline;
@@ -32,8 +32,8 @@ where
 pub(crate) struct Pipelines {
     pub(crate) direct: Arc<ComputePipeline>,
     pub(crate) lm_init: Arc<ComputePipeline>,
-    pub(crate) lm_primary: Arc<ComputePipeline>,
-    pub(crate) lm_secondary: Arc<ComputePipeline>,
+    pub(crate) lm_primary: Vec<Arc<ComputePipeline>>,
+    pub(crate) lm_secondary: Vec<Arc<ComputePipeline>>,
 }
 
 impl Pipelines {
@@ -52,17 +52,34 @@ impl Pipelines {
 
         let lm_init = create_compute_pipeline(device.clone(), shaders.lm_init.clone(), &());
 
-        let lm_primary = create_compute_pipeline(
-            device.clone(),
-            shaders.lm_primary.clone(),
-            &(),
-        );
+        debug_assert!((LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT) % LM_BUFFER_SLICES == 0);
+        const LM_SLICE_LEN: u32 = LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT / LM_BUFFER_SLICES;
+        
+        let offsets = (0..LM_BUFFER_SLICES).map(|x| x * LM_SLICE_LEN);
 
-        let lm_secondary = create_compute_pipeline(
-            device.clone(),
-            shaders.lm_secondary.clone(),
-            &(),
-        );
+        let lm_primary = offsets.clone()
+            .map(|offset| {
+                create_compute_pipeline(
+                    device.clone(),
+                    shaders.lm_primary.clone(),
+                    &shaders::LmPrimarySpecializationConstants {
+                        LM_BUFFER_OFFSET: offset,
+                    },
+                )
+            })
+            .collect();
+
+        let lm_secondary = offsets
+            .map(|offset| {
+                create_compute_pipeline(
+                    device.clone(),
+                    shaders.lm_secondary.clone(),
+                    &shaders::LmPrimarySpecializationConstants {
+                        LM_BUFFER_OFFSET: offset,
+                    },
+                )
+            })
+            .collect();
 
         Self {
             direct,

@@ -124,7 +124,6 @@ fn main() {
         let old_pos = IVec3::from_array(*eh.state.real_time_data.lightmapOrigin.as_ref());
         let new_pos = new_position.as_ivec3();
 
-        // FIXME:
         const SMALLEST_UNIT: f32 = 0.5;
         const LARGEST_UNIT: f32 = (1 << (LM_COUNT - 1)) as f32 * SMALLEST_UNIT;
 
@@ -150,11 +149,10 @@ fn main() {
             ));
 
             // FIXME: do not redo the rendering of the entire lightmap every time, but only the 'moved' part
-            eh.state.command_buffers.pathtraces.acc.restart();
+            eh.state.command_buffers.pathtraces.lightmap.restart();
         }
 
-        // TODO: optimize by using only a single command buffer with a pointer pointing to a static memory location,
-        // of which only the content is altered every frame
+        // FIXME: just use the write() function instead
         let real_time_command_buffer = create_real_time_command_buffer(
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
@@ -203,15 +201,10 @@ fn main() {
             .unwrap()
             .boxed();
 
-        let pathtrace_command_buffer = match eh.state.command_buffers.pathtraces.acc.next() {
-            Some(cmb) => cmb,
-            None => eh.state.command_buffers.pathtraces.direct.clone(),
-        };
-
         let future = future
             .then_execute(
                 eh.state.queue.clone(),
-                pathtrace_command_buffer,
+                eh.state.command_buffers.pathtraces.next(),
             )
             .unwrap()
             .then_execute(

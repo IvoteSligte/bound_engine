@@ -16,7 +16,7 @@ use vulkano::{
 use crate::{
     allocators::Allocators,
     scene::{get_materials, get_objects, RawObject},
-    shaders::{self, LM_SAMPLES, LM_SIZE},
+    shaders::{self, LM_SAMPLES, LM_SIZE, LM_BUFFER_SLICES},
 };
 
 #[derive(Clone)]
@@ -39,7 +39,7 @@ impl Buffers {
         .unwrap();
 
         let buffers = Self {
-            real_time: get_real_time_buffer(allocators.clone()), // DEBUG: buffer with 1024 elements (presumably noise) is half-empty
+            real_time: get_real_time_buffer(allocators.clone()),
             mutable: get_mutable_buffer(allocators.clone(), &mut builder),
             objects: get_object_buffer(allocators.clone(), &mut builder),
             lm_buffer: get_lm_buffer(allocators.clone(), &mut builder),
@@ -61,6 +61,7 @@ impl Buffers {
     }
 }
 
+// TODO: move these functions to impl Buffers
 fn stage_buffer_with_data<T: BufferContents>(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
@@ -272,7 +273,7 @@ pub(crate) fn get_lm_dispatch_buffer(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<[DispatchIndirectCommand]> {
-    let data = [DispatchIndirectCommand { x: 0, y: 1, z: 1 }];
+    let data = [DispatchIndirectCommand { x: 0, y: 1, z: 1 }; LM_BUFFER_SLICES as usize];
     
     let buffer = Buffer::new_slice(
         &allocators.memory,

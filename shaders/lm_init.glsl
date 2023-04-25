@@ -22,12 +22,12 @@ layout(binding = 2) buffer restrict LMBuffer {
 } lmBuffer;
 
 layout(binding = 3) buffer restrict LMDispatches {
-    uint dispatches[3];
+    uint dispatches[LM_BUFFER_SLICES][3]; // FIXME: split into multiple sets of dispatches
 } lmDispatches;
 
-layout(binding = 4, r32f) uniform restrict writeonly image3D SDFImages[LM_COUNT]; // TODO: descriptor set, calculations
+layout(binding = 4, r32f) uniform restrict writeonly image3D SDFImages[LM_COUNT];
 
-layout(binding = 5, r32ui) uniform restrict writeonly uimage3D materialImages[LM_COUNT]; // TODO: descriptor set, r16ui?
+layout(binding = 5, r32ui) uniform restrict writeonly uimage3D materialImages[LM_COUNT]; // TODO: r16ui?
 
 const float SQRT_2 = 1.41421356;
 
@@ -50,7 +50,6 @@ float calculateSDF(vec3 position, out Object closestObj) {
     return minDist;
 }
 
-// TODO: break this up into multiple parts to do over time if necessary
 void main() {
     // TODO: find a way to remove this, binding is declared invalid when not reading from the buffer
     Voxel _USELESS = lmBuffer.voxels[0];
@@ -68,10 +67,14 @@ void main() {
     float dist = calculateSDF(position, closestObj); // bottleneck // TODO: copy objects to shared memory (precalc step which separates objects into areas)
 
     if (abs(dist) < SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]) {
+        const uint TOTAL_WORKGROUPS = gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z;
+        const uint WORKGROUP_INDEX = gl_WorkGroupID.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z + gl_WorkGroupID.y * gl_NumWorkGroups.z + gl_WorkGroupID.z;
+        const uint DISPATCH_INDEX = WORKGROUP_INDEX / (TOTAL_WORKGROUPS / LM_BUFFER_SLICES);
+
         vec3 normal = normalize(position - closestObj.position);
         vec3 position = normal * closestObj.radius + closestObj.position;
 
-        uint index = atomicAdd(lmDispatches.dispatches[0], 1);
+        uint index = atomicAdd(lmDispatches.dispatches[DISPATCH_INDEX][0], 1);
         lmBuffer.voxels[index] = Voxel(
             LM_INDEX,
             closestObj.material,

@@ -20,7 +20,7 @@ use crate::{
     descriptor_sets::{create_compute_descriptor_sets, DescriptorSets},
     images::Images,
     pipelines::Pipelines,
-    shaders::{self, LM_RAYS, LM_SIZE},
+    shaders::{self, LM_SIZE, LM_BUFFER_SLICES},
     LM_COUNT,
 };
 
@@ -68,10 +68,17 @@ impl CommandBuffers {
 #[derive(Clone)]
 pub(crate) struct PathtraceCommandBuffers {
     // TODO: implement fn next(), which returns `direct` when `acc.next()` returns `None`
-    pub(crate) acc: VecOnce<Arc<PrimaryAutoCommandBuffer>>,
+    pub(crate) lightmap: VecOnce<Arc<PrimaryAutoCommandBuffer>>,
     pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
 }
 
+impl PathtraceCommandBuffers {
+    pub(crate) fn next(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
+        self.lightmap.next().unwrap_or(self.direct.clone())
+    }
+}
+
+// TODO: impl PathtraceCommandBuffers
 pub(crate) fn create_pathtrace_command_buffers(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
@@ -105,15 +112,9 @@ pub(crate) fn create_pathtrace_command_buffers(
     builder
         .update_buffer(
             buffers.lm_dispatch.clone(),
-            &[DispatchIndirectCommand { x: 0, y: 1, z: 1 }][..],
+            &[DispatchIndirectCommand { x: 0, y: 1, z: 1 }; LM_BUFFER_SLICES as usize][..],
         )
-        .unwrap();
-
-    let lm_clear_dispatch = Arc::new(builder.build().unwrap());
-    command_buffers.push(lm_clear_dispatch);
-
-    let mut builder = create_builder();
-    builder
+        .unwrap()
         .bind_pipeline_compute(pipelines.lm_init.clone())
         .bind_descriptor_sets(
             PipelineBindPoint::Compute,
@@ -127,36 +128,40 @@ pub(crate) fn create_pathtrace_command_buffers(
     let lm_init = Arc::new(builder.build().unwrap());
     command_buffers.push(lm_init);
 
-    let mut builder = create_builder();
-    builder
-        .bind_pipeline_compute(pipelines.lm_primary.clone())
-        .bind_descriptor_sets(
-            PipelineBindPoint::Compute,
-            pipelines.lm_primary.layout().clone(),
-            0,
-            descriptor_sets.lm_primary.clone(),
-        )
-        .dispatch_indirect(buffers.lm_dispatch.clone())
-        .unwrap();
-
-    let lm_primary = Arc::new(builder.build().unwrap());
-    command_buffers.push(lm_primary);
-
-    for r in 0..(LM_RAYS - 1) {
+    for (i, lm_primary_pipeline) in pipelines.lm_primary.iter().enumerate() {
         let mut builder = create_builder();
         builder
-            .bind_pipeline_compute(pipelines.lm_secondary.clone())
+            .bind_pipeline_compute(lm_primary_pipeline.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
-                pipelines.lm_secondary.layout().clone(),
+                lm_primary_pipeline.layout().clone(),
                 0,
-                descriptor_sets.lm_secondary[r].clone(),
+                descriptor_sets.lm_primary.clone(),
             )
-            .dispatch_indirect(buffers.lm_dispatch.clone())
+            .dispatch_indirect(buffers.lm_dispatch.clone().index(i as u64).into_slice())
             .unwrap();
 
-        let lm_accumulate = Arc::new(builder.build().unwrap());
-        command_buffers.push(lm_accumulate);
+        let lm_primary = Arc::new(builder.build().unwrap());
+        command_buffers.push(lm_primary);
+    }
+
+    for lm_secondary_descriptor_set in descriptor_sets.lm_secondary {
+        for (i, lm_secondary_pipeline) in pipelines.lm_secondary.iter().enumerate() {
+            let mut builder = create_builder();
+            builder
+                .bind_pipeline_compute(lm_secondary_pipeline.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    lm_secondary_pipeline.layout().clone(),
+                    0,
+                    lm_secondary_descriptor_set.clone(),
+                )
+                .dispatch_indirect(buffers.lm_dispatch.clone().index(i as u64).into_slice())
+                .unwrap();
+
+            let lm_accumulate = Arc::new(builder.build().unwrap());
+            command_buffers.push(lm_accumulate);
+        }
     }
 
     let mut builder = create_builder();
@@ -174,7 +179,7 @@ pub(crate) fn create_pathtrace_command_buffers(
     let direct = Arc::new(builder.build().unwrap());
 
     PathtraceCommandBuffers {
-        acc: VecOnce::new(command_buffers),
+        lightmap: VecOnce::new(command_buffers),
         direct,
     }
 }

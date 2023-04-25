@@ -69,7 +69,7 @@ pub(crate) fn create_compute_descriptor_sets(
 
     let lm_primary = PersistentDescriptorSet::new(
         &allocators.descriptor_set,
-        pipelines.lm_primary.layout().set_layouts()[0].clone(),
+        pipelines.lm_primary[0].layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
             WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
@@ -86,7 +86,7 @@ pub(crate) fn create_compute_descriptor_sets(
         .map(|r| {
             PersistentDescriptorSet::new(
                 &allocators.descriptor_set,
-                pipelines.lm_secondary.layout().set_layouts()[0].clone(),
+                pipelines.lm_secondary[0].layout().set_layouts()[0].clone(),
                 [
                     WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
                     WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
