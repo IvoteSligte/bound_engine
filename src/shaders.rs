@@ -40,7 +40,7 @@ pub(crate) const LM_SIZE: u32 = 128;
 pub(crate) const MAX_OBJECTS: usize = 128;
 pub(crate) const MAX_MATERIALS: usize = 32;
 
-pub(crate) const LM_BUFFER_SLICES: u32 = 1;
+pub(crate) const LM_BUFFER_SLICES: u32 = 32;
 
 use vulkano::device::Device;
 
