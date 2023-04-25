@@ -22,10 +22,10 @@ layout(binding = 2) buffer restrict LMBuffer {
 } lmBuffer;
 
 layout(binding = 3) buffer restrict LMDispatches {
-    uint dispatches[LM_BUFFER_SLICES][3]; // FIXME: split into multiple sets of dispatches
+    uint dispatches[LM_BUFFER_SLICES][3];
 } lmDispatches;
 
-layout(binding = 4, r32f) uniform restrict writeonly image3D SDFImages[LM_COUNT];
+layout(binding = 4, r16f) uniform restrict writeonly image3D SDFImages[LM_COUNT];
 
 layout(binding = 5, r32ui) uniform restrict writeonly uimage3D materialImages[LM_COUNT]; // TODO: r16ui?
 
