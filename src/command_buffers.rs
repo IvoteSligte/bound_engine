@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use glam::{IVec3, UVec3};
-use vec_once::VecOnce;
 use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo,
@@ -66,15 +65,31 @@ impl CommandBuffers {
 }
 
 #[derive(Clone)]
+enum PathtraceCmbState {
+    Lightmap,
+    Direct,
+}
+
+#[derive(Clone)]
 pub(crate) struct PathtraceCommandBuffers {
-    // TODO: implement fn next(), which returns `direct` when `acc.next()` returns `None`
-    pub(crate) lightmap: VecOnce<Arc<PrimaryAutoCommandBuffer>>,
+    pub(crate) lightmap: Arc<PrimaryAutoCommandBuffer>,
     pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
+    state: PathtraceCmbState,
 }
 
 impl PathtraceCommandBuffers {
     pub(crate) fn next(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
-        self.lightmap.next().unwrap_or(self.direct.clone())
+        match self.state {
+            PathtraceCmbState::Lightmap => {
+                self.state = PathtraceCmbState::Direct;
+                self.lightmap.clone()
+            }
+            PathtraceCmbState::Direct => self.direct.clone(),
+        }
+    }
+
+    pub(crate) fn restart(&mut self) {
+        self.state = PathtraceCmbState::Lightmap;
     }
 }
 
@@ -106,9 +121,9 @@ pub(crate) fn create_pathtrace_command_buffers(
         .unwrap()
     };
 
-    let mut command_buffers = vec![];
-
     let mut builder = create_builder();
+
+    // lm_init
     builder
         .update_buffer(
             buffers.lm_dispatch.clone(),
@@ -125,10 +140,7 @@ pub(crate) fn create_pathtrace_command_buffers(
         .dispatch(dispatch_lm_init)
         .unwrap();
 
-    let lm_init = Arc::new(builder.build().unwrap());
-    command_buffers.push(lm_init);
-
-    let mut builder = create_builder();
+    // lm_primary
     builder
         .bind_pipeline_compute(pipelines.lm_primary.clone())
         .bind_descriptor_sets(
@@ -140,11 +152,8 @@ pub(crate) fn create_pathtrace_command_buffers(
         .dispatch_indirect(buffers.lm_dispatch.clone())
         .unwrap();
 
-    let lm_primary = Arc::new(builder.build().unwrap());
-    command_buffers.push(lm_primary);
-
+    // lm_secondary
     for lm_secondary_descriptor_set in descriptor_sets.lm_secondary {
-        let mut builder = create_builder();
         builder
             .bind_pipeline_compute(pipelines.lm_secondary.clone())
             .bind_descriptor_sets(
@@ -155,10 +164,9 @@ pub(crate) fn create_pathtrace_command_buffers(
             )
             .dispatch_indirect(buffers.lm_dispatch.clone())
             .unwrap();
-
-        let lm_accumulate = Arc::new(builder.build().unwrap());
-        command_buffers.push(lm_accumulate);
     }
+
+    let lightmap = Arc::new(builder.build().unwrap());
 
     let mut builder = create_builder();
     builder
@@ -175,8 +183,9 @@ pub(crate) fn create_pathtrace_command_buffers(
     let direct = Arc::new(builder.build().unwrap());
 
     PathtraceCommandBuffers {
-        lightmap: VecOnce::new(command_buffers),
+        lightmap,
         direct,
+        state: PathtraceCmbState::Lightmap,
     }
 }
 

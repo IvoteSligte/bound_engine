@@ -112,7 +112,8 @@ fn main() {
             eh.delta_position.z += delta_mov;
         }
 
-        let new_position = Vec3::from_array(*eh.state.real_time_data.position.as_ref()) + eh.delta_position();
+        let new_position =
+            Vec3::from_array(*eh.state.real_time_data.position.as_ref()) + eh.delta_position();
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
         eh.state.real_time_data.previousRotation = eh.state.real_time_data.rotation;
@@ -133,7 +134,8 @@ fn main() {
 
         if largest_delta_pos.abs().cmpge(Vec3::splat(1.0)).any() {
             let delta_pos = largest_delta_pos * LARGEST_UNIT;
-            eh.state.real_time_data.lightmapOrigin = (old_pos + delta_pos.as_ivec3()).to_array().into();
+            eh.state.real_time_data.lightmapOrigin =
+                (old_pos + delta_pos.as_ivec3()).to_array().into();
 
             for i in 0..(LM_COUNT as usize) {
                 let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
@@ -141,7 +143,7 @@ fn main() {
                 eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
             }
 
-            move_lightmap = Some(create_dynamic_move_lightmaps_command_buffer(
+            move_lightmap = Some(create_dynamic_move_lightmaps_command_buffer( // TODO: combine with lightmap command buffer
                 eh.state.allocators.clone(),
                 eh.state.queue.clone(),
                 eh.state.images.clone(),
@@ -149,7 +151,7 @@ fn main() {
             ));
 
             // FIXME: do not redo the rendering of the entire lightmap every time, but only the 'moved' part
-            eh.state.command_buffers.pathtraces.lightmap.restart();
+            eh.state.command_buffers.pathtraces.restart(); // TODO: combine with move lightmap command buffer
         }
 
         // FIXME: just use the write() function instead
@@ -196,16 +198,13 @@ fn main() {
                 .boxed();
         }
 
-        future = future
-            .then_execute(eh.state.queue.clone(), real_time_command_buffer)
-            .unwrap()
-            .boxed();
+        // FIXME: run pathtrace command buffer on application start and restart() function call,
+        // then wait for the last secondary lightmap cmb to complete cause that one and direct can't run at the same time
 
         let future = future
-            .then_execute(
-                eh.state.queue.clone(),
-                eh.state.command_buffers.pathtraces.next(),
-            )
+            .then_execute(eh.state.queue.clone(), real_time_command_buffer)
+            .unwrap()
+            .then_execute(eh.state.queue.clone(), eh.state.command_buffers.pathtraces.next())
             .unwrap()
             .then_execute(
                 eh.state.queue.clone(),
