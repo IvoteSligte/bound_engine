@@ -4,8 +4,6 @@
 
 layout(local_size_x = LM_SAMPLES, local_size_y = 1, local_size_z = 1) in;
 
-layout(constant_id = 0) const uint LM_BUFFER_OFFSET = 0;
-
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
     vec4 previousRotation;
@@ -41,7 +39,7 @@ shared vec3 SharedColors[gl_WorkGroupSize.x];
 
 void main() {
     if (gl_LocalInvocationID.x == 0) {
-        SharedData = SharedStruct(lmBuffer.voxels[LM_BUFFER_OFFSET + gl_WorkGroupID.x], rt.lightmapOrigin);
+        SharedData = SharedStruct(lmBuffer.voxels[gl_WorkGroupID.x], rt.lightmapOrigin);
         SharedMaterials = buf.mats;
     }
     barrier();

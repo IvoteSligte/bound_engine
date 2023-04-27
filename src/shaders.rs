@@ -25,8 +25,7 @@ vulkano_shaders::shader! {
         ("LM_COUNT", "6"),
         ("LM_SIZE", "128"),
         ("MAX_OBJECTS", "128"),
-        ("MAX_MATERIALS", "32"),
-        ("LM_BUFFER_SLICES", "1")
+        ("MAX_MATERIALS", "32")
     ], // TODO: sync defines with consts
     vulkan_version: "1.2", // TODO: vulkan 1.3
     spirv_version: "1.6"
@@ -39,8 +38,6 @@ pub(crate) const LM_SIZE: u32 = 128;
 
 pub(crate) const MAX_OBJECTS: usize = 128;
 pub(crate) const MAX_MATERIALS: usize = 32;
-
-pub(crate) const LM_BUFFER_SLICES: u32 = 32;
 
 use vulkano::device::Device;
 

@@ -16,7 +16,7 @@ use vulkano::{
 use crate::{
     allocators::Allocators,
     scene::{get_materials, get_objects, RawObject},
-    shaders::{self, LM_BUFFER_SLICES, LM_SAMPLES, LM_SIZE},
+    shaders::{self, LM_SAMPLES, LM_SIZE},
 };
 
 #[derive(Clone)]
@@ -276,7 +276,7 @@ pub(crate) fn get_lm_dispatch_buffer(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<[DispatchIndirectCommand]> {
-    let data = [DispatchIndirectCommand { x: 0, y: 1, z: 1 }; LM_BUFFER_SLICES as usize];
+    let data = [DispatchIndirectCommand { x: 0, y: 1, z: 1 }];
 
     let buffer = Buffer::new_slice(
         &allocators.memory,

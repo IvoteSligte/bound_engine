@@ -22,7 +22,7 @@ layout(binding = 2) buffer restrict LMBuffer {
 } lmBuffer;
 
 layout(binding = 3) buffer restrict LMDispatches {
-    uint dispatches[LM_BUFFER_SLICES][3];
+    uint dispatches[3];
 } lmDispatches;
 
 layout(binding = 4, r16f) uniform restrict writeonly image3D SDFImages[LM_COUNT];
@@ -67,14 +67,10 @@ void main() {
     float dist = calculateSDF(position, closestObj); // bottleneck // TODO: copy objects to shared memory (precalc step which separates objects into areas)
 
     if (abs(dist) < SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]) {
-        const uint TOTAL_WORKGROUPS = gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z;
-        const uint WORKGROUP_INDEX = gl_WorkGroupID.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z + gl_WorkGroupID.y * gl_NumWorkGroups.z + gl_WorkGroupID.z;
-        const uint DISPATCH_INDEX = WORKGROUP_INDEX / (TOTAL_WORKGROUPS / LM_BUFFER_SLICES);
-
         vec3 normal = normalize(position - closestObj.position);
         vec3 position = normal * closestObj.radius + closestObj.position;
 
-        uint index = atomicAdd(lmDispatches.dispatches[DISPATCH_INDEX][0], 1);
+        uint index = atomicAdd(lmDispatches.dispatches[0], 1);
         lmBuffer.voxels[index] = Voxel(
             LM_INDEX,
             closestObj.material,
