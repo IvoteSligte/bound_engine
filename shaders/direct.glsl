@@ -40,8 +40,8 @@ void main() {
     vec3 lightmapOrigin = rt.lightmapOrigin;
 
     vec3 viewDir = rotateWithQuat(rotation, DIRECTION);
-
-    bool isHit = marchRay(position, viewDir, lightmapOrigin, 1e-3);
+    float totalDist = 0.0;
+    bool isHit = marchRay(position, viewDir, lightmapOrigin, 1e-3, totalDist);
 
     if (!isHit) {
         imageStore(colorImage, IPOS, vec4(0.0)); // TODO: skybox

@@ -16,7 +16,7 @@ use vulkano::{
 use crate::{
     allocators::Allocators,
     scene::{get_materials, get_objects, RawObject},
-    shaders::{self, LM_SAMPLES, LM_SIZE, LM_BUFFER_SLICES},
+    shaders::{self, LM_BUFFER_SLICES, LM_SAMPLES, LM_SIZE},
 };
 
 #[derive(Clone)]
@@ -26,7 +26,7 @@ pub(crate) struct Buffers {
     pub(crate) objects: Subbuffer<[RawObject]>,
     pub(crate) lm_buffer: Subbuffer<[shaders::Voxel]>,
     pub(crate) lm_dispatch: Subbuffer<[DispatchIndirectCommand]>,
-    pub(crate) noise: Subbuffer<[[f32; 4]]>,
+    pub(crate) noise: Subbuffer<shaders::NoiseBuffer>,
 }
 
 impl Buffers {
@@ -204,7 +204,7 @@ pub(crate) fn get_object_buffer(
 pub(crate) fn get_noise_buffer(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-) -> Subbuffer<[[f32; 4]]> {
+) -> Subbuffer<shaders::NoiseBuffer> {
     let points = UnitSphere // TODO: sort so similar directions are grouped together
         .sample_iter(rand::thread_rng())
         .take(LM_SAMPLES as usize)
@@ -213,12 +213,16 @@ pub(crate) fn get_noise_buffer(
         .map(Vec3::from_array)
         .collect::<Vec<Vec3>>();
 
-    let noise_data = points // TODO: store in file and use include_bytes! macro
-        .into_iter()
-        .map(|v| v.extend(0.0).to_array())
-        .collect::<Vec<_>>();
+    let noise_data = shaders::NoiseBuffer {
+        dirs: points // TODO: store in file and use include_bytes! macro
+            .into_iter()
+            .map(|v| v.extend(0.0).to_array())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap(),
+    };
 
-    let buffer = Buffer::new_slice(
+    let buffer = Buffer::new_sized(
         &allocators.memory,
         BufferCreateInfo {
             usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
@@ -228,11 +232,10 @@ pub(crate) fn get_noise_buffer(
             usage: MemoryUsage::DeviceOnly,
             ..Default::default()
         },
-        noise_data.len() as u64,
     )
     .unwrap();
 
-    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), noise_data);
+    stage_buffer_with_data(allocators, cmb_builder, buffer.clone(), noise_data);
 
     buffer
 }
@@ -274,11 +277,13 @@ pub(crate) fn get_lm_dispatch_buffer(
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<[DispatchIndirectCommand]> {
     let data = [DispatchIndirectCommand { x: 0, y: 1, z: 1 }; LM_BUFFER_SLICES as usize];
-    
+
     let buffer = Buffer::new_slice(
         &allocators.memory,
         BufferCreateInfo {
-            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::INDIRECT_BUFFER | BufferUsage::TRANSFER_DST,
+            usage: BufferUsage::STORAGE_BUFFER
+                | BufferUsage::INDIRECT_BUFFER
+                | BufferUsage::TRANSFER_DST,
             ..Default::default()
         },
         AllocationCreateInfo {

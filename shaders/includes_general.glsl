@@ -40,7 +40,7 @@ struct HitItem {
 };
 
 struct Voxel {
-    ivec4 lmIndex;
+    ivec4 lmIndex; // TODO: compress
     uint material;
     vec3 position;
     vec3 normal;

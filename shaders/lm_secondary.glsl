@@ -50,8 +50,9 @@ void main() {
     vec4 randDir = noise.dirs[gl_LocalInvocationID.x];
     vec3 dir = normalize(voxel.normal + randDir.xyz);
 
-    vec3 position = voxel.position + dir * 2.0 * LM_UNIT_SIZES[voxel.lmIndex.w];
-    bool isHit = marchRay(position, dir, sData.lightmapOrigin, 1e-3); // bottleneck
+    float totalDist = 2.0 * LM_UNIT_SIZES[voxel.lmIndex.w];
+    vec3 position = voxel.position;
+    bool isHit = marchRay(position, dir, sData.lightmapOrigin, 1e-3, totalDist); // bottleneck
 
     ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
     vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: trilinear interpolation with neighbours for smoother results

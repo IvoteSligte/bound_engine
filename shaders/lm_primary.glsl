@@ -36,7 +36,6 @@ layout(binding = 6, r16ui) uniform restrict readonly uimage3D materialImages[LM_
 #include "includes_march_ray.glsl"
 
 shared Material SharedMaterials[MAX_MATERIALS];
-
 shared SharedStruct SharedData;
 shared vec3 SharedColors[gl_WorkGroupSize.x];
 
@@ -53,9 +52,9 @@ void main() {
     vec4 randDir = noise.dirs[gl_LocalInvocationID.x];
     vec3 dir = normalize(voxel.normal + randDir.xyz);
 
-    vec3 position = voxel.position + dir * 2.0 * LM_UNIT_SIZES[voxel.lmIndex.w]; // starts in next cell on ray
-    // TODO: do tracing in multiple iterations, splitting every ray into 4+ rays every time there is an intersection
-    bool isHit = marchRay(position, dir, sData.lightmapOrigin, 1e-3); // bottleneck
+    float totalDist = 2.0 * LM_UNIT_SIZES[voxel.lmIndex.w];
+    vec3 position = voxel.position;
+    bool isHit = marchRay(position, dir, sData.lightmapOrigin, 1e-3, totalDist); // bottleneck
 
     ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
     uint material = imageLoad(materialImages[lmIndexSample.w], lmIndexSample.xyz).x;
