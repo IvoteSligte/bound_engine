@@ -19,7 +19,7 @@ use crate::{
     descriptor_sets::{create_compute_descriptor_sets, DescriptorSets},
     images::Images,
     pipelines::Pipelines,
-    shaders::{self, LM_SIZE},
+    shaders::LM_SIZE,
     LM_COUNT,
 };
 
@@ -313,24 +313,4 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
     // FIXME: moving the `lm_buffer` !!!
 
     Arc::new(builder.build().unwrap())
-}
-
-pub(crate) fn create_real_time_command_buffer(
-    allocators: Arc<Allocators>,
-    queue: Arc<Queue>,
-    real_time_data: shaders::RealTimeBuffer,
-    buffers: Buffers,
-) -> PrimaryAutoCommandBuffer {
-    let mut real_time_command_buffer_builder = AutoCommandBufferBuilder::primary(
-        &allocators.command_buffer,
-        queue.queue_family_index(),
-        CommandBufferUsage::OneTimeSubmit,
-    )
-    .unwrap();
-
-    real_time_command_buffer_builder
-        .update_buffer(buffers.real_time.clone(), Arc::new(real_time_data))
-        .unwrap();
-
-    real_time_command_buffer_builder.build().unwrap()
 }

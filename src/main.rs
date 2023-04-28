@@ -143,7 +143,8 @@ fn main() {
                 eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
             }
 
-            move_lightmap = Some(create_dynamic_move_lightmaps_command_buffer( // TODO: combine with lightmap command buffer
+            move_lightmap = Some(create_dynamic_move_lightmaps_command_buffer(
+                // TODO: combine with lightmap command buffer
                 eh.state.allocators.clone(),
                 eh.state.queue.clone(),
                 eh.state.images.clone(),
@@ -153,14 +154,6 @@ fn main() {
             // FIXME: do not redo the rendering of the entire lightmap every time, but only the 'moved' part
             eh.state.command_buffers.pathtraces.restart(); // TODO: combine with move lightmap command buffer
         }
-
-        // FIXME: just use the write() function instead
-        let real_time_command_buffer = create_real_time_command_buffer(
-            eh.state.allocators.clone(),
-            eh.state.queue.clone(),
-            eh.state.real_time_data.clone(),
-            eh.state.buffers.clone(),
-        );
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {
@@ -173,6 +166,7 @@ fn main() {
 
         if let Some(previous_future) = eh.state.fences.previous() {
             previous_future.wait(None).unwrap();
+            *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
         }
 
         let (image_index, suboptimal, image_future) =
@@ -202,9 +196,10 @@ fn main() {
         // then wait for the last secondary lightmap cmb to complete cause that one and direct can't run at the same time
 
         let future = future
-            .then_execute(eh.state.queue.clone(), real_time_command_buffer)
-            .unwrap()
-            .then_execute(eh.state.queue.clone(), eh.state.command_buffers.pathtraces.next())
+            .then_execute(
+                eh.state.queue.clone(),
+                eh.state.command_buffers.pathtraces.next(),
+            )
             .unwrap()
             .then_execute(
                 eh.state.queue.clone(),
