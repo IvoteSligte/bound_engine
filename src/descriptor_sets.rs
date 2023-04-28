@@ -102,7 +102,11 @@ pub(crate) fn create_compute_descriptor_sets(
                     ), // writes to
                     WriteDescriptorSet::buffer(4, buffers.lm_buffer.clone()), // reads from
                     WriteDescriptorSet::buffer(5, buffers.noise.clone()),
-                    WriteDescriptorSet::image_view_sampler_array(6, 0, combined_image_sampler_sdfs.clone()),
+                    WriteDescriptorSet::image_view_sampler_array(
+                        6,
+                        0,
+                        combined_image_sampler_sdfs.clone(),
+                    ),
                 ],
             )
             .unwrap()

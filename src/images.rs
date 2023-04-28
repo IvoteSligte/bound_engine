@@ -100,7 +100,7 @@ impl LightmapImages {
             height: LM_SIZE,
             depth: LM_SIZE,
         };
-        
+
         // TODO: layout optimisation for storage
         let create_storage_image = |usage, format| {
             StorageImage::with_usage(

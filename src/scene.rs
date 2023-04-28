@@ -1,9 +1,9 @@
 use std::f32::consts::PI;
 
-use crate::shaders::{self, MAX_OBJECTS, MAX_MATERIALS};
+use crate::shaders::{self, MAX_MATERIALS, MAX_OBJECTS};
 
 use glam::*;
-use vulkano::{padded::Padded, buffer::BufferContents};
+use vulkano::{buffer::BufferContents, padded::Padded};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CpuMaterial {
@@ -61,10 +61,13 @@ pub(crate) fn get_materials() -> Vec<shaders::Material> {
         },
     );
 
-    materials.resize(MAX_MATERIALS, CpuMaterial {
-        reflectance: Vec3::splat(0.0),
-        emittance: Vec3::splat(0.0),
-    });
+    materials.resize(
+        MAX_MATERIALS,
+        CpuMaterial {
+            reflectance: Vec3::splat(0.0),
+            emittance: Vec3::splat(0.0),
+        },
+    );
 
     materials.into_iter().map(|m| m.into()).collect()
 }
@@ -132,13 +135,19 @@ fn custom_objects() -> Vec<CpuObject> {
 pub(crate) fn get_objects() -> Vec<RawObject> {
     let mut objects = custom_objects();
 
-    objects.resize(MAX_OBJECTS, CpuObject {
-        position: Vec3::splat(0.0),
-        radius: 0.0,
-        material: 0,
-    });
+    objects.resize(
+        MAX_OBJECTS,
+        CpuObject {
+            position: Vec3::splat(0.0),
+            radius: 0.0,
+            material: 0,
+        },
+    );
 
-    objects.into_iter().map(|obj| obj.into()).collect::<Vec<_>>()
+    objects
+        .into_iter()
+        .map(|obj| obj.into())
+        .collect::<Vec<_>>()
 }
 
 #[derive(Clone, Debug, BufferContents)]
