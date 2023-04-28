@@ -26,6 +26,8 @@ layout(binding = 3) uniform sampler3D SDFImages[LM_COUNT];
 
 #include "includes_march_ray.glsl"
 
+const float NEAR_CLIPPING = 1.0;
+
 // TODO: change to fragment shader if beneficial
 void main() {
     const ivec2 VIEWPORT = ivec2(imageSize(colorImage).xy);
@@ -39,9 +41,9 @@ void main() {
     vec4 rotation = rt.rotation;
     vec3 lightmapOrigin = rt.lightmapOrigin;
 
-    vec3 viewDir = rotateWithQuat(rotation, DIRECTION);
-    float totalDist = 0.0;
-    bool isHit = marchRay(position, viewDir, lightmapOrigin, 1e-3, totalDist);
+    vec3 dir = rotateWithQuat(rotation, DIRECTION);
+    float totalDist = NEAR_CLIPPING;
+    bool isHit = marchRay(position, dir, lightmapOrigin, 1e-3, totalDist);
 
     if (!isHit) {
         imageStore(colorImage, IPOS, vec4(0.0)); // TODO: skybox
