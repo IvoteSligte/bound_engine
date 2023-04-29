@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use vulkano::{
     device::{Device, DeviceExtensions, Queue},
-    sampler::{BorderColor, Sampler, SamplerAddressMode, SamplerCreateInfo},
+    sampler::{BorderColor, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerReductionMode},
     swapchain::Swapchain,
 };
 use winit::window::Window;
@@ -76,6 +76,7 @@ impl State {
             SamplerCreateInfo {
                 address_mode: [SamplerAddressMode::ClampToBorder; 3],
                 border_color: BorderColor::FloatTransparentBlack,
+                reduction_mode: SamplerReductionMode::WeightedAverage,
                 ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
             },
         )

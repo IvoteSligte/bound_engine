@@ -79,6 +79,6 @@ void main() {
         Material material = buf.mats[voxel.material];
         color = color * material.reflectance * (1.0 / float(LM_SAMPLES)) + material.emittance;
 
-        imageStore(lmOutputColorImages[voxel.lmIndex.w], voxel.lmIndex.xyz, vec4(color, 0.0));
+        imageStore(lmOutputColorImages[voxel.lmIndex.w], voxel.lmIndex.xyz, vec4(color, 1.0));
     }
 }
