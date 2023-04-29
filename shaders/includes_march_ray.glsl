@@ -12,9 +12,9 @@ bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin, float threshold, inout fl
         lmLayer += int(increaseLayer) - int(decreaseLayer); // one of: -1, 0, 1
 
         float mult = (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[lmLayer]; // TODO: consts
-        vec3 idx2 = pos - lmOrigin; // TODO: lmOrigin varying between layers
+        vec3 texIdx = (pos - lmOrigin) * mult + 0.5; // TODO: lmOrigin varying between layers
 
-        dist = texture(SDFImages[lmLayer], clamp(idx2 * mult + 0.5, 0.0, 1.0)).x;
+        dist = texture(SDFImages[lmLayer], clamp(texIdx, 0.0, 1.0)).x;
         totalDist += dist;
 
         if (lmLayer >= LM_COUNT) { // out of bounds
