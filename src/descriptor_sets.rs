@@ -37,17 +37,21 @@ pub(crate) fn create_compute_descriptor_sets(
         .map(|img| (img, images.sampler()))
         .collect::<Vec<_>>();
 
+    let combined_image_sampler_final_colors = image_views
+        .lightmap
+        .final_colors
+        .clone()
+        .into_iter()
+        .map(|img| (img, images.sampler()))
+        .collect::<Vec<_>>();
+
     let direct = PersistentDescriptorSet::new(
         &allocators.descriptor_set,
         pipelines.direct.layout().set_layouts()[0].clone(),
         [
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
             WriteDescriptorSet::image_view(1, image_views.color.clone()),
-            WriteDescriptorSet::image_view_array(
-                2,
-                0,
-                image_views.lightmap.colors.last().unwrap().clone(),
-            ),
+            WriteDescriptorSet::image_view_sampler_array(2, 0, combined_image_sampler_final_colors),
             WriteDescriptorSet::image_view_sampler_array(3, 0, combined_image_sampler_sdfs.clone()),
         ],
     )
@@ -98,7 +102,7 @@ pub(crate) fn create_compute_descriptor_sets(
                     WriteDescriptorSet::image_view_array(
                         3,
                         0,
-                        image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(),
+                        image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(), // TODO: only bind one image here and use spec constant to indicate lmLayer
                     ), // writes to
                     WriteDescriptorSet::buffer(4, buffers.lm_buffer.clone()), // reads from
                     WriteDescriptorSet::buffer(5, buffers.noise.clone()),
