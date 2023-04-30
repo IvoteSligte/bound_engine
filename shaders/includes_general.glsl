@@ -68,6 +68,7 @@ int lmLayerAtPos(vec3 v, vec3 lmOrigin) {
 }
 
 /// returns an index into a lightmap image in xyz, and the image index in w
+// TODO: lmOrigin per layer
 ivec4 lmIndexAtPos(vec3 v, vec3 lmOrigin) {
     uint lmLayer = lmLayerAtPos(v, lmOrigin);
     ivec3 index = ivec3(floor((v - lmOrigin) / LM_UNIT_SIZES[lmLayer])) + HALF_LM_SIZE;
@@ -75,6 +76,7 @@ ivec4 lmIndexAtPos(vec3 v, vec3 lmOrigin) {
     return ivec4(index, lmLayer);
 }
 
+// TODO: lmOrigin per layer
 vec3 posAtLightmapIndex(ivec4 lmIndex, vec3 lmOrigin) {
     return (vec3(lmIndex.xyz - HALF_LM_SIZE) + 0.5) * LM_UNIT_SIZES[lmIndex.w] + lmOrigin;
 }
