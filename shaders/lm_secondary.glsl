@@ -29,7 +29,7 @@ layout(binding = 5) uniform restrict readonly NoiseBuffer {
     vec4 dirs[gl_WorkGroupSize.x];
 } noise;
 
-layout(binding = 6) uniform sampler3D SDFImages[LM_COUNT]; // TODO: descriptor set
+layout(binding = 6) uniform sampler3D SDFImages[LM_COUNT];
 
 #include "includes_march_ray.glsl"
 
@@ -53,7 +53,7 @@ void main() {
     bool isHit = marchRay(position, dir, sData.lightmapOrigin, 1e-3, totalDist); // bottleneck
 
     ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
-    vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb; // TODO: trilinear interpolation with neighbours for smoother results
+    vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb;
 
     SharedColors[gl_LocalInvocationID.x] = color;
 

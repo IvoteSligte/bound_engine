@@ -64,7 +64,7 @@ void main() {
     vec3 position = posAtLightmapIndex(LM_INDEX, rt.lightmapOrigin.xyz);
 
     Object closestObj;
-    float dist = calculateSDF(position, closestObj); // bottleneck // TODO: copy objects to shared memory (precalc step which separates objects into areas)
+    float dist = calculateSDF(position, closestObj); // bottleneck // TODO: object acceleration structure
 
     if (abs(dist) < SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]) {
         vec3 normal = normalize(position - closestObj.position);
@@ -80,5 +80,5 @@ void main() {
     }
 
     imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
-    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(closestObj.material)); // FIXME: materials do not appear to be correct on objects
+    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(closestObj.material));
 }

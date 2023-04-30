@@ -34,11 +34,11 @@ fn custom_materials() -> Vec<CpuMaterial> {
 
     for i in 1..10 {
         let color = if i < 4 {
-            Vec3::new(i as f32 / 3.0, 0.0, 0.0)
+            Vec3::new(i as f32, 0.0, 0.0)
         } else if i < 7 {
-            Vec3::new(0.0, (i - 2) as f32 / 3.0, 0.0)
+            Vec3::new(0.0, (i - 2) as f32, 0.0)
         } else {
-            Vec3::new(0.0, 0.0, (i - 5) as f32 / 3.0)
+            Vec3::new(0.0, 0.0, (i - 5) as f32)
         };
 
         materials.push(CpuMaterial {
