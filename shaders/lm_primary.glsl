@@ -46,11 +46,12 @@ void main() {
     
     SharedStruct sData = SharedData;
     Voxel voxel = sData.voxel;
+    ivec4 lmIndex = ivec4(unpackBytesUint(voxel.lmIndex));
 
     vec4 randDir = noise.dirs[gl_LocalInvocationID.x];
     vec3 dir = normalize(voxel.normal + randDir.xyz);
 
-    float totalDist = 2.0 * LM_UNIT_SIZES[voxel.lmIndex.w];
+    float totalDist = 2.0 * LM_UNIT_SIZES[lmIndex.w];
     vec3 position = voxel.position;
     bool isHit = marchRay(position, dir, sData.lightmapOrigin, 1e-3, totalDist); // bottleneck
 
@@ -79,6 +80,6 @@ void main() {
         Material material = buf.mats[voxel.material];
         color = color * material.reflectance * (1.0 / float(LM_SAMPLES)) + material.emittance;
 
-        imageStore(lmOutputColorImages[voxel.lmIndex.w], voxel.lmIndex.xyz, vec4(color, 1.0));
+        imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 1.0));
     }
 }

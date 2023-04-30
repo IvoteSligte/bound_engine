@@ -40,9 +40,9 @@ struct HitItem {
 };
 
 struct Voxel {
-    ivec4 lmIndex; // TODO: compress
-    uint material;
+    uint lmIndex;
     vec3 position;
+    uint material;
     vec3 normal;
 };
 
@@ -62,6 +62,22 @@ float maximum(vec3 v) {
 
 const int HALF_LM_SIZE = LM_SIZE / 2;
 const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
+
+uvec4 unpackBytesUint(uint bytes) {
+    return uvec4(
+         bytes        & 255, // [0, 8)
+        (bytes >>  8) & 255, // [8, 16)
+        (bytes >> 16) & 255, // [16, 24)
+        (bytes >> 24) & 255  // [24, 32)
+    );
+}
+
+// packs 4 bytes into a uint, assumes the inputs are in the range [0, 255]
+uint packBytesUint(uvec4 bytes) {
+    return uint(
+        bytes.x | (bytes.y << 8) | (bytes.z << 16) | (bytes.w << 24)
+    );
+}
 
 int lmLayerAtPos(vec3 v, vec3 lmOrigin) {
     return int(log2(max(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE, 0.5)) + 1.001);

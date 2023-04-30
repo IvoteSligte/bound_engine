@@ -72,9 +72,9 @@ void main() {
 
         uint index = atomicAdd(lmDispatches.dispatches[0], 1);
         lmBuffer.voxels[index] = Voxel(
-            LM_INDEX,
-            closestObj.material,
+            packBytesUint(uvec4(LM_INDEX)),
             position,
+            closestObj.material,
             normal
         );
     }
