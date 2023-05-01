@@ -52,7 +52,6 @@ impl CommandBuffers {
             window.clone(),
             descriptor_sets.clone(),
             buffers.clone(),
-            images.clone(),
         );
 
         let swapchains =
@@ -102,7 +101,6 @@ pub(crate) fn create_pathtrace_command_buffers(
     window: Arc<Window>,
     descriptor_sets: DescriptorSets,
     buffers: Buffers,
-    images: Images,
 ) -> PathtraceCommandBuffers {
     let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
@@ -165,20 +163,6 @@ pub(crate) fn create_pathtrace_command_buffers(
                 lm_secondary_descriptor_set.clone(),
             )
             .dispatch_indirect(buffers.lm_dispatch.clone())
-            .unwrap();
-    }
-
-    for (src_image, dst_image) in images
-        .lightmap
-        .colors
-        .last()
-        .unwrap()
-        .clone()
-        .into_iter()
-        .zip(images.lightmap.final_colors)
-    {
-        builder
-            .copy_image(CopyImageInfo::images(src_image, dst_image))
             .unwrap();
     }
 

@@ -40,7 +40,9 @@ pub(crate) fn create_compute_descriptor_sets(
 
     let combined_image_sampler_final_colors = image_views
         .lightmap
-        .final_colors
+        .colors
+        .last()
+        .unwrap()
         .clone()
         .into_iter()
         .zip(repeat(images.sampler()))
