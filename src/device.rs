@@ -46,6 +46,7 @@ pub(crate) fn create_device(
         },
     )
     .unwrap();
+
     let queue = queues.next().unwrap();
     (device, queue)
 }

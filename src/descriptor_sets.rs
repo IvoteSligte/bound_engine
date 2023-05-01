@@ -11,6 +11,7 @@ use vulkano::descriptor_set::WriteDescriptorSet;
 
 use vulkano::descriptor_set::PersistentDescriptorSet;
 
+use std::iter::repeat;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -34,7 +35,7 @@ pub(crate) fn create_compute_descriptor_sets(
         .sdfs
         .clone()
         .into_iter()
-        .map(|img| (img, images.sampler()))
+        .zip(repeat(images.sampler()))
         .collect::<Vec<_>>();
 
     let combined_image_sampler_final_colors = image_views
@@ -42,7 +43,7 @@ pub(crate) fn create_compute_descriptor_sets(
         .final_colors
         .clone()
         .into_iter()
-        .map(|img| (img, images.sampler()))
+        .zip(repeat(images.sampler()))
         .collect::<Vec<_>>();
 
     let direct = PersistentDescriptorSet::new(

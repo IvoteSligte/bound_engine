@@ -192,9 +192,6 @@ fn main() {
                 .boxed();
         }
 
-        // FIXME: run pathtrace command buffer on application start and restart() function call,
-        // then wait for the last secondary lightmap cmb to complete cause that one and direct can't run at the same time
-
         let future = future
             .then_execute(
                 eh.state.queue.clone(),
