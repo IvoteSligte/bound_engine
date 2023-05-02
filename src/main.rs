@@ -16,7 +16,7 @@ use winit::{
 };
 use winit_event_helper::*;
 
-use crate::{command_buffers::*, event_helper::*, swapchain::*};
+use crate::{event_helper::*, swapchain::*};
 
 mod allocators;
 mod buffers;
@@ -130,8 +130,6 @@ fn main() {
 
         let largest_delta_pos = (new_pos - old_pos).as_vec3() / LARGEST_UNIT;
 
-        let mut move_lightmap = None;
-
         if largest_delta_pos.abs().cmpge(Vec3::splat(1.0)).any() {
             let delta_pos = largest_delta_pos * LARGEST_UNIT;
             eh.state.real_time_data.lightmapOrigin =
@@ -142,14 +140,6 @@ fn main() {
                 let delta_units = (delta_pos / unit_size).as_ivec3();
                 eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
             }
-
-            move_lightmap = Some(create_dynamic_move_lightmaps_command_buffer(
-                // TODO: combine with lightmap command buffer
-                eh.state.allocators.clone(),
-                eh.state.queue.clone(),
-                eh.state.images.clone(),
-                delta_pos.as_ivec3(),
-            ));
 
             // FIXME: do not redo the rendering of the entire lightmap every time, but only the 'moved' part
             eh.state.command_buffers.pathtraces.restart(); // TODO: combine with move lightmap command buffer
@@ -183,14 +173,7 @@ fn main() {
             image_fence.wait(None).unwrap();
         }
 
-        let mut future = sync::now(eh.state.device.clone()).boxed();
-
-        if let Some(command_buffer) = move_lightmap {
-            future = future
-                .then_execute(eh.state.queue.clone(), command_buffer)
-                .unwrap()
-                .boxed();
-        }
+        let future = sync::now(eh.state.device.clone()).boxed();
 
         let future = future
             .then_execute(
