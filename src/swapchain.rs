@@ -117,7 +117,6 @@ pub(crate) fn recreate_swapchain(
             eh.state.pipelines.clone(),
             eh.window.clone(),
             descriptor_sets.clone(),
-            eh.state.buffers.clone(),
         );
     }
 

@@ -15,6 +15,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
     vec3 previousPosition;
     ivec3 lightmapOrigin;
+    uint lightmapBufferOffset;
     ivec4 deltaLightmapOrigins[LM_COUNT];
 } rt;
 

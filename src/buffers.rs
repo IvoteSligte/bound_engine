@@ -1,12 +1,12 @@
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
 use glam::Vec3;
 use rand_distr::{Distribution, UnitSphere};
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, DispatchIndirectCommand,
-        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer,
+        PrimaryCommandBufferAbstract,
     },
     device::Queue,
     memory::allocator::{AllocationCreateInfo, MemoryUsage},
@@ -24,8 +24,7 @@ pub(crate) struct Buffers {
     pub(crate) real_time: Subbuffer<shaders::RealTimeBuffer>,
     pub(crate) mutable: Subbuffer<shaders::MutableData>, // TODO: rename to MaterialBuffer
     pub(crate) objects: Subbuffer<[RawObject]>,
-    pub(crate) lm_buffer: Subbuffer<[shaders::Voxel]>,
-    pub(crate) lm_dispatch: Subbuffer<[DispatchIndirectCommand]>,
+    pub(crate) lm_buffers: LmBuffers,
     pub(crate) noise: Subbuffer<shaders::NoiseBuffer>,
 }
 
@@ -42,8 +41,7 @@ impl Buffers {
             real_time: get_real_time_buffer(allocators.clone()),
             mutable: get_mutable_buffer(allocators.clone(), &mut builder),
             objects: get_object_buffer(allocators.clone(), &mut builder),
-            lm_buffer: get_lm_buffer(allocators.clone(), &mut builder),
-            lm_dispatch: get_lm_dispatch_buffer(allocators.clone(), &mut builder),
+            lm_buffers: LmBuffers::new(allocators.clone(), &mut builder),
             noise: get_noise_buffer(allocators.clone(), &mut builder),
         };
 
@@ -135,6 +133,7 @@ pub(crate) fn get_real_time_buffer(
             position: Default::default(),
             previousPosition: Default::default(),
             lightmapOrigin: Default::default(),
+            lightmapBufferOffset: Default::default(),
             deltaLightmapOrigins: Default::default(),
         },
     )
@@ -240,61 +239,79 @@ pub(crate) fn get_noise_buffer(
     buffer
 }
 
-pub(crate) fn get_lm_buffer(
-    allocators: Arc<Allocators>,
-    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-) -> Subbuffer<[shaders::Voxel]> {
-    let iter = (0..(LM_SIZE.pow(3)))
-        .map(|_| shaders::Voxel {
-            lmIndex: Default::default(),
-            material: Default::default(),
-            position: Default::default(),
-            normal: Default::default(),
-        })
-        .collect::<Vec<_>>();
-
-    let buffer = Buffer::new_slice(
-        &allocators.memory,
-        BufferCreateInfo {
-            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::DeviceOnly,
-            ..Default::default()
-        },
-        iter.len() as u64,
-    )
-    .unwrap();
-
-    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), iter);
-
-    buffer
+#[derive(Clone)]
+pub(crate) struct LmBuffers {
+    pub(crate) gpu: Subbuffer<[shaders::Voxel]>,
+    pub(crate) counter: Subbuffer<u32>, // TODO: merge with `gpu` buffer
+    pub(crate) range_left: Range<u32>,  // FIXME: write to this
 }
 
-pub(crate) fn get_lm_dispatch_buffer(
-    allocators: Arc<Allocators>,
-    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-) -> Subbuffer<[DispatchIndirectCommand]> {
-    let data = [DispatchIndirectCommand { x: 0, y: 1, z: 1 }];
+impl LmBuffers {
+    pub(crate) fn read_to_range(&mut self) {
+        let count = *self.counter.read().unwrap();
+        self.range_left = 0..count;
+    }
 
-    let buffer = Buffer::new_slice(
-        &allocators.memory,
-        BufferCreateInfo {
-            usage: BufferUsage::STORAGE_BUFFER
-                | BufferUsage::INDIRECT_BUFFER
-                | BufferUsage::TRANSFER_DST,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::DeviceOnly,
-            ..Default::default()
-        },
-        data.len() as u64,
-    )
-    .unwrap();
+    pub(crate) fn new(
+        allocators: Arc<Allocators>,
+        cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    ) -> LmBuffers {
+        let iter = (0..(LM_SIZE.pow(3)))
+            .map(|_| shaders::Voxel {
+                lmIndex: Default::default(),
+                material: Default::default(),
+                position: Default::default(),
+                normal: Default::default(),
+            })
+            .collect::<Vec<_>>();
 
-    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), data);
+        let gpu_buffer = Buffer::new_slice(
+            &allocators.memory,
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER
+                    | BufferUsage::TRANSFER_SRC
+                    | BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::DeviceOnly,
+                ..Default::default()
+            },
+            iter.len() as u64,
+        )
+        .unwrap();
 
-    buffer
+        stage_buffer_with_iter(
+            allocators.clone(),
+            cmb_builder,
+            gpu_buffer.clone(),
+            iter.clone(),
+        );
+
+        LmBuffers {
+            gpu: gpu_buffer,
+            counter: Self::create_lm_counter_buffer(allocators),
+            range_left: 0..0,
+        }
+    }
+
+    pub(crate) fn create_lm_counter_buffer(
+        allocators: Arc<Allocators>,
+    ) -> Subbuffer<u32> {
+        let data = 0u32;
+
+        Buffer::from_data(
+            &allocators.memory,
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            data,
+        )
+        .unwrap()
+    }
 }

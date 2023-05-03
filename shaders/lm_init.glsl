@@ -10,6 +10,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
     vec3 previousPosition;
     ivec3 lightmapOrigin;
+    uint lightmapBufferOffset;
     ivec4 deltaLightmapOrigins[LM_COUNT];
 } rt;
 
@@ -21,9 +22,9 @@ layout(binding = 2) buffer restrict LMBuffer {
     Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
 } lmBuffer;
 
-layout(binding = 3) buffer restrict LMDispatches {
-    uint dispatches[3];
-} lmDispatches;
+layout(binding = 3) buffer restrict LMCounter {
+    uint counter;
+} lmCounter;
 
 layout(binding = 4, r16f) uniform restrict writeonly image3D SDFImages[LM_COUNT];
 
@@ -70,7 +71,7 @@ void main() {
         vec3 normal = normalize(position - closestObj.position);
         vec3 position = normal * closestObj.radius + closestObj.position;
 
-        uint index = atomicAdd(lmDispatches.dispatches[0], 1);
+        uint index = atomicAdd(lmCounter.counter, 1);
         lmBuffer.voxels[index] = Voxel(
             packBytesUint(uvec4(LM_INDEX)),
             position,

@@ -17,7 +17,7 @@ use crate::{
     instance::create_instance,
     pipelines::Pipelines,
     shaders::{self, Shaders},
-    swapchain::create_swapchain,
+    swapchain::create_swapchain, descriptor_sets::{DescriptorSets, create_compute_descriptor_sets},
 };
 
 pub(crate) struct State {
@@ -29,6 +29,7 @@ pub(crate) struct State {
     pub(crate) buffers: Buffers,
     pub(crate) images: Images,
     pub(crate) allocators: Arc<Allocators>,
+    pub(crate) descriptor_sets: DescriptorSets,
     pub(crate) command_buffers: CommandBuffers,
     pub(crate) real_time_data: shaders::RealTimeBuffer, // TODO: struct abstraction
     pub(crate) fences: Fences,
@@ -90,13 +91,20 @@ impl State {
             sampler.clone(),
         );
 
+        let descriptor_sets = create_compute_descriptor_sets(
+            allocators.clone(),
+            pipelines.clone(),
+            buffers.clone(),
+            images.clone(),
+        );
+
         let command_buffers = CommandBuffers::new(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
             window.clone(),
-            buffers.clone(),
             images.clone(),
+            descriptor_sets.clone(),
         );
 
         let real_time_data = shaders::RealTimeBuffer {
@@ -105,6 +113,7 @@ impl State {
             position: Default::default(),
             previousPosition: Default::default(),
             lightmapOrigin: Default::default(),
+            lightmapBufferOffset: Default::default(),
             deltaLightmapOrigins: Default::default(),
         };
 
@@ -119,6 +128,7 @@ impl State {
             buffers,
             images,
             allocators,
+            descriptor_sets,
             command_buffers,
             real_time_data,
             fences,

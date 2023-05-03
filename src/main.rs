@@ -16,7 +16,9 @@ use winit::{
 };
 use winit_event_helper::*;
 
-use crate::{event_helper::*, swapchain::*};
+use crate::{
+    event_helper::*, swapchain::*,
+};
 
 mod allocators;
 mod buffers;
@@ -122,7 +124,7 @@ fn main() {
         eh.state.real_time_data.position = new_position.to_array().into();
         eh.delta_position = Vec3::ZERO;
 
-        let old_pos = IVec3::from_array(*eh.state.real_time_data.lightmapOrigin.as_ref());
+        let old_pos = IVec3::from_array(eh.state.real_time_data.lightmapOrigin);
         let new_pos = new_position.as_ivec3();
 
         const SMALLEST_UNIT: f32 = 0.5;
@@ -156,8 +158,11 @@ fn main() {
 
         if let Some(previous_future) = eh.state.fences.previous() {
             previous_future.wait(None).unwrap();
-            *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
         }
+
+        let lm_render_command_buffer = eh.next_lm_render_command_buffer();
+
+        *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
 
         let (image_index, suboptimal, image_future) =
             match acquire_next_image(eh.state.swapchain.clone(), None) {
@@ -178,7 +183,7 @@ fn main() {
         let future = future
             .then_execute(
                 eh.state.queue.clone(),
-                eh.state.command_buffers.pathtraces.next(),
+                lm_render_command_buffer,
             )
             .unwrap()
             .then_execute(

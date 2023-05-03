@@ -66,8 +66,8 @@ pub(crate) fn create_compute_descriptor_sets(
         [
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
             WriteDescriptorSet::buffer(1, buffers.objects.clone()),
-            WriteDescriptorSet::buffer(2, buffers.lm_buffer.clone()), // writes to
-            WriteDescriptorSet::buffer(3, buffers.lm_dispatch.clone()), // writes to and reads from
+            WriteDescriptorSet::buffer(2, buffers.lm_buffers.gpu.clone()), // writes to
+            WriteDescriptorSet::buffer(3, buffers.lm_buffers.counter.clone()), // writes to and reads from
             WriteDescriptorSet::image_view_array(4, 0, image_views.lightmap.sdfs.clone()),
             WriteDescriptorSet::image_view_array(5, 0, image_views.lightmap.materials.clone()),
         ],
@@ -81,7 +81,7 @@ pub(crate) fn create_compute_descriptor_sets(
             WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
             WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
             WriteDescriptorSet::image_view_array(2, 0, image_views.lightmap.colors[0].clone()), // writes to
-            WriteDescriptorSet::buffer(3, buffers.lm_buffer.clone()), // reads from
+            WriteDescriptorSet::buffer(3, buffers.lm_buffers.gpu.clone()), // reads from
             WriteDescriptorSet::buffer(4, buffers.noise.clone()),
             WriteDescriptorSet::image_view_sampler_array(5, 0, combined_image_sampler_sdfs.clone()),
             WriteDescriptorSet::image_view_array(6, 0, image_views.lightmap.materials.clone()),
@@ -105,9 +105,9 @@ pub(crate) fn create_compute_descriptor_sets(
                     WriteDescriptorSet::image_view_array(
                         3,
                         0,
-                        image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(), // TODO: only bind one image here and use spec constant to indicate lmLayer
+                        image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(),
                     ), // writes to
-                    WriteDescriptorSet::buffer(4, buffers.lm_buffer.clone()), // reads from
+                    WriteDescriptorSet::buffer(4, buffers.lm_buffers.gpu.clone()), // reads from
                     WriteDescriptorSet::buffer(5, buffers.noise.clone()),
                     WriteDescriptorSet::image_view_sampler_array(
                         6,

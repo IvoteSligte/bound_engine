@@ -2,10 +2,14 @@ use std::sync::Arc;
 
 use fps_counter::FPSCounter;
 use glam::*;
+use vulkano::command_buffer::PrimaryAutoCommandBuffer;
 use winit::window::{CursorGrabMode, Fullscreen, Window};
 use winit_event_helper::{Callbacks, EventHelper, KeyCode};
 
-use crate::state::State;
+use crate::{
+    command_buffers::{create_lm_render_command_buffer, LmRenderState, PathtraceCommandBuffers},
+    state::State, shaders::LM_VOXELS_PER_FRAME,
+};
 
 mod rotation {
     use glam::Vec3;
@@ -51,6 +55,41 @@ pub(crate) struct Data {
 }
 
 impl Data {
+    pub(crate) fn next_lm_render_command_buffer(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
+        match self.state.command_buffers.pathtraces.state {
+            LmRenderState::Init => {
+                *self.state.buffers.lm_buffers.counter.write().unwrap() = 0;
+                self.state.command_buffers.pathtraces.state = LmRenderState::InitToRender;
+                self.state.command_buffers.pathtraces.lm_init.clone()
+            }
+            LmRenderState::InitToRender => {
+                self.state.buffers.lm_buffers.read_to_range();
+                self.state.command_buffers.pathtraces.state = LmRenderState::Render;
+                self.next_lm_render_command_buffer()
+            }
+            LmRenderState::Render => {
+                let range = &mut self.state.buffers.lm_buffers.range_left;
+                self.state.real_time_data.lightmapBufferOffset = range.start;
+                let x = (range.end - range.start).min(LM_VOXELS_PER_FRAME);
+                range.start += x;
+                let dispatch_lm_render = [x, 1, 1];
+
+                if x == 0 {
+                    return self.state.command_buffers.pathtraces.direct.clone();
+                }
+
+                create_lm_render_command_buffer(
+                    self.state.allocators.clone(),
+                    self.state.queue.clone(),
+                    self.state.pipelines.clone(),
+                    self.state.descriptor_sets.clone(),
+                    PathtraceCommandBuffers::calculate_direct_dispatches(self.window.clone()),
+                    dispatch_lm_render,
+                )
+        },
+        }
+    }
+
     pub(crate) fn rotation(&self) -> Quat {
         Quat::from_rotation_z(-self.rotation.x) * Quat::from_rotation_x(self.rotation.y)
     }

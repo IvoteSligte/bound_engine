@@ -3,8 +3,8 @@ use std::sync::Arc;
 use glam::{IVec3, UVec3};
 use vulkano::{
     command_buffer::{
-        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo,
-        DispatchIndirectCommand, ImageCopy, PrimaryAutoCommandBuffer,
+        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo, ImageCopy,
+        PrimaryAutoCommandBuffer,
     },
     device::Queue,
     image::{ImageAccess, ImageSubresourceLayers},
@@ -14,13 +14,8 @@ use vulkano::{
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    allocators::Allocators,
-    buffers::Buffers,
-    descriptor_sets::{create_compute_descriptor_sets, DescriptorSets},
-    images::Images,
-    pipelines::Pipelines,
-    shaders::LM_SIZE,
-    LM_COUNT,
+    allocators::Allocators, descriptor_sets::DescriptorSets, images::Images,
+    pipelines::Pipelines, shaders::LM_SIZE, LM_COUNT,
 };
 
 #[derive(Clone)]
@@ -35,23 +30,15 @@ impl CommandBuffers {
         queue: Arc<Queue>,
         pipelines: Pipelines,
         window: Arc<Window>,
-        buffers: Buffers,
         images: Images,
+        descriptor_sets: DescriptorSets,
     ) -> CommandBuffers {
-        let descriptor_sets = create_compute_descriptor_sets(
-            allocators.clone(),
-            pipelines.clone(),
-            buffers.clone(),
-            images.clone(),
-        );
-
         let pathtraces = create_pathtrace_command_buffers(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
             window.clone(),
             descriptor_sets.clone(),
-            buffers.clone(),
         );
 
         let swapchains =
@@ -65,71 +52,70 @@ impl CommandBuffers {
 }
 
 #[derive(Clone)]
-enum PathtraceCmbState {
-    Lightmap,
-    Direct,
+pub(crate) enum LmRenderState {
+    Init,
+    InitToRender,
+    Render,
 }
 
 #[derive(Clone)]
 pub(crate) struct PathtraceCommandBuffers {
-    pub(crate) lightmap: Arc<PrimaryAutoCommandBuffer>,
+    pub(crate) lm_init: Arc<PrimaryAutoCommandBuffer>,
     pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
-    state: PathtraceCmbState,
+    pub(crate) state: LmRenderState,
 }
 
 impl PathtraceCommandBuffers {
-    pub(crate) fn next(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
-        match self.state {
-            PathtraceCmbState::Lightmap => {
-                self.state = PathtraceCmbState::Direct;
-                self.lightmap.clone()
-            }
-            PathtraceCmbState::Direct => self.direct.clone(),
-        }
+    pub(crate) fn calculate_direct_dispatches(window: Arc<Window>) -> [u32; 3] {
+        let dimensions: PhysicalSize<f32> = window.inner_size().cast();
+
+        [
+            (dimensions.width / 8.0).ceil() as u32,
+            (dimensions.height / 8.0).ceil() as u32,
+            1,
+        ]
     }
 
     pub(crate) fn restart(&mut self) {
-        self.state = PathtraceCmbState::Lightmap;
+        self.state = LmRenderState::Init;
+    }
+
+    pub(crate) fn extend_with_direct(
+        cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        pipelines: Pipelines,
+        descriptor_sets: DescriptorSets,
+        dispatch: [u32; 3],
+    ) {
+        cmb_builder
+            .bind_pipeline_compute(pipelines.direct.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.direct.layout().clone(),
+                0,
+                descriptor_sets.direct.clone(),
+            )
+            .dispatch(dispatch)
+            .unwrap();
     }
 }
 
-// TODO: impl PathtraceCommandBuffers
-pub(crate) fn create_pathtrace_command_buffers(
+fn create_lm_init_command_buffer(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
     pipelines: Pipelines,
-    window: Arc<Window>,
     descriptor_sets: DescriptorSets,
-    buffers: Buffers,
-) -> PathtraceCommandBuffers {
-    let dimensions: PhysicalSize<f32> = window.inner_size().cast();
-
-    let dispatch_direct = [
-        (dimensions.width / 8.0).ceil() as u32,
-        (dimensions.height / 8.0).ceil() as u32,
-        1,
-    ];
-
+    dispatch_direct: [u32; 3],
+) -> Arc<PrimaryAutoCommandBuffer> {
     let dispatch_lm_init = [LM_SIZE / 4 * LM_COUNT, LM_SIZE / 4, LM_SIZE / 4];
 
-    let create_builder = || {
-        AutoCommandBufferBuilder::primary(
-            &allocators.command_buffer,
-            queue.queue_family_index(),
-            CommandBufferUsage::MultipleSubmit,
-        )
-        .unwrap()
-    };
+    let mut builder = AutoCommandBufferBuilder::primary(
+        &allocators.command_buffer,
+        queue.queue_family_index(),
+        CommandBufferUsage::MultipleSubmit,
+    )
+    .unwrap();
 
-    let mut builder = create_builder();
-
-    // lm_init
     builder
-        .update_buffer(
-            buffers.lm_dispatch.clone(),
-            &[DispatchIndirectCommand { x: 0, y: 1, z: 1 }][..],
-        )
-        .unwrap()
         .bind_pipeline_compute(pipelines.lm_init.clone())
         .bind_descriptor_sets(
             PipelineBindPoint::Compute,
@@ -140,6 +126,32 @@ pub(crate) fn create_pathtrace_command_buffers(
         .dispatch(dispatch_lm_init)
         .unwrap();
 
+    // direct
+    PathtraceCommandBuffers::extend_with_direct(
+        &mut builder,
+        pipelines,
+        descriptor_sets,
+        dispatch_direct,
+    );
+
+    Arc::new(builder.build().unwrap())
+}
+
+pub(crate) fn create_lm_render_command_buffer(
+    allocators: Arc<Allocators>,
+    queue: Arc<Queue>,
+    pipelines: Pipelines,
+    descriptor_sets: DescriptorSets,
+    dispatch_direct: [u32; 3],
+    dispatch_lm_render: [u32; 3],
+) -> Arc<PrimaryAutoCommandBuffer> {
+    let mut builder = AutoCommandBufferBuilder::primary(
+        &allocators.command_buffer,
+        queue.queue_family_index(),
+        CommandBufferUsage::MultipleSubmit,
+    )
+    .unwrap();
+
     // lm_primary
     builder
         .bind_pipeline_compute(pipelines.lm_primary.clone())
@@ -149,11 +161,11 @@ pub(crate) fn create_pathtrace_command_buffers(
             0,
             descriptor_sets.lm_primary.clone(),
         )
-        .dispatch_indirect(buffers.lm_dispatch.clone())
+        .dispatch(dispatch_lm_render)
         .unwrap();
 
     // lm_secondary
-    for lm_secondary_descriptor_set in descriptor_sets.lm_secondary {
+    for lm_secondary_descriptor_set in &descriptor_sets.lm_secondary {
         builder
             .bind_pipeline_compute(pipelines.lm_secondary.clone())
             .bind_descriptor_sets(
@@ -162,30 +174,61 @@ pub(crate) fn create_pathtrace_command_buffers(
                 0,
                 lm_secondary_descriptor_set.clone(),
             )
-            .dispatch_indirect(buffers.lm_dispatch.clone())
+            .dispatch(dispatch_lm_render)
             .unwrap();
     }
 
-    let lightmap = Arc::new(builder.build().unwrap());
+    // direct
+    PathtraceCommandBuffers::extend_with_direct(
+        &mut builder,
+        pipelines,
+        descriptor_sets,
+        dispatch_direct,
+    );
 
-    let mut builder = create_builder();
-    builder
-        .bind_pipeline_compute(pipelines.direct.clone())
-        .bind_descriptor_sets(
-            PipelineBindPoint::Compute,
-            pipelines.direct.layout().clone(),
-            0,
-            descriptor_sets.direct.clone(),
-        )
-        .dispatch(dispatch_direct)
-        .unwrap();
+    Arc::new(builder.build().unwrap())
+}
+
+// TODO: impl PathtraceCommandBuffers
+pub(crate) fn create_pathtrace_command_buffers(
+    allocators: Arc<Allocators>,
+    queue: Arc<Queue>,
+    pipelines: Pipelines,
+    window: Arc<Window>,
+    descriptor_sets: DescriptorSets,
+) -> PathtraceCommandBuffers {
+    let dispatch_direct = PathtraceCommandBuffers::calculate_direct_dispatches(window);
+
+    let lm_init = create_lm_init_command_buffer(
+        allocators.clone(),
+        queue.clone(),
+        pipelines.clone(),
+        descriptor_sets.clone(),
+        dispatch_direct,
+    );
+
+    // FIXME: the first time rendering the entire thing should be rendered!!!
+
+    let mut builder = AutoCommandBufferBuilder::primary(
+        &allocators.command_buffer,
+        queue.queue_family_index(),
+        CommandBufferUsage::MultipleSubmit,
+    )
+    .unwrap();
+
+    PathtraceCommandBuffers::extend_with_direct(
+        &mut builder,
+        pipelines,
+        descriptor_sets,
+        dispatch_direct,
+    );
 
     let direct = Arc::new(builder.build().unwrap());
 
     PathtraceCommandBuffers {
-        lightmap,
+        lm_init,
         direct,
-        state: PathtraceCmbState::Lightmap,
+        state: LmRenderState::Init,
     }
 }
 
