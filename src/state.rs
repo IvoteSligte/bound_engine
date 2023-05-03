@@ -11,13 +11,14 @@ use crate::{
     allocators::Allocators,
     buffers::Buffers,
     command_buffers::CommandBuffers,
+    descriptor_sets::DescriptorSets,
     device::{create_device, select_physical_device},
     fences::Fences,
     images::Images,
     instance::create_instance,
     pipelines::Pipelines,
     shaders::{self, Shaders},
-    swapchain::create_swapchain, descriptor_sets::{DescriptorSets, create_compute_descriptor_sets},
+    swapchain::create_swapchain,
 };
 
 pub(crate) struct State {
@@ -91,7 +92,7 @@ impl State {
             sampler.clone(),
         );
 
-        let descriptor_sets = create_compute_descriptor_sets(
+        let descriptor_sets = DescriptorSets::new(
             allocators.clone(),
             pipelines.clone(),
             buffers.clone(),

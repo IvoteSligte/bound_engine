@@ -16,9 +16,7 @@ use winit::{
 };
 use winit_event_helper::*;
 
-use crate::{
-    event_helper::*, swapchain::*,
-};
+use crate::{event_helper::*, swapchain::*};
 
 mod allocators;
 mod buffers;
@@ -181,10 +179,7 @@ fn main() {
         let future = sync::now(eh.state.device.clone()).boxed();
 
         let future = future
-            .then_execute(
-                eh.state.queue.clone(),
-                lm_render_command_buffer,
-            )
+            .then_execute(eh.state.queue.clone(), lm_render_command_buffer)
             .unwrap()
             .then_execute(
                 eh.state.queue.clone(),

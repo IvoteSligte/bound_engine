@@ -295,9 +295,7 @@ impl LmBuffers {
         }
     }
 
-    pub(crate) fn create_lm_counter_buffer(
-        allocators: Arc<Allocators>,
-    ) -> Subbuffer<u32> {
+    pub(crate) fn create_lm_counter_buffer(allocators: Arc<Allocators>) -> Subbuffer<u32> {
         let data = 0u32;
 
         Buffer::from_data(

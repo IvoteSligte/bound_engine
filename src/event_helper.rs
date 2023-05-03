@@ -8,7 +8,8 @@ use winit_event_helper::{Callbacks, EventHelper, KeyCode};
 
 use crate::{
     command_buffers::{LmRenderState, PathtraceCommandBuffers},
-    state::State, shaders::LM_VOXELS_PER_FRAME,
+    shaders::LM_VOXELS_PER_FRAME,
+    state::State,
 };
 
 mod rotation {
@@ -86,7 +87,7 @@ impl Data {
                     PathtraceCommandBuffers::calculate_direct_dispatches(self.window.clone()),
                     dispatch_lm_render,
                 )
-        },
+            }
         }
     }
 

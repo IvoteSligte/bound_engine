@@ -135,7 +135,7 @@ impl LightmapImages {
                         Format::R16G16B16A16_UNORM,
                     )
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
         );
 
         let staging_color = create_storage_image(

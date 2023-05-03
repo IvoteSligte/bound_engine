@@ -95,7 +95,7 @@ pub(crate) fn recreate_swapchain(
             eh.state.queue.clone(),
         );
 
-        eh.state.descriptor_sets = create_compute_descriptor_sets(
+        eh.state.descriptor_sets = DescriptorSets::new(
             eh.state.allocators.clone(),
             eh.state.pipelines.clone(),
             eh.state.buffers.clone(),
@@ -110,7 +110,8 @@ pub(crate) fn recreate_swapchain(
             eh.state.images.clone(),
         );
 
-        eh.state.command_buffers.pathtraces = PathtraceCommandBuffers::new( // TODO: the lightmap does not need to be rerendered
+        eh.state.command_buffers.pathtraces = PathtraceCommandBuffers::new(
+            // TODO: the lightmap does not need to be rerendered
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
             eh.state.pipelines.clone(),
