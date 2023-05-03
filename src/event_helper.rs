@@ -7,7 +7,7 @@ use winit::window::{CursorGrabMode, Fullscreen, Window};
 use winit_event_helper::{Callbacks, EventHelper, KeyCode};
 
 use crate::{
-    command_buffers::{create_lm_render_command_buffer, LmRenderState, PathtraceCommandBuffers},
+    command_buffers::{LmRenderState, PathtraceCommandBuffers},
     state::State, shaders::LM_VOXELS_PER_FRAME,
 };
 
@@ -78,7 +78,7 @@ impl Data {
                     return self.state.command_buffers.pathtraces.direct.clone();
                 }
 
-                create_lm_render_command_buffer(
+                PathtraceCommandBuffers::create_lm_render_command_buffer(
                     self.state.allocators.clone(),
                     self.state.queue.clone(),
                     self.state.pipelines.clone(),

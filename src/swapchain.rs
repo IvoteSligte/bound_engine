@@ -10,7 +10,7 @@ use winit::window::Window;
 use winit_event_helper::EventHelper;
 
 use crate::{
-    command_buffers::{create_pathtrace_command_buffers, create_swapchain_command_buffers},
+    command_buffers::{create_swapchain_command_buffers, PathtraceCommandBuffers},
     create_color_image,
     descriptor_sets::*,
     event_helper::Data,
@@ -95,8 +95,7 @@ pub(crate) fn recreate_swapchain(
             eh.state.queue.clone(),
         );
 
-        // TODO: move to command buffer init
-        let descriptor_sets = create_compute_descriptor_sets(
+        eh.state.descriptor_sets = create_compute_descriptor_sets(
             eh.state.allocators.clone(),
             eh.state.pipelines.clone(),
             eh.state.buffers.clone(),
@@ -111,12 +110,12 @@ pub(crate) fn recreate_swapchain(
             eh.state.images.clone(),
         );
 
-        eh.state.command_buffers.pathtraces = create_pathtrace_command_buffers(
+        eh.state.command_buffers.pathtraces = PathtraceCommandBuffers::new( // TODO: the lightmap does not need to be rerendered
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
             eh.state.pipelines.clone(),
             eh.window.clone(),
-            descriptor_sets.clone(),
+            eh.state.descriptor_sets.clone(),
         );
     }
 
