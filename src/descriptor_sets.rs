@@ -118,7 +118,7 @@ impl DescriptorSets {
                         WriteDescriptorSet::image_view_array(
                             3,
                             0,
-                            image_views.lightmap.colors[(r + 1) % LM_RAYS].clone(),
+                            image_views.lightmap.colors[r + 1].clone(),
                         ), // writes to
                         WriteDescriptorSet::buffer(4, buffers.lm_buffers.gpu.clone()), // reads from
                         WriteDescriptorSet::buffer(5, buffers.noise.clone()),

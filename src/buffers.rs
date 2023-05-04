@@ -120,11 +120,11 @@ pub(crate) fn get_real_time_buffer(
     Buffer::from_data(
         &allocators.memory,
         BufferCreateInfo {
-            usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
+            usage: BufferUsage::UNIFORM_BUFFER,
             ..BufferCreateInfo::default()
         },
         AllocationCreateInfo {
-            usage: MemoryUsage::Upload, // TODO: DeviceOnly ?
+            usage: MemoryUsage::Upload,
             ..AllocationCreateInfo::default()
         },
         shaders::RealTimeBuffer {
@@ -243,7 +243,7 @@ pub(crate) fn get_noise_buffer(
 pub(crate) struct LmBuffers {
     pub(crate) gpu: Subbuffer<[shaders::Voxel]>,
     pub(crate) counter: Subbuffer<u32>, // TODO: merge with `gpu` buffer
-    pub(crate) range_left: Range<u32>,  // FIXME: write to this
+    pub(crate) range_left: Range<u32>,
 }
 
 impl LmBuffers {
@@ -305,7 +305,7 @@ impl LmBuffers {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                usage: MemoryUsage::Download,
                 ..Default::default()
             },
             data,

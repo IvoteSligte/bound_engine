@@ -7,8 +7,8 @@ use winit::window::{CursorGrabMode, Fullscreen, Window};
 use winit_event_helper::{Callbacks, EventHelper, KeyCode};
 
 use crate::{
-    command_buffers::{LmRenderState, PathtraceCommandBuffers},
-    shaders::LM_VOXELS_PER_FRAME,
+    command_buffers::{LmPathtraceState, LmRenderState, PathtraceCommandBuffers},
+    shaders::{LM_RAYS, LM_VOXELS_PER_FRAME},
     state::State,
 };
 
@@ -57,36 +57,78 @@ pub(crate) struct Data {
 
 impl Data {
     pub(crate) fn next_lm_render_command_buffer(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
-        match self.state.command_buffers.pathtraces.state {
-            LmRenderState::Init => {
+        match &mut self.state.command_buffers.pathtraces.state {
+            LmPathtraceState::Init => {
                 *self.state.buffers.lm_buffers.counter.write().unwrap() = 0;
-                self.state.command_buffers.pathtraces.state = LmRenderState::InitToRender;
+                self.state.command_buffers.pathtraces.state = LmPathtraceState::InitToRender;
                 self.state.command_buffers.pathtraces.lm_init.clone()
             }
-            LmRenderState::InitToRender => {
+            LmPathtraceState::InitToRender => {
                 self.state.buffers.lm_buffers.read_to_range();
-                self.state.command_buffers.pathtraces.state = LmRenderState::Render;
-                self.next_lm_render_command_buffer()
-            }
-            LmRenderState::Render => {
-                let range = &mut self.state.buffers.lm_buffers.range_left;
-                self.state.real_time_data.lightmapBufferOffset = range.start;
-                let x = (range.end - range.start).min(LM_VOXELS_PER_FRAME);
-                range.start += x;
-                let dispatch_lm_render = [x, 1, 1];
 
-                if x == 0 {
-                    return self.state.command_buffers.pathtraces.direct.clone();
+                let mut ranges = vec![];
+                let mut r = self.state.buffers.lm_buffers.range_left.clone();
+                while r.start < r.end {
+                    let end = r.start + (r.end - r.start).min(LM_VOXELS_PER_FRAME);
+                    ranges.push(r.start..end);
+                    r.start = end;
                 }
 
-                PathtraceCommandBuffers::create_lm_render_command_buffer(
-                    self.state.allocators.clone(),
-                    self.state.queue.clone(),
-                    self.state.pipelines.clone(),
-                    self.state.descriptor_sets.clone(),
-                    PathtraceCommandBuffers::calculate_direct_dispatches(self.window.clone()),
-                    dispatch_lm_render,
-                )
+                let mut render_queue: Vec<_> = ranges
+                    .iter()
+                    .cloned()
+                    .map(|r| (LmRenderState::Primary, r))
+                    .collect();
+                render_queue.extend((0..(LM_RAYS - 1)).flat_map(|i| {
+                    ranges
+                        .iter()
+                        .cloned()
+                        .map(move |r| (LmRenderState::Secondary(i), r))
+                }));
+                render_queue.reverse();
+
+                let new_state = LmPathtraceState::Render(render_queue);
+                self.state.command_buffers.pathtraces.state = new_state;
+
+                self.next_lm_render_command_buffer()
+            }
+            LmPathtraceState::Render(render_queue) => {
+                let (render_state, render_range) = render_queue.pop().unwrap();
+
+                self.state.real_time_data.lightmapBufferOffset = render_range.start;
+
+                if render_queue.is_empty() {
+                    self.state.command_buffers.pathtraces.state = LmPathtraceState::Direct;
+                }
+
+                let dispatch_lm_render = [render_range.end - render_range.start, 1, 1];
+
+                match render_state {
+                    LmRenderState::Primary => {
+                        PathtraceCommandBuffers::create_lm_primary_command_buffer(
+                            self.state.allocators.clone(),
+                            self.state.queue.clone(),
+                            self.state.pipelines.clone(),
+                            self.state.descriptor_sets.clone(),
+                            PathtraceCommandBuffers::calculate_direct_dispatches(self.window.clone()),
+                            dispatch_lm_render,
+                        )
+                    },
+                    LmRenderState::Secondary(secondary_index) => {
+                        PathtraceCommandBuffers::create_lm_secondary_command_buffer(
+                            self.state.allocators.clone(),
+                            self.state.queue.clone(),
+                            self.state.pipelines.clone(),
+                            self.state.descriptor_sets.clone(),
+                            PathtraceCommandBuffers::calculate_direct_dispatches(self.window.clone()),
+                            dispatch_lm_render,
+                            secondary_index,
+                        )
+                    },
+                }
+            }
+            LmPathtraceState::Direct => {
+                self.state.command_buffers.pathtraces.direct.clone()
             }
         }
     }

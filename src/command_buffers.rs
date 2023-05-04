@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, ops::Range};
 
 use glam::{IVec3, UVec3};
 use vulkano::{
@@ -51,18 +51,25 @@ impl CommandBuffers {
     }
 }
 
-#[derive(Clone)]
-pub(crate) enum LmRenderState {
+#[derive(Clone, Debug)]
+pub(crate) enum LmPathtraceState {
     Init,
     InitToRender,
-    Render,
+    Render(Vec<(LmRenderState, Range<u32>)>),
+    Direct,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum LmRenderState {
+    Primary,
+    Secondary(usize),
 }
 
 #[derive(Clone)]
 pub(crate) struct PathtraceCommandBuffers {
     pub(crate) lm_init: Arc<PrimaryAutoCommandBuffer>,
     pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
-    pub(crate) state: LmRenderState,
+    pub(crate) state: LmPathtraceState,
 }
 
 impl PathtraceCommandBuffers {
@@ -77,7 +84,7 @@ impl PathtraceCommandBuffers {
     }
 
     pub(crate) fn restart(&mut self) {
-        self.state = LmRenderState::Init;
+        self.state = LmPathtraceState::Init;
     }
 
     pub(crate) fn extend_with_direct(
@@ -136,7 +143,7 @@ impl PathtraceCommandBuffers {
         Arc::new(builder.build().unwrap())
     }
 
-    pub(crate) fn create_lm_render_command_buffer(
+    pub(crate) fn create_lm_primary_command_buffer(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
@@ -163,19 +170,43 @@ impl PathtraceCommandBuffers {
             .dispatch(dispatch_lm_render)
             .unwrap();
 
-        // lm_secondary
-        for lm_secondary_descriptor_set in &descriptor_sets.lm_secondary {
+        // direct
+        PathtraceCommandBuffers::extend_with_direct(
+            &mut builder,
+            pipelines,
+            descriptor_sets,
+            dispatch_direct,
+        );
+
+        Arc::new(builder.build().unwrap())
+    }
+
+    pub(crate) fn create_lm_secondary_command_buffer(
+        allocators: Arc<Allocators>,
+        queue: Arc<Queue>,
+        pipelines: Pipelines,
+        descriptor_sets: DescriptorSets,
+        dispatch_direct: [u32; 3],
+        dispatch_lm_render: [u32; 3],
+        secondary_index: usize,
+    ) -> Arc<PrimaryAutoCommandBuffer> {
+        let mut builder = AutoCommandBufferBuilder::primary(
+            &allocators.command_buffer,
+            queue.queue_family_index(),
+            CommandBufferUsage::MultipleSubmit,
+        )
+        .unwrap();
+
             builder
                 .bind_pipeline_compute(pipelines.lm_secondary.clone())
                 .bind_descriptor_sets(
                     PipelineBindPoint::Compute,
                     pipelines.lm_secondary.layout().clone(),
                     0,
-                    lm_secondary_descriptor_set.clone(),
+                    descriptor_sets.lm_secondary[secondary_index].clone(),
                 )
                 .dispatch(dispatch_lm_render)
                 .unwrap();
-        }
 
         // direct
         PathtraceCommandBuffers::extend_with_direct(
@@ -205,8 +236,6 @@ impl PathtraceCommandBuffers {
             dispatch_direct,
         );
 
-        // FIXME: the first time rendering the entire thing should be rendered!!!
-
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
             queue.queue_family_index(),
@@ -226,7 +255,7 @@ impl PathtraceCommandBuffers {
         PathtraceCommandBuffers {
             lm_init,
             direct,
-            state: LmRenderState::Init,
+            state: LmPathtraceState::Init,
         }
     }
 }
