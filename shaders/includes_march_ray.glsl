@@ -1,4 +1,21 @@
-// TODO: try applying Newton-Raphson iteration
+const float MULTS[LM_COUNT] = float[](
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[0],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[1],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[2],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[3],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[4],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[5]
+);
+
+const float LAYER_COMPS[LM_COUNT] = float[](
+    float(LM_SIZE) * LM_UNIT_SIZES[0] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[1] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[2] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[3] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[4] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[5] * 0.5
+);
+
 bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin, float threshold, uint samples, inout float totalDist) {
     float dist = totalDist;
 
@@ -11,11 +28,10 @@ bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin, float threshold, uint sam
         pos += dir * dist;
 
         vec3 idx = pos - lmOrigin; // TODO: lmOrigin varying between layers
-        bool increaseLayer = any(greaterThan(abs(idx), vec3(float(LM_SIZE) * LM_UNIT_SIZES[lmLayer] * 0.5)));
-        bool decreaseLayer = lmLayer > 0 && all(lessThan(abs(idx), vec3(float(LM_SIZE) * LM_UNIT_SIZES[lmLayer] * 0.25)));
-        lmLayer += int(increaseLayer) - int(decreaseLayer); // one of: -1, 0, 1
+        bool increaseLayer = maximum(abs(idx)) > LAYER_COMPS[lmLayer];
+        lmLayer = increaseLayer ? lmLayer + 1 : lmLayer;
 
-        float mult = (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[lmLayer]; // TODO: consts
+        float mult = MULTS[lmLayer]; // TODO: consts
 
         vec3 texIdx = (pos - lmOrigin) * mult + 0.5; // TODO: lmOrigin varying between layers
         dist = texture(SDFImages[lmLayer], clamp(texIdx, 0.0, 1.0)).x;
