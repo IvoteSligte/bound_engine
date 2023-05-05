@@ -53,8 +53,8 @@ void main() {
         return;
     }
 
-    int lmLayer = lmLayerAtPos(position, lmOrigin);
-    float mult = (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[lmLayer]; // TODO: consts
+    int lmLayer = lmLayerAtPos(position, lmOrigin); // TODO: lmOrigin varying between layers
+    float mult = MULTS[lmLayer];
     vec3 texIdx = (position - lmOrigin) * mult + 0.5; // TODO: lmOrigin varying between layers
 
     vec4 color = texture(lmInputColorTextures[lmLayer], texIdx);
