@@ -31,7 +31,7 @@ bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin, float threshold, uint sam
         bool increaseLayer = maximum(abs(idx)) > LAYER_COMPS[lmLayer];
         lmLayer = increaseLayer ? lmLayer + 1 : lmLayer;
 
-        float mult = MULTS[lmLayer]; // TODO: consts
+        float mult = MULTS[lmLayer];
 
         vec3 texIdx = (pos - lmOrigin) * mult + 0.5; // TODO: lmOrigin varying between layers
         dist = texture(SDFImages[lmLayer], clamp(texIdx, 0.0, 1.0)).x;
