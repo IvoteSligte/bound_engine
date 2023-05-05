@@ -46,7 +46,7 @@ void main() {
 
     vec3 dir = rotateWithQuat(rotation, DIRECTION);
     float totalDist = NEAR_CLIPPING;
-    bool isHit = marchRay(position, dir, lmOrigin, 1e-3, totalDist);
+    bool isHit = marchRay(position, dir, lmOrigin, 1e-3, 100, totalDist);
 
     if (!isHit) {
         imageStore(colorImage, IPOS, vec4(0.0)); // TODO: skybox

@@ -54,7 +54,7 @@ void main() {
 
     float totalDist = 2.0 * LM_UNIT_SIZES[lmIndex.w];
     vec3 position = voxel.position;
-    bool isHit = marchRay(position, dir, sData.lightmapOrigin, 1e-3, totalDist); // bottleneck
+    bool isHit = marchRay(position, dir, sData.lightmapOrigin, 2e-2, 30, totalDist); // bottleneck
 
     ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
     uint material = imageLoad(materialImages[lmIndexSample.w], lmIndexSample.xyz).x;
