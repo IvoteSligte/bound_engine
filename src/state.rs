@@ -93,7 +93,6 @@ impl State {
         let images = Images::new(
             allocators.clone(),
             window.clone(),
-            queue.clone(),
             swapchain_images.clone(),
             sampler.clone(),
         );

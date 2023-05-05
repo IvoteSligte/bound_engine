@@ -29,13 +29,12 @@ impl Images {
     pub(crate) fn new(
         allocators: Arc<Allocators>,
         window: Arc<Window>,
-        queue: Arc<Queue>,
         swapchain_images: Vec<Arc<SwapchainImage>>,
         sampler: Arc<Sampler>,
     ) -> Self {
         Self {
-            color: create_color_image(allocators.clone(), window, queue.clone()),
-            lightmap: LightmapImages::new(allocators.clone(), queue.clone()),
+            color: create_color_image(allocators.clone(), window),
+            lightmap: LightmapImages::new(allocators.clone()),
             swapchain: swapchain_images,
             sampler,
         }
@@ -62,7 +61,6 @@ pub(crate) struct ImageViews {
 pub(crate) fn create_color_image(
     allocators: Arc<Allocators>,
     window: Arc<Window>,
-    queue: Arc<Queue>,
 ) -> Arc<StorageImage> {
     StorageImage::with_usage(
         &allocators.memory,
@@ -74,7 +72,7 @@ pub(crate) fn create_color_image(
         Format::R16G16B16A16_UNORM, // double precision for copying to srgb
         ImageUsage::STORAGE | ImageUsage::TRANSFER_SRC,
         ImageCreateFlags::empty(),
-        [queue.queue_family_index()],
+        [], // INFO: empty queue_family_indices sets SharingMode to Exclusive in vulkano 0.33.0 with no other side effects
     )
     .unwrap()
 }
@@ -97,7 +95,7 @@ pub(crate) struct LightmapImageViews {
 }
 
 impl LightmapImages {
-    pub(crate) fn new(allocators: Arc<Allocators>, queue: Arc<Queue>) -> Self {
+    pub(crate) fn new(allocators: Arc<Allocators>) -> Self {
         let dimensions = ImageDimensions::Dim3d {
             width: LM_SIZE,
             height: LM_SIZE,
@@ -112,7 +110,7 @@ impl LightmapImages {
                 format,
                 ImageUsage::STORAGE | usage,
                 ImageCreateFlags::empty(),
-                [queue.queue_family_index()],
+                [], // INFO: empty queue_family_indices sets SharingMode to Exclusive in vulkano 0.33.0 with no other side effects
             )
             .unwrap()
         };
