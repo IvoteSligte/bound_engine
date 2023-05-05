@@ -4,8 +4,9 @@ use vulkano::{
     device::Queue,
     format::Format,
     image::{
-        view::ImageView, ImageCreateFlags, ImageDimensions, ImageUsage, ImageViewAbstract,
-        StorageImage, SwapchainImage,
+        view::{ImageView, ImageViewCreateInfo},
+        ImageCreateFlags, ImageDimensions, ImageUsage, ImageViewAbstract, StorageImage,
+        SwapchainImage,
     },
     sampler::Sampler,
 };
@@ -88,9 +89,11 @@ pub(crate) struct LightmapImages {
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
-    pub(crate) colors: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
-    pub(crate) sdfs: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) materials: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) colors_storage: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
+    pub(crate) colors_final_sampled: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) sdfs_storage: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) sdfs_sampled: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) materials_storage: Vec<Arc<dyn ImageViewAbstract>>,
 }
 
 impl LightmapImages {
@@ -171,18 +174,34 @@ impl LightmapImages {
     }
 
     pub(crate) fn image_views(&self) -> LightmapImageViews {
-        let view = |vlm: &Arc<StorageImage>| {
-            ImageView::new_default(vlm.clone()).unwrap() as Arc<dyn ImageViewAbstract>
+        let views = |imgs: &Vec<Arc<StorageImage>>, usage: ImageUsage| {
+            imgs.iter()
+                .map(|img| {
+                    ImageView::new(
+                        img.clone(),
+                        ImageViewCreateInfo {
+                            usage,
+                            ..ImageViewCreateInfo::from_image(img)
+                        },
+                    )
+                    .unwrap() as Arc<dyn ImageViewAbstract>
+                })
+                .collect()
         };
 
+        let colors_storage = self.colors.iter().map(|imgs| views(imgs, ImageUsage::STORAGE)).collect();
+        let sdfs_storage = views(&self.sdfs, ImageUsage::STORAGE);
+        let materials_storage = views(&self.materials, ImageUsage::STORAGE);
+
+        let colors_final_sampled = views(self.colors.last().unwrap(), ImageUsage::SAMPLED);
+        let sdfs_sampled = views(&self.sdfs, ImageUsage::SAMPLED);
+
         LightmapImageViews {
-            colors: self
-                .colors
-                .iter()
-                .map(|vec| vec.iter().map(view).collect())
-                .collect(),
-            sdfs: self.sdfs.iter().map(view).collect(),
-            materials: self.materials.iter().map(view).collect(),
+            colors_storage,
+            colors_final_sampled,
+            sdfs_storage,
+            sdfs_sampled,
+            materials_storage,
         }
     }
 }

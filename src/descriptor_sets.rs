@@ -29,23 +29,21 @@ impl DescriptorSets {
         buffers: Buffers,
         images: Images,
     ) -> DescriptorSets {
-        let image_views = images.image_views();
+        let image_views = images.image_views(); // TODO: change image usage here to optimize
 
-        let combined_image_sampler_sdfs = image_views // TODO: look up if multiple samplers are required
+        let combined_image_sampler_sdfs = image_views
             .lightmap
-            .sdfs
-            .clone()
-            .into_iter()
+            .sdfs_sampled
+            .iter()
+            .cloned()
             .zip(repeat(images.sampler()))
             .collect::<Vec<_>>();
 
         let combined_image_sampler_final_colors = image_views
             .lightmap
-            .colors
-            .last()
-            .unwrap()
-            .clone()
-            .into_iter()
+            .colors_final_sampled
+            .iter()
+            .cloned()
             .zip(repeat(images.sampler()))
             .collect::<Vec<_>>();
 
@@ -77,8 +75,16 @@ impl DescriptorSets {
                 WriteDescriptorSet::buffer(1, buffers.objects.clone()),
                 WriteDescriptorSet::buffer(2, buffers.lm_buffers.gpu.clone()), // writes to
                 WriteDescriptorSet::buffer(3, buffers.lm_buffers.counter.clone()), // writes to and reads from
-                WriteDescriptorSet::image_view_array(4, 0, image_views.lightmap.sdfs.clone()),
-                WriteDescriptorSet::image_view_array(5, 0, image_views.lightmap.materials.clone()),
+                WriteDescriptorSet::image_view_array(
+                    4,
+                    0,
+                    image_views.lightmap.sdfs_storage.clone(),
+                ),
+                WriteDescriptorSet::image_view_array(
+                    5,
+                    0,
+                    image_views.lightmap.materials_storage.clone(),
+                ),
             ],
         )
         .unwrap();
@@ -89,7 +95,11 @@ impl DescriptorSets {
             [
                 WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
                 WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
-                WriteDescriptorSet::image_view_array(2, 0, image_views.lightmap.colors[0].clone()), // writes to
+                WriteDescriptorSet::image_view_array(
+                    2,
+                    0,
+                    image_views.lightmap.colors_storage[0].clone(),
+                ), // writes to
                 WriteDescriptorSet::buffer(3, buffers.lm_buffers.gpu.clone()), // reads from
                 WriteDescriptorSet::buffer(4, buffers.noise.clone()),
                 WriteDescriptorSet::image_view_sampler_array(
@@ -97,7 +107,11 @@ impl DescriptorSets {
                     0,
                     combined_image_sampler_sdfs.clone(),
                 ),
-                WriteDescriptorSet::image_view_array(6, 0, image_views.lightmap.materials.clone()),
+                WriteDescriptorSet::image_view_array(
+                    6,
+                    0,
+                    image_views.lightmap.materials_storage.clone(),
+                ),
             ],
         )
         .unwrap();
@@ -113,12 +127,12 @@ impl DescriptorSets {
                         WriteDescriptorSet::image_view_array(
                             2,
                             0,
-                            image_views.lightmap.colors[r].clone(),
+                            image_views.lightmap.colors_storage[r].clone(),
                         ), // reads from
                         WriteDescriptorSet::image_view_array(
                             3,
                             0,
-                            image_views.lightmap.colors[r + 1].clone(),
+                            image_views.lightmap.colors_storage[r + 1].clone(),
                         ), // writes to
                         WriteDescriptorSet::buffer(4, buffers.lm_buffers.gpu.clone()), // reads from
                         WriteDescriptorSet::buffer(5, buffers.noise.clone()),
