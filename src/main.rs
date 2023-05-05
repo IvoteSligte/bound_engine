@@ -176,12 +176,10 @@ fn main() {
             image_fence.wait(None).unwrap();
         }
 
-        let future = sync::now(eh.state.device.clone()).boxed();
-
-        let future = future
+        let future = sync::now(eh.state.device.clone())
             .then_execute(eh.state.queue.clone(), lm_render_command_buffer)
             .unwrap()
-            .then_execute(
+            .then_execute( // TODO: try using dedicated compute, transfer and present queues
                 eh.state.queue.clone(),
                 eh.state.command_buffers.swapchains[image_index as usize].clone(),
             )
