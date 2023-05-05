@@ -2,6 +2,10 @@ use std::sync::Arc;
 
 use vulkano::{
     device::{Device, DeviceExtensions, Queue},
+    instance::debug::{
+        DebugUtilsMessageSeverity, DebugUtilsMessageType, DebugUtilsMessenger,
+        DebugUtilsMessengerCreateInfo,
+    },
     sampler::{BorderColor, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerReductionMode},
     swapchain::Swapchain,
 };
@@ -34,6 +38,8 @@ pub(crate) struct State {
     pub(crate) command_buffers: CommandBuffers,
     pub(crate) real_time_data: shaders::RealTimeBuffer, // TODO: struct abstraction
     pub(crate) fences: Fences,
+    #[cfg(debug_assertions)]
+    _debugger: DebugUtilsMessenger,
 }
 
 impl State {
@@ -49,7 +55,7 @@ impl State {
         };
 
         let (physical_device, queue_family_index) =
-            select_physical_device(instance, &surface, &device_extensions);
+            select_physical_device(instance.clone(), &surface, &device_extensions);
 
         let (device, queue) = create_device(
             physical_device.clone(),
@@ -120,6 +126,25 @@ impl State {
 
         let fences = Fences::new(images.swapchain.len());
 
+        #[cfg(debug_assertions)]
+        let debugger = unsafe {
+            DebugUtilsMessenger::new( // TODO: add message_type and message_severity marker to print output
+                instance,
+                DebugUtilsMessengerCreateInfo {
+                    message_severity: DebugUtilsMessageSeverity::INFO
+                        | DebugUtilsMessageSeverity::WARNING
+                        | DebugUtilsMessageSeverity::ERROR,
+                    message_type: DebugUtilsMessageType::GENERAL
+                        | DebugUtilsMessageType::VALIDATION
+                        | DebugUtilsMessageType::PERFORMANCE,
+                    ..DebugUtilsMessengerCreateInfo::user_callback(Arc::new(|msg| {
+                        println!("[DEBUG]: {:?}", msg.description);
+                    }))
+                },
+            )
+        }
+        .unwrap();
+
         Self {
             device,
             queue,
@@ -133,6 +158,8 @@ impl State {
             command_buffers,
             real_time_data,
             fences,
+            #[cfg(debug_assertions)]
+            _debugger: debugger,
         }
     }
 }
