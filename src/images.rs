@@ -235,12 +235,11 @@ mod image {
         },
     };
 
-    /// ADAPTED FROM vulkano::image::StorageImage
+    /// ADAPTED FROM [vulkano::image::StorageImage]
     #[derive(Debug)]
     pub(crate) struct CustomImage {
         inner: Arc<Image>,
-
-        // If false, then the image is still `Undefined`.
+        /// If false, the image is in the `Undefined` layout.
         layout_initialized: AtomicBool,
     }
 
@@ -262,7 +261,7 @@ mod image {
                     dimensions,
                     format: Some(format),
                     usage,
-                    sharing: Sharing::Exclusive, // TODO: Sharing::Concurrent implementation
+                    sharing: Sharing::Exclusive, // TODO: [Sharing::Concurrent] implementation
                     ..Default::default()
                 },
             )?;
@@ -347,7 +346,7 @@ mod image {
 
     unsafe impl<P> ImageContent<P> for CustomImage {
         fn matches_format(&self) -> bool {
-            true // FIXME: copied from vulkano::image::StorageImage
+            true // FIXME: copied from [vulkano::image::StorageImage]
         }
     }
 
