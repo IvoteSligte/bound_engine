@@ -14,9 +14,9 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     ivec4 deltaLightmapOrigins[LM_COUNT];
 } rt;
 
-layout(binding = 1) buffer restrict readonly LMBufferSlice {
-    Voxel voxels[LM_VOXELS_PER_FRAME];
-} lmBuffer;
+layout(binding = 1) buffer restrict readonly LMVoxelBuffer {
+    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
+} lmVoxelBuffer;
 
 layout(binding = 2) buffer restrict LMMarchBuffer {
     float dists[LM_VOXELS_PER_FRAME][64];
@@ -36,7 +36,7 @@ shared vec3 SharedColors[gl_WorkGroupSize.x];
 
 void main() {
     if (gl_LocalInvocationID.x == 0) {
-        SharedData = SharedStruct(lmBuffer.voxels[rt.lightmapBufferOffset + gl_WorkGroupID.x], rt.lightmapOrigin);
+        SharedData = SharedStruct(lmVoxelBuffer.voxels[rt.lightmapBufferOffset + gl_WorkGroupID.x], rt.lightmapOrigin);
     }
     barrier();
     
