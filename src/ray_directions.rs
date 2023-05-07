@@ -1,4 +1,4 @@
-pub(crate) const MAX_RADIUS: f32 = 0.3178550114203078;
+// pub(crate) const MAX_RADIUS: f32 = 0.3178550114203078;
 
 pub(crate) const VECTORS: [[f32; 3]; 1024] = [
     [-0.2582556034073268, 0.9329066450531913, -0.2509765625],

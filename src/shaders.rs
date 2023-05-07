@@ -8,6 +8,10 @@ vulkano_shaders::shader! {
             ty: "compute",
             path: "shaders/lm_init.glsl",
         },
+        LMRoughMarch: {
+            ty: "compute",
+            path: "shaders/lm_rough_march.glsl",
+        },
         LMPrimary: {
             ty: "compute",
             path: "shaders/lm_primary.glsl",
@@ -26,7 +30,8 @@ vulkano_shaders::shader! {
         ("LM_SIZE", "128"),
         ("LM_VOXELS_PER_FRAME", "32768"),
         ("MAX_OBJECTS", "128"),
-        ("MAX_MATERIALS", "32")
+        ("MAX_MATERIALS", "32"),
+        ("MAX_RAY_RADIUS", "0.317856")
     ], // TODO: sync defines with consts
     vulkan_version: "1.2", // TODO: vulkan 1.3
     spirv_version: "1.6"
@@ -41,6 +46,8 @@ pub(crate) const LM_VOXELS_PER_FRAME: u32 = 32768;
 pub(crate) const MAX_OBJECTS: usize = 128;
 pub(crate) const MAX_MATERIALS: usize = 32;
 
+// pub(crate) const MAX_RAY_RADIUS: f32 = crate::ray_directions::MAX_RADIUS;
+
 use vulkano::device::Device;
 
 use vulkano::shader::ShaderModule;
@@ -51,6 +58,7 @@ use std::sync::Arc;
 pub(crate) struct Shaders {
     pub(crate) direct: Arc<ShaderModule>,
     pub(crate) lm_init: Arc<ShaderModule>,
+    pub(crate) lm_rough_march: Arc<ShaderModule>,
     pub(crate) lm_primary: Arc<ShaderModule>,
     pub(crate) lm_secondary: Arc<ShaderModule>,
 }
@@ -60,6 +68,7 @@ impl Shaders {
         Self {
             direct: load_direct(device.clone()).unwrap(),
             lm_init: load_lm_init(device.clone()).unwrap(),
+            lm_rough_march: load_lm_rough_march(device.clone()).unwrap(),
             lm_primary: load_lm_primary(device.clone()).unwrap(),
             lm_secondary: load_lm_secondary(device.clone()).unwrap(),
         }

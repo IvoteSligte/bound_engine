@@ -1,4 +1,4 @@
-use std::{sync::Arc, ops::Range};
+use std::{ops::Range, sync::Arc};
 
 use glam::{IVec3, UVec3};
 use vulkano::{
@@ -143,6 +143,24 @@ impl PathtraceCommandBuffers {
         Arc::new(builder.build().unwrap())
     }
 
+    pub(crate) fn extend_with_lm_rough_march(
+        cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        pipelines: Pipelines,
+        descriptor_sets: DescriptorSets,
+        dispatch_lm_render: [u32; 3],
+    ) {
+        cmb_builder
+            .bind_pipeline_compute(pipelines.lm_rough_march.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.lm_rough_march.layout().clone(),
+                0,
+                descriptor_sets.lm_rough_march.clone(),
+            )
+            .dispatch(dispatch_lm_render)
+            .unwrap();
+    }
+
     pub(crate) fn create_lm_primary_command_buffer(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
@@ -157,6 +175,14 @@ impl PathtraceCommandBuffers {
             CommandBufferUsage::MultipleSubmit,
         )
         .unwrap();
+
+        // lm_rough_march
+        PathtraceCommandBuffers::extend_with_lm_rough_march(
+            &mut builder,
+            pipelines.clone(),
+            descriptor_sets.clone(),
+            dispatch_lm_render.clone(),
+        );
 
         // lm_primary
         builder
@@ -197,16 +223,25 @@ impl PathtraceCommandBuffers {
         )
         .unwrap();
 
-            builder
-                .bind_pipeline_compute(pipelines.lm_secondary.clone())
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Compute,
-                    pipelines.lm_secondary.layout().clone(),
-                    0,
-                    descriptor_sets.lm_secondary[secondary_index].clone(),
-                )
-                .dispatch(dispatch_lm_render)
-                .unwrap();
+        // lm_rough_march
+        PathtraceCommandBuffers::extend_with_lm_rough_march(
+            &mut builder,
+            pipelines.clone(),
+            descriptor_sets.clone(),
+            dispatch_lm_render.clone(),
+        );
+
+        // lm_secondary
+        builder
+            .bind_pipeline_compute(pipelines.lm_secondary.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.lm_secondary.layout().clone(),
+                0,
+                descriptor_sets.lm_secondary[secondary_index].clone(),
+            )
+            .dispatch(dispatch_lm_render)
+            .unwrap();
 
         // direct
         PathtraceCommandBuffers::extend_with_direct(

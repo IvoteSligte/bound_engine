@@ -24,13 +24,18 @@ layout(binding = 3) buffer restrict readonly LMBufferSlice {
     Voxel voxels[LM_VOXELS_PER_FRAME];
 } lmBuffer;
 
-layout(binding = 4) uniform restrict readonly NoiseBuffer {
-    vec4 dirs[gl_WorkGroupSize.x];
+layout(binding = 4) buffer restrict LMMarchBuffer {
+    float dists[LM_VOXELS_PER_FRAME][64];
+} lmMarchBuffer;
+
+layout(binding = 5) uniform restrict readonly NoiseBuffer {
+    vec4 dirs[LM_SAMPLES];
+    vec4 midDirs[64];
 } noise;
 
-layout(binding = 5) uniform sampler3D SDFImages[LM_COUNT];
+layout(binding = 6) uniform sampler3D SDFImages[LM_COUNT];
 
-layout(binding = 6, r16ui) uniform restrict readonly uimage3D materialImages[LM_COUNT];
+layout(binding = 7, r16ui) uniform restrict readonly uimage3D materialImages[LM_COUNT];
 
 #include "includes_march_ray.glsl"
 
@@ -52,9 +57,9 @@ void main() {
     vec4 randDir = noise.dirs[gl_LocalInvocationID.x];
     vec3 dir = normalize(voxel.normal + randDir.xyz);
 
-    float totalDist = 2.0 * LM_UNIT_SIZES[lmIndex.w];
+    float totalDist = lmMarchBuffer.dists[gl_WorkGroupID.x][gl_LocalInvocationID.x / (LM_SAMPLES / 64)];
     vec3 position = voxel.position;
-    bool isHit = marchRay(position, dir, sData.lightmapOrigin, 2e-2, 30, totalDist); // bottleneck
+    bool isHit = marchRay(position, dir, sData.lightmapOrigin, 2e-2, 16, totalDist); // bottleneck
 
     ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
     uint material = imageLoad(materialImages[lmIndexSample.w], lmIndexSample.xyz).x;
