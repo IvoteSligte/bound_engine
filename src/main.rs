@@ -18,6 +18,7 @@ use winit_event_helper::*;
 
 use crate::{event_helper::*, swapchain::*};
 
+mod ray_directions;
 mod allocators;
 mod buffers;
 mod command_buffers;

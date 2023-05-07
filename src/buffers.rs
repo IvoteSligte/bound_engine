@@ -1,7 +1,5 @@
 use std::{ops::Range, sync::Arc};
 
-use glam::Vec3;
-use rand_distr::{Distribution, UnitSphere};
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
@@ -16,7 +14,7 @@ use vulkano::{
 use crate::{
     allocators::Allocators,
     scene::{get_materials, get_objects, RawObject},
-    shaders::{self, LM_SAMPLES, LM_SIZE},
+    shaders::{self, LM_SIZE, LM_SAMPLES}, ray_directions,
 };
 
 #[derive(Clone)]
@@ -204,18 +202,12 @@ pub(crate) fn get_noise_buffer(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<shaders::NoiseBuffer> {
-    let points = UnitSphere // TODO: sort so similar directions are grouped together
-        .sample_iter(rand::thread_rng())
-        .take(LM_SAMPLES as usize)
-        .collect::<Vec<[f32; 3]>>()
-        .into_iter()
-        .map(Vec3::from_array)
-        .collect::<Vec<Vec3>>();
+    debug_assert!(ray_directions::VECTORS.len() == LM_SAMPLES as usize);
 
     let noise_data = shaders::NoiseBuffer {
-        dirs: points // TODO: store in file and use include_bytes! macro
+        dirs: ray_directions::VECTORS // TODO: store in file and use include_bytes! macro
             .into_iter()
-            .map(|v| v.extend(0.0).to_array())
+            .map(|v| [v[0], v[1], v[2], 0.0])
             .collect::<Vec<_>>()
             .try_into()
             .unwrap(),
