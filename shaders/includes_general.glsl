@@ -39,7 +39,7 @@ struct HitItem {
     uint materialHit;
 };
 
-struct Voxel {
+struct LMPoint {
     uint lmIndex;
     vec3 position;
     uint material;
@@ -47,7 +47,7 @@ struct Voxel {
 };
 
 struct SharedStruct {
-    Voxel voxel;
+    LMPoint point;
     vec3 lightmapOrigin;
 };
 

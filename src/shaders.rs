@@ -29,6 +29,7 @@ vulkano_shaders::shader! {
         ("LM_COUNT", "6"),
         ("LM_SIZE", "128"),
         ("LM_VOXELS_PER_FRAME", "32768"),
+        ("LM_MAX_POINTS", "262144"),
         ("MAX_OBJECTS", "128"),
         ("MAX_MATERIALS", "32"),
         ("MAX_RAY_RADIUS", "0.317856")
@@ -42,6 +43,7 @@ pub(crate) const LM_SAMPLES: u32 = 1024;
 pub(crate) const LM_COUNT: u32 = 6; // TODO: rename to LIGHTMAP_LAYERS
 pub(crate) const LM_SIZE: u32 = 128;
 pub(crate) const LM_VOXELS_PER_FRAME: u32 = 32768;
+// pub(crate) const LM_MAX_POINTS: u32 = 262144;
 
 pub(crate) const MAX_OBJECTS: usize = 128;
 pub(crate) const MAX_MATERIALS: usize = 32;

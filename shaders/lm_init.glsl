@@ -18,9 +18,9 @@ layout(binding = 1) uniform restrict readonly InitBuffer {
     Object objects[MAX_OBJECTS];
 } objBuffer;
 
-layout(binding = 2) buffer restrict LMVoxelBuffer {
-    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
-} lmVoxelBuffer;
+layout(binding = 2) buffer restrict LMPointBuffer {
+    LMPoint points[LM_MAX_POINTS];
+} lmPointBuffer;
 
 layout(binding = 3) buffer restrict LMCounter {
     uint counter;
@@ -53,7 +53,7 @@ float calculateSDF(vec3 position, out Object closestObj) {
 
 void main() {
     // TODO: find a way to remove this, binding is declared invalid when not reading from the buffer
-    Voxel _USELESS = lmVoxelBuffer.voxels[0];
+    LMPoint _USELESS = lmPointBuffer.points[0];
 
     if (gl_LocalInvocationID == uvec3(0)) {
         SharedObjects = objBuffer.objects;
@@ -71,8 +71,8 @@ void main() {
         vec3 normal = normalize(position - closestObj.position);
         vec3 position = normal * closestObj.radius + closestObj.position;
 
-        uint index = atomicAdd(lmCounter.counter, 1);
-        lmVoxelBuffer.voxels[index] = Voxel(
+        uint index = min(atomicAdd(lmCounter.counter, 1), LM_MAX_POINTS - 1); // TODO: handle index being greater than LM_MAX_POINTS - 1
+        lmPointBuffer.points[index] = LMPoint(
             packBytesUint(uvec4(LM_INDEX)),
             position,
             closestObj.material,

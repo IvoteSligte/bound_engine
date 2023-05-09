@@ -14,9 +14,9 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     ivec4 deltaLightmapOrigins[LM_COUNT];
 } rt;
 
-layout(binding = 1) buffer restrict readonly LMVoxelBuffer {
-    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
-} lmVoxelBuffer;
+layout(binding = 1) buffer restrict readonly LMPointBuffer {
+    LMPoint points[LM_MAX_POINTS];
+} lmPointBuffer;
 
 layout(binding = 2) buffer restrict LMMarchBuffer {
     float dists[LM_VOXELS_PER_FRAME][64];
@@ -36,19 +36,19 @@ shared vec3 SharedColors[gl_WorkGroupSize.x];
 
 void main() {
     if (gl_LocalInvocationID.x == 0) {
-        SharedData = SharedStruct(lmVoxelBuffer.voxels[rt.lightmapBufferOffset + gl_WorkGroupID.x], rt.lightmapOrigin);
+        SharedData = SharedStruct(lmPointBuffer.points[rt.lightmapBufferOffset + gl_WorkGroupID.x], rt.lightmapOrigin);
     }
     barrier();
     
     SharedStruct sData = SharedData;
-    Voxel voxel = sData.voxel;
-    ivec4 lmIndex = ivec4(unpackBytesUint(voxel.lmIndex));
+    LMPoint point = sData.point;
+    ivec4 lmIndex = ivec4(unpackBytesUint(point.lmIndex));
 
     vec4 randDir = noise.midDirs[gl_LocalInvocationID.x];
-    vec3 dir = normalize(voxel.normal + randDir.xyz);
+    vec3 dir = normalize(point.normal + randDir.xyz);
 
     float totalDist = 2.0 * LM_UNIT_SIZES[lmIndex.w];
-    vec3 position = voxel.position;
+    vec3 position = point.position;
     bool isHit = marchRay(position, dir, sData.lightmapOrigin, MAX_RAY_RADIUS, 16, totalDist); // bottleneck
 
     lmMarchBuffer.dists[gl_WorkGroupID.x][gl_LocalInvocationID.x] = totalDist;

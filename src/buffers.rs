@@ -240,7 +240,7 @@ pub(crate) fn get_noise_buffer(
 #[derive(Clone)]
 pub(crate) struct LmBuffers {
     pub(crate) march: Subbuffer<[u8]>,
-    pub(crate) gpu: Subbuffer<[shaders::Voxel]>,
+    pub(crate) gpu: Subbuffer<[shaders::LMPoint]>,
     pub(crate) counter: Subbuffer<u32>, // TODO: merge with `gpu` buffer
     pub(crate) range_left: Range<u32>,
 }
@@ -270,9 +270,9 @@ impl LmBuffers {
     fn create_lm_buffer(
         allocators: Arc<Allocators>,
         cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    ) -> Subbuffer<[shaders::Voxel]> {
+    ) -> Subbuffer<[shaders::LMPoint]> {
         let iter = (0..(LM_SIZE.pow(3)))
-            .map(|_| shaders::Voxel {
+            .map(|_| shaders::LMPoint {
                 lmIndex: Default::default(),
                 material: Default::default(),
                 position: Default::default(),

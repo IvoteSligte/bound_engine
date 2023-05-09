@@ -22,9 +22,9 @@ layout(binding = 2, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputC
 
 layout(binding = 3, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutputColorImages;
 
-layout(binding = 4) buffer restrict readonly LMVoxelBuffer {
-    Voxel voxels[LM_SIZE * LM_SIZE * LM_SIZE * LM_COUNT];
-} lmVoxelBuffer;
+layout(binding = 4) buffer restrict readonly LMPointBuffer {
+    LMPoint points[LM_MAX_POINTS];
+} lmPointBuffer;
 
 layout(binding = 5) buffer restrict LMMarchBuffer {
     float dists[LM_VOXELS_PER_FRAME][64];
@@ -44,19 +44,19 @@ shared vec3 SharedColors[gl_WorkGroupSize.x];
 
 void main() {
     if (gl_LocalInvocationID.x == 0) {
-        SharedData = SharedStruct(lmVoxelBuffer.voxels[rt.lightmapBufferOffset + gl_WorkGroupID.x], rt.lightmapOrigin);
+        SharedData = SharedStruct(lmPointBuffer.points[rt.lightmapBufferOffset + gl_WorkGroupID.x], rt.lightmapOrigin);
     }
     barrier();
     
     SharedStruct sData = SharedData;
-    Voxel voxel = sData.voxel;
-    ivec4 lmIndex = ivec4(unpackBytesUint(voxel.lmIndex));
+    LMPoint point = sData.point;
+    ivec4 lmIndex = ivec4(unpackBytesUint(point.lmIndex));
 
     vec4 randDir = noise.dirs[gl_LocalInvocationID.x];
-    vec3 dir = normalize(voxel.normal + randDir.xyz);
+    vec3 dir = normalize(point.normal + randDir.xyz);
 
     float totalDist = lmMarchBuffer.dists[gl_WorkGroupID.x][gl_LocalInvocationID.x / (LM_SAMPLES / 64)];
-    vec3 position = voxel.position;
+    vec3 position = point.position;
     bool isHit = marchRay(position, dir, sData.lightmapOrigin, 2e-2, 16, totalDist); // bottleneck
 
     ivec4 lmIndexSample = lmIndexAtPos(position, sData.lightmapOrigin);
@@ -80,7 +80,7 @@ void main() {
             color += SharedColors[i];
         }
 
-        Material material = buf.mats[voxel.material];
+        Material material = buf.mats[point.material];
         color = color * material.reflectance * (1.0 / float(LM_SAMPLES)) + material.emittance;
 
         imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 1.0));
