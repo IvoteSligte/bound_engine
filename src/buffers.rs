@@ -15,7 +15,7 @@ use crate::{
     allocators::Allocators,
     ray_directions,
     scene::{get_materials, get_objects, RawObject},
-    shaders::{self, LM_SAMPLES, LM_SIZE},
+    shaders::{self, LM_SAMPLES, LM_SIZE, LM_MAX_POINTS},
 };
 
 #[derive(Clone)]
@@ -247,7 +247,7 @@ pub(crate) struct LmBuffers {
 
 impl LmBuffers {
     pub(crate) fn read_to_range(&mut self) {
-        let count = *self.counter.read().unwrap();
+        let count = self.counter.read().unwrap().min(LM_MAX_POINTS);
         self.range_left = 0..count;
     }
 

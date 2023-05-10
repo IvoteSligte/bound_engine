@@ -43,7 +43,7 @@ pub(crate) const LM_SAMPLES: u32 = 1024;
 pub(crate) const LM_COUNT: u32 = 6; // TODO: rename to LIGHTMAP_LAYERS
 pub(crate) const LM_SIZE: u32 = 128;
 pub(crate) const LM_VOXELS_PER_FRAME: u32 = 32768;
-// pub(crate) const LM_MAX_POINTS: u32 = 262144;
+pub(crate) const LM_MAX_POINTS: u32 = 262144;
 
 pub(crate) const MAX_OBJECTS: usize = 128;
 pub(crate) const MAX_MATERIALS: usize = 32;
