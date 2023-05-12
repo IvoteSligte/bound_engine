@@ -119,7 +119,7 @@ impl State {
             position: Default::default(),
             previousPosition: Default::default(),
             lightmapOrigin: Default::default(),
-            lightmapBufferOffset: Default::default(),
+            noiseOffset: 0,
             deltaLightmapOrigins: Default::default(),
         };
 

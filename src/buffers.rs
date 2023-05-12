@@ -1,4 +1,4 @@
-use std::{mem::size_of, ops::Range, sync::Arc};
+use std::sync::Arc;
 
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -15,7 +15,7 @@ use crate::{
     allocators::Allocators,
     ray_directions,
     scene::{get_materials, get_objects, RawObject},
-    shaders::{self, LM_SAMPLES, LM_SIZE, LM_MAX_POINTS},
+    shaders::{self, LM_MAX_POINTS, LM_SIZE},
 };
 
 #[derive(Clone)]
@@ -132,7 +132,7 @@ pub(crate) fn get_real_time_buffer(
             position: Default::default(),
             previousPosition: Default::default(),
             lightmapOrigin: Default::default(),
-            lightmapBufferOffset: Default::default(),
+            noiseOffset: 0,
             deltaLightmapOrigins: Default::default(),
         },
     )
@@ -203,20 +203,10 @@ pub(crate) fn get_noise_buffer(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<shaders::NoiseBuffer> {
-    debug_assert!(ray_directions::VECTORS.len() == LM_SAMPLES as usize);
-
-    let extend_to_vec4 = |iterable: &[[f32; 3]]| {
-        iterable
-            .into_iter()
-            .map(|v| [v[0], v[1], v[2], 0.0])
-            .collect::<Vec<_>>()
-    };
-
     let noise_data = shaders::NoiseBuffer {
-        dirs: extend_to_vec4(&ray_directions::VECTORS).try_into().unwrap(),
-        midDirs: extend_to_vec4(&ray_directions::MID_VECTORS)
-            .try_into()
-            .unwrap(),
+        dirs: ray_directions::VECTORS.into_iter()
+        .map(|v| [v[0], v[1], v[2], 0.0])
+        .collect::<Vec<_>>().try_into().unwrap(),
     };
 
     let buffer = Buffer::new_sized(
@@ -239,31 +229,25 @@ pub(crate) fn get_noise_buffer(
 
 #[derive(Clone)]
 pub(crate) struct LmBuffers {
-    pub(crate) march: Subbuffer<[u8]>,
     pub(crate) gpu: Subbuffer<[shaders::LMPoint]>,
-    pub(crate) counter: Subbuffer<u32>, // TODO: merge with `gpu` buffer
-    pub(crate) range_left: Range<u32>,
+    pub(crate) counter: Subbuffer<u32>,
+    pub(crate) point_count: u32,
 }
 
 impl LmBuffers {
     pub(crate) fn read_to_range(&mut self) {
         let count = self.counter.read().unwrap().min(LM_MAX_POINTS);
-        self.range_left = 0..count;
+        self.point_count = count;
     }
 
     pub(crate) fn new(
         allocators: Arc<Allocators>,
         cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     ) -> LmBuffers {
-        let gpu_buffer = Self::create_lm_buffer(allocators.clone(), cmb_builder);
-
-        let march_buffer = Self::create_lm_march_buffer(allocators.clone(), cmb_builder);
-
-        LmBuffers {
-            march: march_buffer,
-            gpu: gpu_buffer,
+        Self {
+            gpu: Self::create_lm_buffer(allocators.clone(), cmb_builder),
             counter: Self::create_lm_counter_buffer(allocators),
-            range_left: 0..0,
+            point_count: 0,
         }
     }
 
@@ -302,32 +286,6 @@ impl LmBuffers {
             buffer.clone(),
             iter.clone(),
         );
-
-        buffer
-    }
-
-    fn create_lm_march_buffer(
-        allocators: Arc<Allocators>,
-        cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    ) -> Subbuffer<[u8]> {
-        let len = size_of::<shaders::LMMarchBuffer>();
-        let iter = (0..len).map(|_| 0u8);
-
-        let buffer = Buffer::new_slice(
-            &allocators.memory,
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                usage: MemoryUsage::DeviceOnly,
-                ..Default::default()
-            },
-            len as u64,
-        )
-        .unwrap();
-
-        stage_buffer_with_iter(allocators.clone(), cmb_builder, buffer.clone(), iter);
 
         buffer
     }

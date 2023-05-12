@@ -4,8 +4,7 @@ use vulkano::{
     format::Format,
     image::{
         view::{ImageView, ImageViewCreateInfo},
-        ImageCreateFlags, ImageDimensions, ImageUsage, ImageViewAbstract,
-        SwapchainImage,
+        ImageCreateFlags, ImageDimensions, ImageUsage, ImageViewAbstract, SwapchainImage,
     },
     sampler::Sampler,
 };
@@ -13,7 +12,7 @@ use winit::window::Window;
 
 use crate::{
     allocators::Allocators,
-    shaders::{LM_COUNT, LM_RAYS, LM_SIZE},
+    shaders::{LM_COUNT, LM_SIZE},
 };
 
 use self::image::CustomImage;
@@ -82,16 +81,14 @@ pub(crate) struct LightmapImages {
     pub(crate) colors: Vec<Vec<Arc<CustomImage>>>,
     pub(crate) staging_color: Arc<CustomImage>,
     pub(crate) sdfs: Vec<Arc<CustomImage>>,
-    pub(crate) materials: Vec<Arc<CustomImage>>,
 }
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
     pub(crate) colors_storage: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
-    pub(crate) colors_final_sampled: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) colors_sampled: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
     pub(crate) sdfs_storage: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) sdfs_sampled: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) materials_storage: Vec<Arc<dyn ImageViewAbstract>>,
 }
 
 impl LightmapImages {
@@ -114,29 +111,18 @@ impl LightmapImages {
             .unwrap()
         };
 
-        let mut colors = (0..(LM_RAYS - 1))
+        let colors = (0..2)
             .map(|_| {
                 (0..LM_COUNT)
                     .map(|_| {
                         create_storage_image(
-                            ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
+                            ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
                             Format::R16G16B16A16_UNORM,
                         )
                     })
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-
-        colors.push(
-            (0..LM_COUNT)
-                .map(|_| {
-                    create_storage_image(
-                        ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
-                        Format::R16G16B16A16_UNORM,
-                    )
-                })
-                .collect::<Vec<_>>(),
-        );
 
         let staging_color = create_storage_image(
             ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
@@ -153,20 +139,10 @@ impl LightmapImages {
             })
             .collect::<Vec<_>>();
 
-        let materials = (0..LM_COUNT)
-            .map(|_| {
-                create_storage_image(
-                    ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
-                    Format::R16_UINT,
-                )
-            })
-            .collect::<Vec<_>>();
-
         Self {
             colors,
             staging_color,
             sdfs,
-            materials,
         }
     }
 
@@ -192,17 +168,19 @@ impl LightmapImages {
             .map(|imgs| views(imgs, ImageUsage::STORAGE))
             .collect();
         let sdfs_storage = views(&self.sdfs, ImageUsage::STORAGE);
-        let materials_storage = views(&self.materials, ImageUsage::STORAGE);
 
-        let colors_final_sampled = views(self.colors.last().unwrap(), ImageUsage::SAMPLED);
+        let colors_sampled = self
+            .colors
+            .iter()
+            .map(|imgs| views(imgs, ImageUsage::SAMPLED))
+            .collect();
         let sdfs_sampled = views(&self.sdfs, ImageUsage::SAMPLED);
 
         LightmapImageViews {
             colors_storage,
-            colors_final_sampled,
+            colors_sampled,
             sdfs_storage,
             sdfs_sampled,
-            materials_storage,
         }
     }
 }

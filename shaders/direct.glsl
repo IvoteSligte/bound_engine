@@ -15,7 +15,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
     vec3 previousPosition;
     ivec3 lightmapOrigin;
-    uint lightmapBufferOffset;
+    uint noiseOffset;
     ivec4 deltaLightmapOrigins[LM_COUNT];
 } rt;
 
@@ -46,10 +46,12 @@ void main() {
 
     vec3 dir = rotateWithQuat(rotation, DIRECTION);
     float totalDist = NEAR_CLIPPING;
-    bool isHit = marchRay(position, dir, lmOrigin, 1e-3, 100, totalDist);
+    bool isHit = marchRay(position, dir, lmOrigin, 1e-3, 128, totalDist);
 
     if (!isHit) {
-        imageStore(colorImage, IPOS, vec4(0.0)); // TODO: skybox
+        vec3 color = vec3(dot(dir, vec3(0.0, 0.0, 1.0)) * 0.5 + 0.5);
+        color = pow(color, vec3(5.0)) * 0.1;
+        imageStore(colorImage, IPOS, vec4(color, 0.0));
         return;
     }
 

@@ -10,7 +10,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
     vec3 previousPosition;
     ivec3 lightmapOrigin;
-    uint lightmapBufferOffset;
+    uint noiseOffset;
     ivec4 deltaLightmapOrigins[LM_COUNT];
 } rt;
 
@@ -27,8 +27,6 @@ layout(binding = 3) buffer restrict LMCounter {
 } lmCounter;
 
 layout(binding = 4, r16f) uniform restrict writeonly image3D SDFImages[LM_COUNT];
-
-layout(binding = 5, r16ui) uniform restrict writeonly uimage3D materialImages[LM_COUNT];
 
 const float SQRT_2 = 1.41421356;
 
@@ -62,24 +60,26 @@ void main() {
 
     const ivec4 LM_INDEX = ivec4(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz, gl_GlobalInvocationID.x / LM_SIZE);
 
-    vec3 position = posAtLightmapIndex(LM_INDEX, rt.lightmapOrigin.xyz);
+    vec3 position = posAtLightmapIndex(LM_INDEX, rt.lightmapOrigin);
 
     Object closestObj;
     float dist = calculateSDF(position, closestObj); // bottleneck // TODO: object acceleration structure
 
-    if (abs(dist) < SQRT_2 * LM_UNIT_SIZES[LM_INDEX.w]) {
-        vec3 normal = normalize(position - closestObj.position);
-        vec3 position = normal * closestObj.radius + closestObj.position;
+    vec3 pointNormal = normalize(position - closestObj.position);
+    vec3 pointPosition = pointNormal * closestObj.radius + closestObj.position;
 
+    // TODO: clear image at launch to prevent undefined data
+
+    bool isPointInVoxel = LM_INDEX.xyz == lmIndexAtPos(pointPosition, rt.lightmapOrigin).xyz;
+    if (isPointInVoxel) {
         uint index = min(atomicAdd(lmCounter.counter, 1), LM_MAX_POINTS - 1); // TODO: handle index being greater than LM_MAX_POINTS - 1
         lmPointBuffer.points[index] = LMPoint(
             packBytesUint(uvec4(LM_INDEX)),
-            position,
+            pointPosition,
             closestObj.material,
-            normal
+            pointNormal
         );
     }
 
     imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
-    imageStore(materialImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(closestObj.material));
 }

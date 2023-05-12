@@ -16,7 +16,7 @@ use winit::{
 };
 use winit_event_helper::*;
 
-use crate::{event_helper::*, swapchain::*};
+use crate::{event_helper::*, swapchain::*, shaders::NOISE_BUFFER_LENGTH};
 
 mod ray_directions;
 mod allocators;
@@ -161,6 +161,7 @@ fn main() {
 
         let lm_render_command_buffer = eh.next_lm_render_command_buffer();
 
+        eh.state.real_time_data.noiseOffset = (eh.state.real_time_data.noiseOffset + 1) % NOISE_BUFFER_LENGTH;
         *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
 
         let (image_index, suboptimal, image_future) =
