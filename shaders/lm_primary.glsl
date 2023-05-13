@@ -42,7 +42,7 @@ void main() {
     ivec4 lmIndex = ivec4(unpackBytesUint(point.lmIndex));
 
     vec4 randDir = noise.dirs[rt.noiseOffset];
-    vec3 dir = normalize(point.normal + randDir.xyz);
+    vec3 dir = normalize(point.normal + randDir.xyz); // TODO: ReSTIR
 
     float totalDist = LM_UNIT_SIZES[lmIndex.w];
     vec3 position = point.position;
@@ -56,7 +56,7 @@ void main() {
 
     Material material = buf.mats[point.material];
     color = color * material.reflectance + material.emittance;
-    color = mix(prevData.rgb, color, 1e-4); // TODO: mix factor = 1.0 / prevData.w
+    color = mix(prevData.rgb, color, 1.0 / 1024.0); // TODO: mix factor = 1.0 / prevData.w
 
     imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, prevData.w));
 }

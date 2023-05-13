@@ -70,7 +70,7 @@ void main() {
 
     // TODO: clear image at launch to prevent undefined data
 
-    bool isPointInVoxel = LM_INDEX.xyz == lmIndexAtPos(pointPosition, rt.lightmapOrigin).xyz;
+    bool isPointInVoxel = LM_INDEX.xyz == lmIndexAtPos(pointPosition, rt.lightmapOrigin).xyz; // TODO: do not calc points where reflectance == 0.0
     if (isPointInVoxel) {
         uint index = min(atomicAdd(lmCounter.counter, 1), LM_MAX_POINTS - 1); // TODO: handle index being greater than LM_MAX_POINTS - 1
         lmPointBuffer.points[index] = LMPoint(
