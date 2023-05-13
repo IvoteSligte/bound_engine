@@ -22,7 +22,7 @@ pub(crate) struct DescriptorSets {
 #[derive(Clone)]
 pub(crate) struct DescriptorUnit {
     pub(crate) direct: Arc<PersistentDescriptorSet>,
-    pub(crate) lm_primary: Arc<PersistentDescriptorSet>,
+    pub(crate) lm_render: Arc<PersistentDescriptorSet>,
 }
 
 impl DescriptorSets {
@@ -90,9 +90,9 @@ impl DescriptorSets {
             )
             .unwrap();
 
-            let lm_primary = PersistentDescriptorSet::new(
+            let lm_render = PersistentDescriptorSet::new(
                 &allocators.descriptor_set,
-                pipelines.lm_primary.layout().set_layouts()[0].clone(),
+                pipelines.lm_render.layout().set_layouts()[0].clone(),
                 [
                     WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
                     WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
@@ -117,7 +117,7 @@ impl DescriptorSets {
             )
             .unwrap();
 
-            units.push(DescriptorUnit { direct, lm_primary });
+            units.push(DescriptorUnit { direct, lm_render });
         }
 
         DescriptorSets { lm_init, units }

@@ -8,9 +8,9 @@ vulkano_shaders::shader! {
             ty: "compute",
             path: "shaders/lm_init.glsl",
         },
-        LMPrimary: {
+        LMRender: {
             ty: "compute",
-            path: "shaders/lm_primary.glsl",
+            path: "shaders/lm_render.glsl",
         },
     },
     custom_derives: [Copy, Clone, Debug],
@@ -50,7 +50,7 @@ use crate::ray_directions;
 pub(crate) struct Shaders {
     pub(crate) direct: Arc<ShaderModule>,
     pub(crate) lm_init: Arc<ShaderModule>,
-    pub(crate) lm_primary: Arc<ShaderModule>,
+    pub(crate) lm_render: Arc<ShaderModule>,
 }
 
 impl Shaders {
@@ -58,7 +58,7 @@ impl Shaders {
         Self {
             direct: load_direct(device.clone()).unwrap(),
             lm_init: load_lm_init(device.clone()).unwrap(),
-            lm_primary: load_lm_primary(device.clone()).unwrap(),
+            lm_render: load_lm_render(device.clone()).unwrap(),
         }
     }
 }

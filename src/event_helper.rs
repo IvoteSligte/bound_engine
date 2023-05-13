@@ -77,7 +77,7 @@ impl Data {
                     [(self.state.real_time_data.noiseOffset % 2) as usize]
                     .clone();
 
-                PathtraceCommandBuffers::create_lm_primary_command_buffer(
+                PathtraceCommandBuffers::create_lm_render_command_buffer(
                     self.state.allocators.clone(),
                     self.state.queue.clone(),
                     self.state.pipelines.clone(),

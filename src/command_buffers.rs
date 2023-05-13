@@ -142,7 +142,7 @@ impl PathtraceCommandBuffers {
         Arc::new(builder.build().unwrap())
     }
 
-    pub(crate) fn create_lm_primary_command_buffer(
+    pub(crate) fn create_lm_render_command_buffer(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
@@ -159,12 +159,12 @@ impl PathtraceCommandBuffers {
 
         // lm_primary
         builder
-            .bind_pipeline_compute(pipelines.lm_primary.clone())
+            .bind_pipeline_compute(pipelines.lm_render.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
-                pipelines.lm_primary.layout().clone(),
+                pipelines.lm_render.layout().clone(),
                 0,
-                descriptor_unit.lm_primary.clone(),
+                descriptor_unit.lm_render.clone(),
             )
             .dispatch(dispatch_lm_render)
             .unwrap();
