@@ -39,14 +39,14 @@ struct HitItem {
     uint materialHit;
 };
 
-struct LMPoint {
+struct LmPoint {
     vec3 position;
     uint material;
     vec3 normal;
 };
 
 struct SharedStruct {
-    LMPoint point;
+    LmPoint point;
     vec3 lightmapOrigin;
 };
 

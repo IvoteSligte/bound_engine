@@ -229,7 +229,7 @@ pub(crate) fn get_noise_buffer(
 
 #[derive(Clone)]
 pub(crate) struct LmBuffers {
-    pub(crate) gpu: Subbuffer<[shaders::LMPoint]>,
+    pub(crate) gpu: Subbuffer<[shaders::LmPoint]>,
     pub(crate) counter: Subbuffer<u32>,
     pub(crate) point_count: u32,
 }
@@ -255,9 +255,9 @@ impl LmBuffers {
     fn create_lm_buffer(
         allocators: Arc<Allocators>,
         cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    ) -> Subbuffer<[shaders::LMPoint]> {
+    ) -> Subbuffer<[shaders::LmPoint]> {
         let iter = (0..(LM_SIZE.pow(3)))
-            .map(|_| shaders::LMPoint {
+            .map(|_| shaders::LmPoint {
                 material: Default::default(),
                 position: Default::default(),
                 normal: Default::default(),

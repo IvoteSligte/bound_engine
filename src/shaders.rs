@@ -4,11 +4,11 @@ vulkano_shaders::shader! {
             ty: "compute",
             path: "shaders/direct.glsl",
         },
-        LMInit: {
+        LmInit: {
             ty: "compute",
             path: "shaders/lm_init.glsl",
         },
-        LMRender: {
+        LmRender: {
             ty: "compute",
             path: "shaders/lm_render.glsl",
         },

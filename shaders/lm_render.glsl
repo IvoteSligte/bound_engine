@@ -22,8 +22,8 @@ layout(binding = 2, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputC
 
 layout(binding = 3, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutputColorImages;
 
-layout(binding = 4) buffer restrict readonly LMPointBuffer {
-    LMPoint points[LM_MAX_POINTS];
+layout(binding = 4) buffer restrict readonly LmPointBuffer {
+    LmPoint points[LM_MAX_POINTS];
 } lmPointBuffer;
 
 layout(binding = 5) uniform restrict readonly NoiseBuffer {
@@ -38,7 +38,7 @@ layout(binding = 6) uniform sampler3D SDFImages[LM_COUNT];
 void main() {
     vec3 lmOrigin = rt.lightmapOrigin;
 
-    LMPoint point = lmPointBuffer.points[gl_GlobalInvocationID.x];
+    LmPoint point = lmPointBuffer.points[gl_GlobalInvocationID.x];
     ivec4 lmIndex = lmIndexAtPos(point.position, lmOrigin);
 
     vec4 randDir = noise.dirs[rt.noiseOffset];
