@@ -230,7 +230,7 @@ mod image {
             usage: ImageUsage,
             flags: ImageCreateFlags,
         ) -> Result<Arc<CustomImage>, ImageError> {
-            assert!(!flags.intersects(ImageCreateFlags::DISJOINT)); // INFO: should be safe, but might not be
+            assert!(!flags.intersects(ImageCreateFlags::DISJOINT)); // INFO: should be safe even without this, but might not be
 
             let raw_image = RawImage::new(
                 allocator.device().clone(),
