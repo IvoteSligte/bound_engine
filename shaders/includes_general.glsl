@@ -40,6 +40,7 @@ struct HitItem {
 };
 
 struct LmPoint {
+    float sampleCount;
     vec3 position;
     uint material;
     vec3 normal;

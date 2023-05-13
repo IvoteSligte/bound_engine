@@ -258,6 +258,7 @@ impl LmBuffers {
     ) -> Subbuffer<[shaders::LmPoint]> {
         let iter = (0..(LM_SIZE.pow(3)))
             .map(|_| shaders::LmPoint {
+                sampleCount: Default::default(),
                 material: Default::default(),
                 position: Default::default(),
                 normal: Default::default(),
