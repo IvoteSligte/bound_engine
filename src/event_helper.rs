@@ -61,14 +61,12 @@ impl Data {
                 *self.state.buffers.lm_buffers.counter.write().unwrap() = 0;
                 self.state.command_buffers.pathtraces.state = LmPathtraceState::InitToRender;
                 self.state.real_time_data.noiseOffset = 0;
-                self.state.command_buffers.pathtraces.lm_init
-                    .clone()
+                self.state.command_buffers.pathtraces.lm_init.clone()
             }
             LmPathtraceState::InitToRender => {
-                self.state.buffers.lm_buffers.read_to_range();
-                self.state.command_buffers.pathtraces.state = LmPathtraceState::Render {
-                    point_count: self.state.buffers.lm_buffers.point_count,
-                };
+                let point_count = self.state.buffers.lm_buffers.read_point_count();
+                self.state.command_buffers.pathtraces.state =
+                    LmPathtraceState::Render { point_count };
                 self.next_lm_render_command_buffer()
             }
             LmPathtraceState::Render { point_count } => {
@@ -76,7 +74,8 @@ impl Data {
                 let dispatch_lm_render = [(point_count + 64 - 1) / 64, 1, 1];
 
                 let descriptor_unit = self.state.descriptor_sets.units
-                    [(self.state.real_time_data.noiseOffset % 2) as usize].clone();
+                    [(self.state.real_time_data.noiseOffset % 2) as usize]
+                    .clone();
 
                 PathtraceCommandBuffers::create_lm_primary_command_buffer(
                     self.state.allocators.clone(),

@@ -52,11 +52,11 @@ void main() {
     vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb;
 
     vec4 prevData = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgba;
-    prevData.w = min(prevData.w + 1.0, 1024.0);
+    // float sampleCount = min(prevData.w + 1.0, 1024.0); // TODO: sampleCount in point data
 
     Material material = buf.mats[point.material];
     color = color * material.reflectance + material.emittance;
-    color = mix(prevData.rgb, color, 1.0 / 1024.0); // TODO: mix factor = 1.0 / prevData.w
+    color = mix(prevData.rgb, color, 1.0 / 1024.0); // TODO: mix factor = 1.0 / sampleCount
 
-    imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, prevData.w));
+    imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 1.0));
 }

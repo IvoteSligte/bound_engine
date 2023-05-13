@@ -235,9 +235,10 @@ pub(crate) struct LmBuffers {
 }
 
 impl LmBuffers {
-    pub(crate) fn read_to_range(&mut self) {
+    pub(crate) fn read_point_count(&mut self) -> u32 {
         let count = self.counter.read().unwrap().min(LM_MAX_POINTS);
         self.point_count = count;
+        count
     }
 
     pub(crate) fn new(
