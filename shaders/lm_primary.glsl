@@ -39,10 +39,10 @@ void main() {
     vec3 lmOrigin = rt.lightmapOrigin;
 
     LMPoint point = lmPointBuffer.points[gl_GlobalInvocationID.x];
-    ivec4 lmIndex = ivec4(unpackBytesUint(point.lmIndex));
+    ivec4 lmIndex = lmIndexAtPos(point.position, lmOrigin);
 
     vec4 randDir = noise.dirs[rt.noiseOffset];
-    vec3 dir = normalize(point.normal + randDir.xyz); // TODO: ReSTIR
+    vec3 dir = normalize(point.normal + randDir.xyz); // TODO: reservoir based direction sampling
 
     float totalDist = LM_UNIT_SIZES[lmIndex.w];
     vec3 position = point.position;

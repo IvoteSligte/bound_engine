@@ -74,7 +74,6 @@ void main() {
     if (isPointInVoxel) {
         uint index = min(atomicAdd(lmCounter.counter, 1), LM_MAX_POINTS - 1); // TODO: handle index being greater than LM_MAX_POINTS - 1
         lmPointBuffer.points[index] = LMPoint(
-            packBytesUint(uvec4(LM_INDEX)),
             pointPosition,
             closestObj.material,
             pointNormal
