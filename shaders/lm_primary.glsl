@@ -51,12 +51,13 @@ void main() {
     ivec4 lmIndexSample = lmIndexAtPos(position, lmOrigin);
     vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb;
 
-    vec4 prevData = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgba;
-    // float sampleCount = min(prevData.w + 1.0, 1024.0); // TODO: sampleCount in point data
+    vec3 prevColor = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
 
     Material material = buf.mats[point.material];
     color = color * material.reflectance + material.emittance;
-    color = mix(prevData.rgb, color, 1.0 / 1024.0); // TODO: mix factor = 1.0 / sampleCount
+    // TODO: sampleCount in point data
+    // TODO: mix factor = 1.0 / sampleCount
+    color = mix(prevColor, color, 1.0 / 1024.0);
 
     imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 1.0));
 }
