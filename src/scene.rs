@@ -99,7 +99,7 @@ impl From<CpuObject> for shaders::Object {
     }
 }
 
-fn custom_objects() -> Vec<CpuObject> {
+fn custom_objects() -> Vec<CpuObject> { // TODO: triangle objects, voxel objects (?), loading from file, etc
     let mut objects: Vec<CpuObject> = vec![
         CpuObject {
             position: Vec3::new(0.0, 0.0, -1e5),
