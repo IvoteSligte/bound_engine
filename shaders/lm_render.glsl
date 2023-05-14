@@ -52,7 +52,7 @@ void main() {
     atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].color.z, color.z);
     atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].frameSamples, 1);
 
-    atomicAdd(lmPointBuffer.points[pointIndexSample].color.x, prevColor.x);
+    atomicAdd(lmPointBuffer.points[pointIndexSample].color.x, prevColor.x); // INFO: barely has any effect, probably bugged.
     atomicAdd(lmPointBuffer.points[pointIndexSample].color.y, prevColor.y);
     atomicAdd(lmPointBuffer.points[pointIndexSample].color.z, prevColor.z);
     atomicAdd(lmPointBuffer.points[pointIndexSample].frameSamples, 1);
