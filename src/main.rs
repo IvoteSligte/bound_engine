@@ -16,9 +16,8 @@ use winit::{
 };
 use winit_event_helper::*;
 
-use crate::{event_helper::*, swapchain::*, shaders::NOISE_BUFFER_LENGTH};
+use crate::{event_helper::*, swapchain::*};
 
-mod ray_directions;
 mod allocators;
 mod buffers;
 mod command_buffers;
@@ -29,6 +28,7 @@ mod fences;
 mod images;
 mod instance;
 mod pipelines;
+mod ray_directions;
 mod scene;
 mod shaders;
 mod state;
@@ -123,7 +123,7 @@ fn main() {
         eh.state.real_time_data.position = new_position.to_array().into();
         eh.delta_position = Vec3::ZERO;
 
-        let old_pos = IVec3::from_array(eh.state.real_time_data.lightmapOrigin);
+        let old_pos = IVec3::from_array(*eh.state.real_time_data.lightmapOrigin);
         let new_pos = new_position.as_ivec3();
 
         const SMALLEST_UNIT: f32 = 0.5;
@@ -159,9 +159,12 @@ fn main() {
             previous_future.wait(None).unwrap();
         }
 
+        eh.frame_counter += 1;
+
         let lm_render_command_buffer = eh.next_lm_render_command_buffer();
 
-        eh.state.real_time_data.noiseOffset = (eh.state.real_time_data.noiseOffset + 1) % NOISE_BUFFER_LENGTH;
+        eh.state.real_time_data.noiseDirection = ray_directions::VECTORS
+            [(eh.frame_counter % (ray_directions::VECTORS.len() as u64)) as usize];
         *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
 
         let (image_index, suboptimal, image_future) =
@@ -181,7 +184,8 @@ fn main() {
         let future = sync::now(eh.state.device.clone())
             .then_execute(eh.state.queue.clone(), lm_render_command_buffer)
             .unwrap()
-            .then_execute( // TODO: try using dedicated compute, transfer and present queues
+            .then_execute(
+                // TODO: try using dedicated compute, transfer and present queues
                 eh.state.queue.clone(),
                 eh.state.command_buffers.swapchains[image_index as usize].clone(),
             )

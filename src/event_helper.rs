@@ -33,6 +33,7 @@ pub(crate) fn create_event_helper(window: Arc<Window>) -> EventHelper<Data> {
         movement_multiplier: 25.0,
         rotation_multiplier: 1.0,
         fps_counter: FPSCounter::new(),
+        frame_counter: 0,
     })
 }
 
@@ -52,6 +53,7 @@ pub(crate) struct Data {
     pub(crate) movement_multiplier: f32,
     pub(crate) rotation_multiplier: f32,
     pub(crate) fps_counter: FPSCounter,
+    pub(crate) frame_counter: u64,
 }
 
 impl Data {
@@ -60,7 +62,6 @@ impl Data {
             LmPathtraceState::Init => {
                 *self.state.buffers.lm_buffers.counter.write().unwrap() = 0;
                 self.state.command_buffers.pathtraces.state = LmPathtraceState::InitToRender;
-                self.state.real_time_data.noiseOffset = 0;
                 self.state.command_buffers.pathtraces.lm_init.clone()
             }
             LmPathtraceState::InitToRender => {
@@ -74,7 +75,7 @@ impl Data {
                 let dispatch_lm_render = [(point_count + 64 - 1) / 64, 1, 1];
 
                 let descriptor_unit = self.state.descriptor_sets.units
-                    [(self.state.real_time_data.noiseOffset % 2) as usize]
+                    [(self.frame_counter % 2) as usize]
                     .clone();
 
                 PathtraceCommandBuffers::create_lm_render_command_buffer(

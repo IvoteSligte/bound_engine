@@ -34,7 +34,7 @@ pub(crate) const LM_MAX_POINTS: u32 = 524288;
 pub(crate) const MAX_OBJECTS: usize = 128;
 pub(crate) const MAX_MATERIALS: usize = 32;
 
-pub(crate) const NOISE_BUFFER_LENGTH: u32 = ray_directions::VECTORS.len() as u32;
+// pub(crate) const NOISE_BUFFER_LENGTH: u32 = ray_directions::VECTORS.len() as u32;
 
 // pub(crate) const MAX_RAY_RADIUS: f32 = crate::ray_directions::MAX_RADIUS;
 
@@ -43,8 +43,6 @@ use vulkano::device::Device;
 use vulkano::shader::ShaderModule;
 
 use std::sync::Arc;
-
-use crate::ray_directions;
 
 #[derive(Clone)]
 pub(crate) struct Shaders {

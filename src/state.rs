@@ -119,8 +119,8 @@ impl State {
             position: Default::default(),
             previousPosition: Default::default(),
             lightmapOrigin: Default::default(),
-            noiseOffset: 0,
             deltaLightmapOrigins: Default::default(),
+            noiseDirection: Default::default(),
         };
 
         let fences = Fences::new(images.swapchain.len());

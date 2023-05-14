@@ -10,8 +10,8 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
     vec3 previousPosition;
     ivec3 lightmapOrigin; // TODO: different origin per layer
-    uint noiseOffset;
     ivec4 deltaLightmapOrigins[LM_COUNT];
+    vec3 noiseDirection;
 } rt;
 
 layout(binding = 1) uniform restrict readonly MutableData {
@@ -26,22 +26,18 @@ layout(binding = 4) buffer restrict LmPointBuffer {
     LmPoint points[LM_MAX_POINTS];
 } lmPointBuffer;
 
-layout(binding = 5) uniform restrict readonly NoiseBuffer {
-    vec4 dirs[NOISE_BUFFER_LENGTH];
-} noise;
-
-layout(binding = 6) uniform sampler3D SDFImages[LM_COUNT];
+layout(binding = 5) uniform sampler3D SDFImages[LM_COUNT];
 
 #include "includes_march_ray.glsl"
 
 void main() {
     vec3 lmOrigin = rt.lightmapOrigin;
+    vec3 randDir = rt.noiseDirection;
 
     LmPoint point = lmPointBuffer.points[gl_GlobalInvocationID.x];
     ivec4 lmIndex = lmIndexAtPos(point.position, lmOrigin);
 
-    vec4 randDir = noise.dirs[rt.noiseOffset];
-    vec3 dir = normalize(point.normal + randDir.xyz); // TODO: reservoir based direction sampling
+    vec3 dir = normalize(point.normal + randDir); // TODO: reservoir based direction sampling
 
     float totalDist = LM_UNIT_SIZES[lmIndex.w];
     vec3 position = point.position;

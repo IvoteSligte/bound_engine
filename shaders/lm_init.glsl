@@ -9,9 +9,9 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 previousRotation;
     vec3 position;
     vec3 previousPosition;
-    ivec3 lightmapOrigin;
-    uint noiseOffset;
+    ivec3 lightmapOrigin; // TODO: different origin per layer
     ivec4 deltaLightmapOrigins[LM_COUNT];
+    vec3 noiseDirection;
 } rt;
 
 layout(binding = 1) uniform restrict readonly InitBuffer {

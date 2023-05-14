@@ -13,7 +13,6 @@ use vulkano::{
 
 use crate::{
     allocators::Allocators,
-    ray_directions,
     scene::{get_materials, get_objects, RawObject},
     shaders::{self, LM_MAX_POINTS, LM_SIZE},
 };
@@ -24,7 +23,6 @@ pub(crate) struct Buffers {
     pub(crate) mutable: Subbuffer<shaders::MutableData>, // TODO: rename to MaterialBuffer
     pub(crate) objects: Subbuffer<[RawObject]>,
     pub(crate) lm_buffers: LmBuffers,
-    pub(crate) noise: Subbuffer<shaders::NoiseBuffer>,
 }
 
 impl Buffers {
@@ -41,7 +39,6 @@ impl Buffers {
             mutable: get_mutable_buffer(allocators.clone(), &mut builder),
             objects: get_object_buffer(allocators.clone(), &mut builder),
             lm_buffers: LmBuffers::new(allocators.clone(), &mut builder),
-            noise: get_noise_buffer(allocators.clone(), &mut builder),
         };
 
         builder
@@ -132,8 +129,8 @@ pub(crate) fn get_real_time_buffer(
             position: Default::default(),
             previousPosition: Default::default(),
             lightmapOrigin: Default::default(),
-            noiseOffset: 0,
             deltaLightmapOrigins: Default::default(),
+            noiseDirection: Default::default(),
         },
     )
     .unwrap()
@@ -195,34 +192,6 @@ pub(crate) fn get_object_buffer(
     .unwrap();
 
     stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), object_data);
-
-    buffer
-}
-
-pub(crate) fn get_noise_buffer(
-    allocators: Arc<Allocators>,
-    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-) -> Subbuffer<shaders::NoiseBuffer> {
-    let noise_data = shaders::NoiseBuffer {
-        dirs: ray_directions::VECTORS.into_iter()
-        .map(|v| [v[0], v[1], v[2], 0.0])
-        .collect::<Vec<_>>().try_into().unwrap(),
-    };
-
-    let buffer = Buffer::new_sized(
-        &allocators.memory,
-        BufferCreateInfo {
-            usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::DeviceOnly,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-
-    stage_buffer_with_data(allocators, cmb_builder, buffer.clone(), noise_data);
 
     buffer
 }

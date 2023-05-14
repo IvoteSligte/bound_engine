@@ -107,9 +107,8 @@ impl DescriptorSets {
                         image_views.lightmap.colors_storage[(i+1) % 2].clone(),
                     ), // writes to
                     WriteDescriptorSet::buffer(4, buffers.lm_buffers.gpu.clone()), // reads from
-                    WriteDescriptorSet::buffer(5, buffers.noise.clone()),
                     WriteDescriptorSet::image_view_sampler_array(
-                        6,
+                        5,
                         0,
                         combined_image_sampler_sdfs.clone(),
                     ),
