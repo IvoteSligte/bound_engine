@@ -12,6 +12,10 @@ vulkano_shaders::shader! {
             ty: "compute",
             path: "shaders/lm_render.glsl",
         },
+        LmDenoise: {
+            ty: "compute",
+            path: "shaders/lm_denoise.glsl",
+        },
         LmStore: {
             ty: "compute",
             path: "shaders/lm_store.glsl",
@@ -53,6 +57,7 @@ pub(crate) struct Shaders {
     pub(crate) direct: Arc<ShaderModule>,
     pub(crate) lm_init: Arc<ShaderModule>,
     pub(crate) lm_render: Arc<ShaderModule>,
+    pub(crate) lm_denoise: Arc<ShaderModule>,
     pub(crate) lm_store: Arc<ShaderModule>,
 }
 
@@ -62,6 +67,7 @@ impl Shaders {
             direct: load_direct(device.clone()).unwrap(),
             lm_init: load_lm_init(device.clone()).unwrap(),
             lm_render: load_lm_render(device.clone()).unwrap(),
+            lm_denoise: load_lm_denoise(device.clone()).unwrap(),
             lm_store: load_lm_store(device.clone()).unwrap(),
         }
     }

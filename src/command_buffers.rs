@@ -162,6 +162,18 @@ impl PathtraceCommandBuffers {
             )
             .dispatch(dispatch_lm_render)
             .unwrap();
+
+        // lm_denoise
+        builder
+            .bind_pipeline_compute(pipelines.lm_denoise.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.lm_denoise.layout().clone(),
+                0,
+                descriptor_sets.lm_denoise.clone(),
+            )
+            .dispatch(dispatch_lm_render)
+            .unwrap();
         
         // lm_store
         builder

@@ -28,7 +28,7 @@ mod fences;
 mod images;
 mod instance;
 mod pipelines;
-mod ray_directions;
+mod random;
 mod scene;
 mod shaders;
 mod state;
@@ -163,8 +163,11 @@ fn main() {
 
         let lm_render_command_buffer = eh.next_lm_render_command_buffer();
 
-        eh.state.real_time_data.noiseDirection = ray_directions::VECTORS
-            [(eh.frame_counter % (ray_directions::VECTORS.len() as u64)) as usize];
+        eh.state.real_time_data.noiseDirection = random::RAY_DIRECTIONS
+            [(eh.frame_counter % (random::RAY_DIRECTIONS.len() as u64)) as usize];
+        eh.state.real_time_data.denoiseRotation = random::DENOISE_QUATERNIONS
+            [(eh.frame_counter % (random::DENOISE_QUATERNIONS.len() as u64)) as usize];
+
         *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
 
         let (image_index, suboptimal, image_future) =

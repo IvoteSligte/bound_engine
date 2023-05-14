@@ -18,6 +18,7 @@ pub(crate) struct DescriptorSets {
     pub(crate) direct: Arc<PersistentDescriptorSet>,
     pub(crate) lm_init: Arc<PersistentDescriptorSet>,
     pub(crate) lm_render: Arc<PersistentDescriptorSet>,
+    pub(crate) lm_denoise: Arc<PersistentDescriptorSet>,
     pub(crate) lm_store: Arc<PersistentDescriptorSet>,
 }
 
@@ -113,18 +114,33 @@ impl DescriptorSets {
         )
         .unwrap();
 
+        let lm_denoise = PersistentDescriptorSet::new(
+            &allocators.descriptor_set,
+            pipelines.lm_denoise.layout().set_layouts()[0].clone(),
+            [
+                WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
+                WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
+                WriteDescriptorSet::image_view_sampler_array(
+                    2,
+                    0,
+                    combined_image_sampler_colors.clone(),
+                ),
+                WriteDescriptorSet::buffer(3, buffers.lm_buffers.gpu.clone()),
+            ],
+        )
+        .unwrap();
+
         let lm_store = PersistentDescriptorSet::new(
             &allocators.descriptor_set,
             pipelines.lm_store.layout().set_layouts()[0].clone(),
             [
                 WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
                 WriteDescriptorSet::image_view_array(
-                    2,
+                    1,
                     0,
                     image_views.lightmap.colors_storage.clone(),
                 ),
-                WriteDescriptorSet::buffer(3, buffers.lm_buffers.gpu.clone()),
+                WriteDescriptorSet::buffer(2, buffers.lm_buffers.gpu.clone()),
             ],
         )
         .unwrap();
@@ -133,6 +149,7 @@ impl DescriptorSets {
             direct,
             lm_init,
             lm_render,
+            lm_denoise,
             lm_store,
         }
     }

@@ -130,6 +130,7 @@ pub(crate) fn get_real_time_buffer(
             previousPosition: Default::default(),
             lightmapOrigin: Default::default(),
             deltaLightmapOrigins: Default::default(),
+            denoiseRotation: Default::default(),
             noiseDirection: Default::default(),
         },
     )

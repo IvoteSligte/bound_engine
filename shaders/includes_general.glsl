@@ -98,3 +98,21 @@ ivec4 lmIndexAtPos(vec3 v, vec3 lmOrigin) {
 vec3 posAtLightmapIndex(ivec4 lmIndex, vec3 lmOrigin) {
     return (vec3(lmIndex.xyz - HALF_LM_SIZE) + 0.5) * LM_UNIT_SIZES[lmIndex.w] + lmOrigin;
 }
+
+const float MULTS[LM_COUNT] = float[](
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[0],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[1],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[2],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[3],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[4],
+    (1.0 / float(LM_SIZE)) / LM_UNIT_SIZES[5]
+);
+
+const float LAYER_COMPS[LM_COUNT] = float[](
+    float(LM_SIZE) * LM_UNIT_SIZES[0] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[1] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[2] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[3] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[4] * 0.5,
+    float(LM_SIZE) * LM_UNIT_SIZES[5] * 0.5
+);
