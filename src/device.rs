@@ -33,7 +33,8 @@ pub(crate) fn select_physical_device<'a>(
 
 pub(crate) fn create_device(
     physical_device: Arc<PhysicalDevice>,
-    device_extensions: DeviceExtensions,
+    extensions: DeviceExtensions,
+    features: Features,
     queue_family_index: u32,
 ) -> (Arc<Device>, Arc<Queue>) {
     let (device, mut queues) = Device::new(
@@ -43,7 +44,8 @@ pub(crate) fn create_device(
                 queue_family_index,
                 ..QueueCreateInfo::default()
             }],
-            enabled_extensions: device_extensions,
+            enabled_extensions: extensions,
+            enabled_features: features,
             ..Default::default()
         },
     )

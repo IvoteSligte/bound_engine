@@ -66,6 +66,7 @@ impl State {
         let (device, queue) = create_device(
             physical_device.clone(),
             device_extensions,
+            device_features,
             queue_family_index,
         );
 
