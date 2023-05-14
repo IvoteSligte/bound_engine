@@ -44,6 +44,7 @@ struct LmPoint {
     vec3 position;
     uint material;
     vec3 normal;
+    vec3 color;
 };
 
 struct SharedStruct {

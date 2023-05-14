@@ -1,5 +1,7 @@
 #version 460
 
+#extension GL_EXT_shader_atomic_float : enable
+
 #include "includes_general.glsl"
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
@@ -14,19 +16,13 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 noiseDirection;
 } rt;
 
-layout(binding = 1) uniform restrict readonly MutableData {
-    Material mats[MAX_MATERIALS];
-} buf;
+layout(binding = 1, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputColorImages;
 
-layout(binding = 2, rgba16) uniform restrict readonly image3D[LM_COUNT] lmInputColorImages;
-
-layout(binding = 3, rgba16) uniform restrict writeonly image3D[LM_COUNT] lmOutputColorImages;
-
-layout(binding = 4) buffer restrict LmPointBuffer {
+layout(binding = 2) buffer restrict LmPointBuffer {
     LmPoint points[LM_MAX_POINTS];
 } lmPointBuffer;
 
-layout(binding = 5) uniform sampler3D SDFImages[LM_COUNT];
+layout(binding = 3) uniform sampler3D SDFImages[LM_COUNT];
 
 #include "includes_march_ray.glsl"
 
@@ -46,14 +42,7 @@ void main() {
     ivec4 lmIndexSample = lmIndexAtPos(position, lmOrigin);
     vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb;
 
-    vec3 prevColor = imageLoad(lmInputColorImages[lmIndex.w], lmIndex.xyz).rgb;
-
-    float sampleCount = min(point.sampleCount + 1.0, 1024);
-    lmPointBuffer.points[gl_GlobalInvocationID.x].sampleCount = sampleCount;
-
-    Material material = buf.mats[point.material];
-    color = color * material.reflectance + material.emittance;
-    color = mix(prevColor, color, 1.0 / sampleCount);
-
-    imageStore(lmOutputColorImages[lmIndex.w], lmIndex.xyz, vec4(color, 1.0));
+    atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].color.x, color.x);
+    atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].color.y, color.y);
+    atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].color.z, color.z);
 }

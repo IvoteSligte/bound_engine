@@ -78,15 +78,15 @@ pub(crate) fn create_color_image(
 
 #[derive(Clone)]
 pub(crate) struct LightmapImages {
-    pub(crate) colors: Vec<Vec<Arc<CustomImage>>>,
+    pub(crate) colors: Vec<Arc<CustomImage>>,
     pub(crate) staging_color: Arc<CustomImage>,
     pub(crate) sdfs: Vec<Arc<CustomImage>>,
 }
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
-    pub(crate) colors_storage: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
-    pub(crate) colors_sampled: Vec<Vec<Arc<dyn ImageViewAbstract>>>,
+    pub(crate) colors_storage: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) colors_sampled: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) sdfs_storage: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) sdfs_sampled: Vec<Arc<dyn ImageViewAbstract>>,
 }
@@ -111,8 +111,7 @@ impl LightmapImages {
             .unwrap()
         };
 
-        let colors = (0..2)
-            .map(|_| {
+        let colors = 
                 (0..LM_COUNT)
                     .map(|_| {
                         create_storage_image(
@@ -120,9 +119,7 @@ impl LightmapImages {
                             Format::R16G16B16A16_UNORM,
                         )
                     })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+                    .collect::<Vec<_>>();
 
         let staging_color = create_storage_image(
             ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
@@ -162,18 +159,10 @@ impl LightmapImages {
                 .collect()
         };
 
-        let colors_storage = self
-            .colors
-            .iter()
-            .map(|imgs| views(imgs, ImageUsage::STORAGE))
-            .collect();
+        let colors_storage = views(&self.colors,  ImageUsage::STORAGE);
         let sdfs_storage = views(&self.sdfs, ImageUsage::STORAGE);
 
-        let colors_sampled = self
-            .colors
-            .iter()
-            .map(|imgs| views(imgs, ImageUsage::SAMPLED))
-            .collect();
+        let colors_sampled = views(&self.colors, ImageUsage::SAMPLED);
         let sdfs_sampled = views(&self.sdfs, ImageUsage::SAMPLED);
 
         LightmapImageViews {

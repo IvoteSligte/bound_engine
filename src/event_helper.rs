@@ -74,15 +74,11 @@ impl Data {
                 // TODO: handle points within the last 64 that are not supposed to be calculated
                 let dispatch_lm_render = [(point_count + 64 - 1) / 64, 1, 1];
 
-                let descriptor_unit = self.state.descriptor_sets.units
-                    [(self.frame_counter % 2) as usize]
-                    .clone();
-
                 PathtraceCommandBuffers::create_lm_render_command_buffer(
                     self.state.allocators.clone(),
                     self.state.queue.clone(),
                     self.state.pipelines.clone(),
-                    descriptor_unit.clone(),
+                    self.state.descriptor_sets.clone(),
                     PathtraceCommandBuffers::calculate_direct_dispatches(self.window.clone()),
                     dispatch_lm_render,
                 )

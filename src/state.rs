@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use vulkano::{
-    device::{Device, DeviceExtensions, Queue},
+    device::{Device, DeviceExtensions, Queue, Features},
     instance::debug::{
         DebugUtilsMessageSeverity, DebugUtilsMessageType, DebugUtilsMessenger,
         DebugUtilsMessengerCreateInfo,
@@ -51,11 +51,17 @@ impl State {
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
+            ext_shader_atomic_float: true,
             ..DeviceExtensions::empty()
         };
 
+        let device_features = Features {
+            shader_buffer_float32_atomic_add: true,
+            ..Features::empty()
+        };
+
         let (physical_device, queue_family_index) =
-            select_physical_device(instance.clone(), &surface, &device_extensions);
+            select_physical_device(instance.clone(), &surface, &device_extensions, &device_features);
 
         let (device, queue) = create_device(
             physical_device.clone(),

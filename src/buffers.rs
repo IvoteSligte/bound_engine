@@ -231,6 +231,7 @@ impl LmBuffers {
                 material: Default::default(),
                 position: Default::default(),
                 normal: Default::default(),
+                color: Default::default(),
             })
             .collect::<Vec<_>>();
 

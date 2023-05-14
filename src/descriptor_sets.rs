@@ -15,14 +15,10 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub(crate) struct DescriptorSets {
-    pub(crate) lm_init: Arc<PersistentDescriptorSet>,
-    pub(crate) units: Vec<DescriptorUnit>,
-}
-
-#[derive(Clone)]
-pub(crate) struct DescriptorUnit {
     pub(crate) direct: Arc<PersistentDescriptorSet>,
+    pub(crate) lm_init: Arc<PersistentDescriptorSet>,
     pub(crate) lm_render: Arc<PersistentDescriptorSet>,
+    pub(crate) lm_store: Arc<PersistentDescriptorSet>,
 }
 
 impl DescriptorSets {
@@ -64,61 +60,65 @@ impl DescriptorSets {
             .colors_sampled
             .iter()
             .cloned()
-            .map(|imgs| imgs.into_iter().zip(repeat(images.sampler())))
+            .zip(repeat(images.sampler()))
             .collect::<Vec<_>>();
 
-        let mut units = vec![];
+        let direct = PersistentDescriptorSet::new(
+            &allocators.descriptor_set,
+            pipelines.direct.layout().set_layouts()[0].clone(),
+            [
+                WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
+                WriteDescriptorSet::image_view(1, image_views.color.clone()),
+                WriteDescriptorSet::image_view_sampler_array(
+                    2,
+                    0,
+                    combined_image_sampler_colors.clone(),
+                ),
+                WriteDescriptorSet::image_view_sampler_array(
+                    3,
+                    0,
+                    combined_image_sampler_sdfs.clone(),
+                ),
+            ],
+        )
+        .unwrap();
 
-        for i in 0..2 {
-            let direct = PersistentDescriptorSet::new(
-                &allocators.descriptor_set,
-                pipelines.direct.layout().set_layouts()[0].clone(),
-                [
-                    WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                    WriteDescriptorSet::image_view(1, image_views.color.clone()),
-                    WriteDescriptorSet::image_view_sampler_array(
-                        2,
-                        0,
-                        combined_image_sampler_colors[i].clone(),
-                    ),
-                    WriteDescriptorSet::image_view_sampler_array(
-                        3,
-                        0,
-                        combined_image_sampler_sdfs.clone(),
-                    ),
-                ],
-            )
-            .unwrap();
+        let lm_render = PersistentDescriptorSet::new(
+            &allocators.descriptor_set,
+            pipelines.lm_render.layout().set_layouts()[0].clone(),
+            [
+                WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
+                WriteDescriptorSet::image_view_array(
+                    1,
+                    0,
+                    image_views.lightmap.colors_storage.clone(),
+                ),
+                WriteDescriptorSet::buffer(2, buffers.lm_buffers.gpu.clone()),
+                WriteDescriptorSet::image_view_sampler_array(
+                    3,
+                    0,
+                    combined_image_sampler_sdfs.clone(),
+                ),
+            ],
+        )
+        .unwrap();
 
-            let lm_render = PersistentDescriptorSet::new(
-                &allocators.descriptor_set,
-                pipelines.lm_render.layout().set_layouts()[0].clone(),
-                [
-                    WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                    WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
-                    WriteDescriptorSet::image_view_array(
-                        2,
-                        0,
-                        image_views.lightmap.colors_storage[i].clone(),
-                    ), // writes to
-                    WriteDescriptorSet::image_view_array(
-                        3,
-                        0,
-                        image_views.lightmap.colors_storage[(i+1) % 2].clone(),
-                    ), // writes to
-                    WriteDescriptorSet::buffer(4, buffers.lm_buffers.gpu.clone()), // reads from
-                    WriteDescriptorSet::image_view_sampler_array(
-                        5,
-                        0,
-                        combined_image_sampler_sdfs.clone(),
-                    ),
-                ],
-            )
-            .unwrap();
+        let lm_store = PersistentDescriptorSet::new(
+            &allocators.descriptor_set,
+            pipelines.lm_store.layout().set_layouts()[0].clone(),
+            [
+                WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
+                WriteDescriptorSet::buffer(1, buffers.mutable.clone()),
+                WriteDescriptorSet::image_view_array(
+                    2,
+                    0,
+                    image_views.lightmap.colors_storage.clone(),
+                ),
+                WriteDescriptorSet::buffer(3, buffers.lm_buffers.gpu.clone()),
+            ],
+        )
+        .unwrap();
 
-            units.push(DescriptorUnit { direct, lm_render });
-        }
-
-        DescriptorSets { lm_init, units }
+        DescriptorSets { direct, lm_init, lm_render, lm_store }
     }
 }

@@ -77,7 +77,8 @@ void main() {
             0,
             pointPosition,
             closestObj.material,
-            pointNormal
+            pointNormal,
+            vec3(0.0)
         );
     }
 

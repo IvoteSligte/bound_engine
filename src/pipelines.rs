@@ -33,6 +33,7 @@ pub(crate) struct Pipelines {
     pub(crate) direct: Arc<ComputePipeline>,
     pub(crate) lm_init: Arc<ComputePipeline>,
     pub(crate) lm_render: Arc<ComputePipeline>,
+    pub(crate) lm_store: Arc<ComputePipeline>,
 }
 
 impl Pipelines {
@@ -52,11 +53,14 @@ impl Pipelines {
         let lm_init = create_compute_pipeline(device.clone(), shaders.lm_init.clone(), &());
 
         let lm_render = create_compute_pipeline(device.clone(), shaders.lm_render.clone(), &());
-
+        
+        let lm_store = create_compute_pipeline(device.clone(), shaders.lm_store.clone(), &());
+        
         Self {
             direct,
             lm_init,
             lm_render,
+            lm_store,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use vulkano::{
     device::{
         physical::{PhysicalDevice, PhysicalDeviceType},
-        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
+        Device, DeviceCreateInfo, DeviceExtensions, Features, Queue, QueueCreateInfo, QueueFlags,
     },
     instance::Instance,
     swapchain::Surface,
@@ -12,13 +12,15 @@ use vulkano::{
 pub(crate) fn select_physical_device<'a>(
     instance: Arc<Instance>,
     surface: &'a Surface,
-    device_extensions: &'a DeviceExtensions,
+    extensions: &'a DeviceExtensions,
+    features: &'a Features,
 ) -> (Arc<PhysicalDevice>, u32) {
     instance
         .enumerate_physical_devices()
         .unwrap()
-        .filter(|p| p.supported_extensions().contains(device_extensions))
         .filter(|p| p.properties().device_type == PhysicalDeviceType::DiscreteGpu)
+        .filter(|p| p.supported_extensions().contains(extensions))
+        .filter(|p| p.supported_features().contains(features))
         .find_map(|p| {
             p.queue_family_properties()
                 .iter()

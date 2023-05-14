@@ -1,26 +1,20 @@
 use std::sync::Arc;
 
-use glam::{IVec3, UVec3};
 use vulkano::{
     command_buffer::{
-        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, CopyImageInfo, ImageCopy,
+        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage,
         PrimaryAutoCommandBuffer,
     },
     descriptor_set::DescriptorSetsCollection,
     device::Queue,
-    image::{ImageAccess, ImageSubresourceLayers},
     pipeline::{Pipeline, PipelineBindPoint},
     sampler::Filter,
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    allocators::Allocators,
-    descriptor_sets::{DescriptorSets, DescriptorUnit},
-    images::Images,
-    pipelines::Pipelines,
-    shaders::LM_SIZE,
-    LM_COUNT,
+    allocators::Allocators, descriptor_sets::DescriptorSets, images::Images, pipelines::Pipelines,
+    shaders::LM_SIZE, LM_COUNT,
 };
 
 #[derive(Clone)]
@@ -135,7 +129,7 @@ impl PathtraceCommandBuffers {
         PathtraceCommandBuffers::extend_with_direct(
             &mut builder,
             pipelines.clone(),
-            descriptor_sets.units[0].direct.clone(),
+            descriptor_sets.direct.clone(),
             dispatch_direct,
         );
 
@@ -146,7 +140,7 @@ impl PathtraceCommandBuffers {
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
-        descriptor_unit: DescriptorUnit,
+        descriptor_sets: DescriptorSets,
         dispatch_direct: [u32; 3],
         dispatch_lm_render: [u32; 3],
     ) -> Arc<PrimaryAutoCommandBuffer> {
@@ -157,14 +151,26 @@ impl PathtraceCommandBuffers {
         )
         .unwrap();
 
-        // lm_primary
+        // lm_render
         builder
             .bind_pipeline_compute(pipelines.lm_render.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
                 pipelines.lm_render.layout().clone(),
                 0,
-                descriptor_unit.lm_render.clone(),
+                descriptor_sets.lm_render.clone(),
+            )
+            .dispatch(dispatch_lm_render)
+            .unwrap();
+        
+        // lm_store
+        builder
+            .bind_pipeline_compute(pipelines.lm_store.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.lm_store.layout().clone(),
+                0,
+                descriptor_sets.lm_store.clone(),
             )
             .dispatch(dispatch_lm_render)
             .unwrap();
@@ -173,7 +179,7 @@ impl PathtraceCommandBuffers {
         PathtraceCommandBuffers::extend_with_direct(
             &mut builder,
             pipelines,
-            descriptor_unit.direct.clone(),
+            descriptor_sets.direct.clone(),
             dispatch_direct,
         );
 
@@ -233,6 +239,7 @@ pub(crate) fn create_swapchain_command_buffers(
         .collect()
 }
 
+/*
 pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
@@ -329,3 +336,4 @@ pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
 
     Arc::new(builder.build().unwrap())
 }
+*/
