@@ -232,6 +232,7 @@ impl LmBuffers {
                 position: Default::default(),
                 normal: Default::default(),
                 color: Default::default(),
+                frameSamples: Default::default(),
             })
             .collect::<Vec<_>>();
 

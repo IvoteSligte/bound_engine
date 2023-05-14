@@ -81,12 +81,14 @@ pub(crate) struct LightmapImages {
     pub(crate) colors: Vec<Arc<CustomImage>>,
     pub(crate) staging_color: Arc<CustomImage>,
     pub(crate) sdfs: Vec<Arc<CustomImage>>,
+    pub(crate) point_index: Vec<Arc<CustomImage>>,
 }
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
     pub(crate) colors_storage: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) colors_sampled: Vec<Arc<dyn ImageViewAbstract>>,
+    pub(crate) point_index_storage: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) sdfs_storage: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) sdfs_sampled: Vec<Arc<dyn ImageViewAbstract>>,
 }
@@ -136,10 +138,20 @@ impl LightmapImages {
             })
             .collect::<Vec<_>>();
 
+        let point_index = (0..LM_COUNT)
+        .map(|_| {
+            create_storage_image(
+                ImageUsage::empty(),
+                Format::R32_UINT,
+            )
+        })
+        .collect::<Vec<_>>();
+
         Self {
             colors,
             staging_color,
             sdfs,
+            point_index,
         }
     }
 
@@ -161,6 +173,7 @@ impl LightmapImages {
 
         let colors_storage = views(&self.colors,  ImageUsage::STORAGE);
         let sdfs_storage = views(&self.sdfs, ImageUsage::STORAGE);
+        let point_index_storage = views(&self.point_index, ImageUsage::STORAGE);
 
         let colors_sampled = views(&self.colors, ImageUsage::SAMPLED);
         let sdfs_sampled = views(&self.sdfs, ImageUsage::SAMPLED);
@@ -170,6 +183,7 @@ impl LightmapImages {
             colors_sampled,
             sdfs_storage,
             sdfs_sampled,
+            point_index_storage,
         }
     }
 }

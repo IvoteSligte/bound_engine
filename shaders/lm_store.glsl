@@ -31,9 +31,9 @@ void main() {
     ivec4 lmIndex = lmIndexAtPos(point.position, lmOrigin);
 
     vec3 prevColor = imageLoad(lmColorImages[lmIndex.w], lmIndex.xyz).rgb;
-    vec3 color = point.color;
+    vec3 color = point.color / float(point.frameSamples);
 
-    float sampleCount = min(point.sampleCount + 1.0, 1024);
+    float sampleCount = min(point.sampleCount + 1.0, 1024.0);
 
     Material material = buf.mats[point.material];
     color = color * material.reflectance + material.emittance;
@@ -43,4 +43,5 @@ void main() {
 
     lmPointBuffer.points[gl_GlobalInvocationID.x].sampleCount = sampleCount;
     lmPointBuffer.points[gl_GlobalInvocationID.x].color = vec3(0.0);
+    lmPointBuffer.points[gl_GlobalInvocationID.x].frameSamples = 0;
 }
