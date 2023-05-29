@@ -9,7 +9,9 @@ bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin, float threshold, uint sam
         pos += dir * dist;
 
         vec3 idx = pos - lmOrigin; // TODO: lmOrigin varying between layers
-        bool increaseLayer = maximum(abs(idx)) > LAYER_COMPS[lmLayer];
+        bool outOfLayer = maximum(abs(idx)) > LAYER_COMPS[lmLayer];
+        bool coneTooBig = threshold * totalDist > 0.5 * LM_UNIT_SIZES[lmLayer];
+        bool increaseLayer = outOfLayer || coneTooBig;
         lmLayer = increaseLayer ? lmLayer + 1 : lmLayer;
 
         float mult = MULTS[lmLayer];
