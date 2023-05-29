@@ -11,7 +11,7 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 previousPosition;
     ivec3 lightmapOrigin; // TODO: different origin per layer
     ivec4 deltaLightmapOrigins[LM_COUNT];
-    vec4 denoiseRotation; // FIXME: update this CPU-side
+    vec4 denoiseRotation;
     vec3 noiseDirection;
 } rt;
 
@@ -52,7 +52,6 @@ void main() {
     float sampleCount = min(point.sampleCount + 1.0, 1024.0);
 
     Material material = buf.mats[point.material];
-    color /= float(point.frameSamples);
     color = color * material.reflectance + material.emittance;
     color = mix(prevColor, color, 1.0 / sampleCount);
 
@@ -63,5 +62,4 @@ void main() {
 
     lmPointBuffer.points[gl_GlobalInvocationID.x].sampleCount = sampleCount;
     lmPointBuffer.points[gl_GlobalInvocationID.x].color = color;
-    lmPointBuffer.points[gl_GlobalInvocationID.x].frameSamples = 0;
 }

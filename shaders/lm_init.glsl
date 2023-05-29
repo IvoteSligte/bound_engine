@@ -29,8 +29,6 @@ layout(binding = 3) buffer restrict LmCounter {
 
 layout(binding = 4, r16f) uniform restrict writeonly image3D SDFImages[LM_COUNT];
 
-layout(binding = 5, r32ui) uniform restrict writeonly uimage3D lmPointIndexImages[LM_COUNT];
-
 const float SQRT_2 = 1.41421356;
 
 shared Object SharedObjects[MAX_OBJECTS];
@@ -75,19 +73,15 @@ void main() {
 
     bool isPointInVoxel = LM_INDEX.xyz == lmIndexAtPos(pointPosition, rt.lightmapOrigin).xyz;
     if (isPointInVoxel) {
-        uint index = min(atomicAdd(lmCounter.counter, 1), LM_MAX_POINTS - 1); // TODO: better handle index being greater than LM_MAX_POINTS - 1
+        uint index = min(atomicAdd(lmCounter.counter, 1), LM_MAX_POINTS - 1); // TODO: handle index being greater than LM_MAX_POINTS - 1 better
         lmPointBuffer.points[index] = LmPoint(
             0,
             pointPosition,
             closestObj.material,
             pointNormal,
-            vec3(0.0),
-            0
+            vec3(0.0)
         );
-
-        imageStore(lmPointIndexImages[LM_INDEX.w], LM_INDEX.xyz, uvec4(index));
     }
 
     imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
-    
 }

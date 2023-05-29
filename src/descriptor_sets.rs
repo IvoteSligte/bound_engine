@@ -52,11 +52,6 @@ impl DescriptorSets {
                     0,
                     image_views.lightmap.sdfs_storage.clone(),
                 ),
-                WriteDescriptorSet::image_view_array(
-                    5,
-                    0,
-                    image_views.lightmap.point_index_storage.clone(),
-                ),
             ],
         )
         .unwrap();
@@ -104,11 +99,6 @@ impl DescriptorSets {
                     3,
                     0,
                     combined_image_sampler_sdfs.clone(),
-                ),
-                WriteDescriptorSet::image_view_array(
-                    4,
-                    0,
-                    image_views.lightmap.point_index_storage.clone(),
                 ),
             ],
         )

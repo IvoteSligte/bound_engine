@@ -25,8 +25,6 @@ layout(binding = 2) buffer restrict LmPointBuffer {
 
 layout(binding = 3) uniform sampler3D SDFImages[LM_COUNT];
 
-layout(binding = 4, r32ui) uniform restrict readonly uimage3D lmPointIndexImages[LM_COUNT];
-
 #include "includes_march_ray.glsl"
 
 void main() {
@@ -46,15 +44,6 @@ void main() {
 
     ivec4 lmIndexSample = lmIndexAtPos(position, lmOrigin);
     vec3 color = imageLoad(lmInputColorImages[lmIndexSample.w], lmIndexSample.xyz).rgb;
-    uint pointIndexSample = imageLoad(lmPointIndexImages[lmIndexSample.w], lmIndexSample.xyz).x;
 
-    atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].color.x, color.x);
-    atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].color.y, color.y);
-    atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].color.z, color.z);
-    atomicAdd(lmPointBuffer.points[gl_GlobalInvocationID.x].frameSamples, 1);
-
-    atomicAdd(lmPointBuffer.points[pointIndexSample].color.x, prevColor.x); // INFO: barely has any effect, probably bugged.
-    atomicAdd(lmPointBuffer.points[pointIndexSample].color.y, prevColor.y);
-    atomicAdd(lmPointBuffer.points[pointIndexSample].color.z, prevColor.z);
-    atomicAdd(lmPointBuffer.points[pointIndexSample].frameSamples, 1);
+    lmPointBuffer.points[gl_GlobalInvocationID.x].color = color;
 }

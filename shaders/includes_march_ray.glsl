@@ -1,7 +1,6 @@
 bool marchRay(inout vec3 pos, vec3 dir, vec3 lmOrigin, float threshold, uint samples, inout float totalDist) {
     float dist = totalDist;
 
-    float inv_threshold = 1.0 / threshold;
     vec3 dPos = dir * threshold;
 
     int lmLayer = lmLayerAtPos(pos, lmOrigin);
