@@ -10,7 +10,10 @@ pub(crate) fn create_instance() -> Arc<Instance> {
     let required_extensions = vulkano_win::required_extensions(&library);
 
     #[cfg(debug_assertions)]
-    let required_extensions = InstanceExtensions { ext_debug_utils: true, ..required_extensions };
+    let required_extensions = InstanceExtensions {
+        ext_debug_utils: true,
+        ..required_extensions
+    };
 
     Instance::new(
         library,

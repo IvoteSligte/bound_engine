@@ -11,22 +11,19 @@ const vec2 RATIO = vec2(RATIO_X, RATIO_Y);
 
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
-    vec4 previousRotation;
     vec3 position;
-    vec3 previousPosition;
     ivec3 lightmapOrigin; // TODO: different origin per layer
-    ivec4 deltaLightmapOrigins[LM_COUNT];
-    vec4 denoiseRotation;
-    vec3 noiseDirection;
+    ivec4 deltaLightmapOrigins[LM_LAYERS];
 } rt;
 
 layout(binding = 1, rgba16) uniform restrict writeonly image2D colorImage;
 
-layout(binding = 2) uniform sampler3D[LM_COUNT] lmInputColorTextures;
+layout(binding = 2) uniform sampler3D SDFImages[LM_LAYERS];
 
-layout(binding = 3) uniform sampler3D SDFImages[LM_COUNT];
-
-#include "includes_march_ray.glsl"
+layout(binding = 3) buffer readonly RadianceBuffer {
+    Radiance radiances[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
+    Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
+} cache;
 
 const float NEAR_CLIPPING = 1.0;
 
@@ -47,7 +44,7 @@ void main() {
 
     vec3 dir = rotateWithQuat(rotation, DIRECTION);
     float totalDist = NEAR_CLIPPING;
-    bool isHit = marchRay(position, dir, lmOrigin, 1e-3, 128, totalDist);
+    bool isHit = marchRay(SDFImages, position, dir, lmOrigin, 1e-3, 128, totalDist);
 
     if (!isHit) {
         vec3 color = vec3(dot(dir, vec3(0.0, 0.0, 1.0)) * 0.5 + 0.5);
@@ -56,12 +53,14 @@ void main() {
         return;
     }
 
-    int lmLayer = lmLayerAtPos(position, lmOrigin); // TODO: lmOrigin varying between layers
-    float mult = MULTS[lmLayer];
-    vec3 texIdx = (position - lmOrigin) * mult + 0.5; // TODO: lmOrigin varying between layers
+    uvec4 radIndex = radIndexAtPos(position);
 
-    vec4 color = texture(lmInputColorTextures[lmLayer], texIdx);
-    color.rgb /= color.w;
+    vec3 color = vec3(0.0); // TODO: handle light reflection in `radiance.glsl`
+    for (uint i = 0; i < 64; i++) {
+        vec4 radiance = unpackUnorm4x8(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].packed[i]);
+        color += radiance.rgb / radiance.w;
+    }
+    color *= (1.0 / 64.0);
 
-    imageStore(colorImage, IPOS, vec4(color.rgb, 0.0));
+    imageStore(colorImage, IPOS, vec4(color, 0.0));
 }

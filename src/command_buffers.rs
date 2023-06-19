@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use vulkano::{
     command_buffer::{
-        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage,
-        PrimaryAutoCommandBuffer,
+        AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, PrimaryAutoCommandBuffer,
     },
     descriptor_set::DescriptorSetsCollection,
     device::Queue,
@@ -13,8 +12,12 @@ use vulkano::{
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    allocators::Allocators, descriptor_sets::DescriptorSets, images::Images, pipelines::Pipelines,
-    shaders::LM_SIZE, LM_COUNT,
+    allocators::Allocators,
+    descriptor_sets::DescriptorSets,
+    images::Images,
+    pipelines::Pipelines,
+    shaders::{LM_SIZE, RADIANCE_SIZE},
+    LM_LAYERS,
 };
 
 #[derive(Clone)]
@@ -52,14 +55,13 @@ impl CommandBuffers {
 
 #[derive(Clone, Debug)]
 pub(crate) enum LmPathtraceState {
-    Init,
-    InitToRender,
-    Render { point_count: u32 },
+    Sdf,
+    Render,
 }
 
 #[derive(Clone)]
 pub(crate) struct PathtraceCommandBuffers {
-    pub(crate) lm_init: Arc<PrimaryAutoCommandBuffer>,
+    pub(crate) sdf: Arc<PrimaryAutoCommandBuffer>,
     pub(crate) state: LmPathtraceState,
 }
 
@@ -75,7 +77,7 @@ impl PathtraceCommandBuffers {
     }
 
     pub(crate) fn restart(&mut self) {
-        self.state = LmPathtraceState::Init;
+        self.state = LmPathtraceState::Sdf;
     }
 
     pub(crate) fn extend_with_direct<S>(
@@ -98,14 +100,14 @@ impl PathtraceCommandBuffers {
             .unwrap();
     }
 
-    fn create_lm_init_command_buffer(
+    fn create_sdf_command_buffer(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
         dispatch_direct: [u32; 3],
     ) -> Arc<PrimaryAutoCommandBuffer> {
-        let dispatch_lm_init = [LM_SIZE / 4 * LM_COUNT, LM_SIZE / 4, LM_SIZE / 4];
+        let dispatch_sdf = [LM_SIZE / 4 * LM_LAYERS, LM_SIZE / 4, LM_SIZE / 4];
 
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
@@ -115,14 +117,14 @@ impl PathtraceCommandBuffers {
         .unwrap();
 
         builder
-            .bind_pipeline_compute(pipelines.lm_init.clone())
+            .bind_pipeline_compute(pipelines.sdf.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
-                pipelines.lm_init.layout().clone(),
+                pipelines.sdf.layout().clone(),
                 0,
-                descriptor_sets.lm_init.clone(),
+                descriptor_sets.sdf.clone(),
             )
-            .dispatch(dispatch_lm_init)
+            .dispatch(dispatch_sdf)
             .unwrap();
 
         // direct
@@ -136,14 +138,16 @@ impl PathtraceCommandBuffers {
         Arc::new(builder.build().unwrap())
     }
 
-    pub(crate) fn create_lm_render_command_buffer(
+    pub(crate) fn create_radiance_command_buffer(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
         dispatch_direct: [u32; 3],
-        dispatch_lm_render: [u32; 3],
     ) -> Arc<PrimaryAutoCommandBuffer> {
+        let dispatch_radiance_precalc = [RADIANCE_SIZE / 4 * LM_LAYERS, RADIANCE_SIZE / 4, RADIANCE_SIZE / 4];
+        let dispatch_radiance = [RADIANCE_SIZE * LM_LAYERS, RADIANCE_SIZE, RADIANCE_SIZE];
+
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
             queue.queue_family_index(),
@@ -151,40 +155,28 @@ impl PathtraceCommandBuffers {
         )
         .unwrap();
 
-        // lm_render
+        // radiance precalc
         builder
-            .bind_pipeline_compute(pipelines.lm_render.clone())
+            .bind_pipeline_compute(pipelines.radiance_precalc.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
-                pipelines.lm_render.layout().clone(),
+                pipelines.radiance_precalc.layout().clone(),
                 0,
-                descriptor_sets.lm_render.clone(),
+                descriptor_sets.radiance_precalc.clone(),
             )
-            .dispatch(dispatch_lm_render)
+            .dispatch(dispatch_radiance_precalc)
             .unwrap();
 
-        // lm_denoise
+        // radiance
         builder
-            .bind_pipeline_compute(pipelines.lm_denoise.clone())
+            .bind_pipeline_compute(pipelines.radiance.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
-                pipelines.lm_denoise.layout().clone(),
+                pipelines.radiance.layout().clone(),
                 0,
-                descriptor_sets.lm_denoise.clone(),
+                descriptor_sets.radiance.clone(),
             )
-            .dispatch(dispatch_lm_render)
-            .unwrap();
-        
-        // lm_store
-        builder
-            .bind_pipeline_compute(pipelines.lm_store.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.lm_store.layout().clone(),
-                0,
-                descriptor_sets.lm_store.clone(),
-            )
-            .dispatch(dispatch_lm_render)
+            .dispatch(dispatch_radiance)
             .unwrap();
 
         // direct
@@ -207,7 +199,7 @@ impl PathtraceCommandBuffers {
     ) -> PathtraceCommandBuffers {
         let dispatch_direct = PathtraceCommandBuffers::calculate_direct_dispatches(window);
 
-        let lm_init = Self::create_lm_init_command_buffer(
+        let sdf = Self::create_sdf_command_buffer(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
@@ -216,8 +208,8 @@ impl PathtraceCommandBuffers {
         );
 
         PathtraceCommandBuffers {
-            lm_init,
-            state: LmPathtraceState::Init,
+            sdf,
+            state: LmPathtraceState::Sdf,
         }
     }
 }
@@ -250,102 +242,3 @@ pub(crate) fn create_swapchain_command_buffers(
         })
         .collect()
 }
-
-/*
-pub(crate) fn create_dynamic_move_lightmaps_command_buffer(
-    allocators: Arc<Allocators>,
-    queue: Arc<Queue>,
-    images: Images,
-    movement: IVec3,
-) -> Arc<PrimaryAutoCommandBuffer> {
-    let mut builder = AutoCommandBufferBuilder::primary(
-        &allocators.command_buffer,
-        queue.queue_family_index(),
-        CommandBufferUsage::SimultaneousUse,
-    )
-    .unwrap();
-
-    // TODO: check validity
-    const LIGHTMAP_SIZE_I: i32 = LM_SIZE as i32;
-
-    const SMALLEST_UNIT: f32 = 0.5;
-    // TODO: check if units_moved is less than LIGHTMAP_SIZE cause otherwise this is useless
-    let units_moved_per_layer = (0..LM_COUNT)
-        .map(|i| SMALLEST_UNIT * 2.0f32.powi(i as i32))
-        .map(|unit_size| movement.as_vec3() / unit_size)
-        .map(|units_moved| units_moved.as_ivec3())
-        .collect::<Vec<_>>();
-
-    let (src_offset_per_layer, dst_offset_per_layer): (Vec<UVec3>, Vec<UVec3>) =
-        units_moved_per_layer
-            .iter()
-            .map(|&units_moved| {
-                let (src_offset, dst_offset): (Vec<_>, Vec<_>) = units_moved
-                    .to_array()
-                    .into_iter()
-                    .map(|n| {
-                        if n.is_positive() {
-                            (n.abs(), 0)
-                        } else {
-                            (0, n.abs())
-                        }
-                    })
-                    .unzip();
-                (
-                    IVec3::from_slice(&src_offset),
-                    IVec3::from_slice(&dst_offset),
-                )
-            })
-            .map(|(a, b)| (a.as_uvec3(), b.as_uvec3()))
-            .unzip();
-
-    // TODO: check if all(extent > 0) cause otherwise this is useless as well
-    let extent_per_layer = units_moved_per_layer
-        .iter()
-        .map(|&units_moved| LIGHTMAP_SIZE_I - units_moved.abs())
-        .map(|v| v.as_uvec3())
-        .collect::<Vec<_>>();
-
-    images
-        .lightmap
-        .colors
-        .clone()
-        .into_iter()
-        .for_each(|lightmaps| {
-            for i in 0..(LM_COUNT as usize) {
-                builder
-                    .copy_image(CopyImageInfo {
-                        regions: [ImageCopy {
-                            src_subresource: ImageSubresourceLayers::from_parameters(
-                                images.lightmap.staging_color.format(),
-                                1,
-                            ),
-                            dst_subresource: ImageSubresourceLayers::from_parameters(
-                                lightmaps[i].format(),
-                                1,
-                            ),
-                            src_offset: src_offset_per_layer[i].to_array(),
-                            dst_offset: dst_offset_per_layer[i].to_array(),
-                            extent: extent_per_layer[i].to_array(),
-                            ..ImageCopy::default()
-                        }]
-                        .into(),
-                        ..CopyImageInfo::images(
-                            lightmaps[i].clone(),
-                            images.lightmap.staging_color.clone(),
-                        )
-                    })
-                    .unwrap()
-                    .copy_image(CopyImageInfo::images(
-                        images.lightmap.staging_color.clone(),
-                        lightmaps[i].clone(),
-                    ))
-                    .unwrap();
-            }
-        });
-
-    // FIXME: moving the `lm_buffer` !!!
-
-    Arc::new(builder.build().unwrap())
-}
-*/

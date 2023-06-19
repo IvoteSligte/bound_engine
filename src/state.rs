@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use vulkano::{
-    device::{Device, DeviceExtensions, Queue, Features},
+    device::{Device, DeviceExtensions, Features, Queue},
     instance::debug::{
         DebugUtilsMessageSeverity, DebugUtilsMessageType, DebugUtilsMessenger,
         DebugUtilsMessengerCreateInfo,
@@ -60,8 +60,12 @@ impl State {
             ..Features::empty()
         };
 
-        let (physical_device, queue_family_index) =
-            select_physical_device(instance.clone(), &surface, &device_extensions, &device_features);
+        let (physical_device, queue_family_index) = select_physical_device(
+            instance.clone(),
+            &surface,
+            &device_extensions,
+            &device_features,
+        );
 
         let (device, queue) = create_device(
             physical_device.clone(),
@@ -122,20 +126,17 @@ impl State {
 
         let real_time_data = shaders::RealTimeBuffer {
             rotation: Default::default(),
-            previousRotation: Default::default(),
             position: Default::default(),
-            previousPosition: Default::default(),
             lightmapOrigin: Default::default(),
             deltaLightmapOrigins: Default::default(),
-            denoiseRotation: Default::default(),
-            noiseDirection: Default::default(),
         };
 
         let fences = Fences::new(images.swapchain.len());
 
         #[cfg(debug_assertions)]
         let debugger = unsafe {
-            DebugUtilsMessenger::new( // TODO: add message_type and message_severity marker to print output
+            DebugUtilsMessenger::new(
+                // TODO: add message_type and message_severity marker to print output
                 instance,
                 DebugUtilsMessengerCreateInfo {
                     message_severity: DebugUtilsMessageSeverity::INFO

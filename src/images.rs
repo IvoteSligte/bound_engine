@@ -12,7 +12,7 @@ use winit::window::Window;
 
 use crate::{
     allocators::Allocators,
-    shaders::{LM_COUNT, LM_SIZE},
+    shaders::{LM_LAYERS, LM_SIZE},
 };
 
 use self::image::CustomImage;
@@ -78,15 +78,11 @@ pub(crate) fn create_color_image(
 
 #[derive(Clone)]
 pub(crate) struct LightmapImages {
-    pub(crate) colors: Vec<Arc<CustomImage>>,
-    pub(crate) staging_color: Arc<CustomImage>,
     pub(crate) sdfs: Vec<Arc<CustomImage>>,
 }
 
 #[derive(Clone)]
 pub(crate) struct LightmapImageViews {
-    pub(crate) colors_storage: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) colors_sampled: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) sdfs_storage: Vec<Arc<dyn ImageViewAbstract>>,
     pub(crate) sdfs_sampled: Vec<Arc<dyn ImageViewAbstract>>,
 }
@@ -111,23 +107,8 @@ impl LightmapImages {
             .unwrap()
         };
 
-        let colors = 
-                (0..LM_COUNT)
-                    .map(|_| {
-                        create_storage_image(
-                            ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
-                            Format::R16G16B16A16_UNORM,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-
-        let staging_color = create_storage_image(
-            ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST,
-            Format::R16G16B16A16_UNORM,
-        );
-
         // FIXME: sdf staging + moving
-        let sdfs = (0..LM_COUNT)
+        let sdfs = (0..LM_LAYERS)
             .map(|_| {
                 create_storage_image(
                     ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
@@ -136,11 +117,7 @@ impl LightmapImages {
             })
             .collect::<Vec<_>>();
 
-        Self {
-            colors,
-            staging_color,
-            sdfs,
-        }
+        Self { sdfs }
     }
 
     pub(crate) fn image_views(&self) -> LightmapImageViews {
@@ -159,15 +136,10 @@ impl LightmapImages {
                 .collect()
         };
 
-        let colors_storage = views(&self.colors,  ImageUsage::STORAGE);
         let sdfs_storage = views(&self.sdfs, ImageUsage::STORAGE);
-
-        let colors_sampled = views(&self.colors, ImageUsage::SAMPLED);
         let sdfs_sampled = views(&self.sdfs, ImageUsage::SAMPLED);
 
         LightmapImageViews {
-            colors_storage,
-            colors_sampled,
             sdfs_storage,
             sdfs_sampled,
         }

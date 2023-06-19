@@ -4,47 +4,40 @@ vulkano_shaders::shader! {
             ty: "compute",
             path: "shaders/direct.glsl",
         },
-        LmInit: {
+        Sdf: {
             ty: "compute",
-            path: "shaders/lm_init.glsl",
+            path: "shaders/sdf.glsl",
         },
-        LmRender: {
+        RadiancePrecalc: {
             ty: "compute",
-            path: "shaders/lm_render.glsl",
+            path: "shaders/radiancePrecalc.glsl",
         },
-        LmDenoise: {
+        Radiance: {
             ty: "compute",
-            path: "shaders/lm_denoise.glsl",
-        },
-        LmStore: {
-            ty: "compute",
-            path: "shaders/lm_store.glsl",
+            path: "shaders/radiance.glsl",
         },
     },
     custom_derives: [Copy, Clone, Debug],
-    include: ["includes_march_ray.glsl", "includes_general.glsl"],
+    include: ["includes_general.glsl"],
     define: [
-        ("LM_COUNT", "6"),
+        ("LM_LAYERS", "6"),
         ("LM_SIZE", "128"),
         ("LM_MAX_POINTS", "524288"),
+        ("RADIANCE_SIZE", "8"),
         ("MAX_OBJECTS", "128"),
-        ("MAX_MATERIALS", "32"),
-        ("NOISE_BUFFER_LENGTH", "1024")
+        ("MAX_MATERIALS", "32")
     ], // TODO: sync defines with consts
     vulkan_version: "1.2", // TODO: vulkan 1.3
     spirv_version: "1.6"
 }
 
-pub(crate) const LM_COUNT: u32 = 6; // TODO: rename to LIGHTMAP_LAYERS
+pub(crate) const LM_LAYERS: u32 = 6;
 pub(crate) const LM_SIZE: u32 = 128;
-pub(crate) const LM_MAX_POINTS: u32 = 524288;
+
+pub(crate) const RADIANCE_SIZE: u32 = 8;
 
 pub(crate) const MAX_OBJECTS: usize = 128;
 pub(crate) const MAX_MATERIALS: usize = 32;
-
-// pub(crate) const NOISE_BUFFER_LENGTH: u32 = ray_directions::VECTORS.len() as u32;
-
-// pub(crate) const MAX_RAY_RADIUS: f32 = crate::ray_directions::MAX_RADIUS;
 
 use vulkano::device::Device;
 
@@ -55,20 +48,18 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub(crate) struct Shaders {
     pub(crate) direct: Arc<ShaderModule>,
-    pub(crate) lm_init: Arc<ShaderModule>,
-    pub(crate) lm_render: Arc<ShaderModule>,
-    pub(crate) lm_denoise: Arc<ShaderModule>,
-    pub(crate) lm_store: Arc<ShaderModule>,
+    pub(crate) sdf: Arc<ShaderModule>,
+    pub(crate) radiance: Arc<ShaderModule>,
+    pub(crate) radiance_precalc: Arc<ShaderModule>,
 }
 
 impl Shaders {
     pub(crate) fn load(device: Arc<Device>) -> Self {
         Self {
             direct: load_direct(device.clone()).unwrap(),
-            lm_init: load_lm_init(device.clone()).unwrap(),
-            lm_render: load_lm_render(device.clone()).unwrap(),
-            lm_denoise: load_lm_denoise(device.clone()).unwrap(),
-            lm_store: load_lm_store(device.clone()).unwrap(),
+            sdf: load_sdf(device.clone()).unwrap(),
+            radiance: load_radiance(device.clone()).unwrap(),
+            radiance_precalc: load_radiance_precalc(device.clone()).unwrap(),
         }
     }
 }

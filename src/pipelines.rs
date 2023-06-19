@@ -31,10 +31,9 @@ where
 #[derive(Clone)]
 pub(crate) struct Pipelines {
     pub(crate) direct: Arc<ComputePipeline>,
-    pub(crate) lm_init: Arc<ComputePipeline>,
-    pub(crate) lm_render: Arc<ComputePipeline>,
-    pub(crate) lm_denoise: Arc<ComputePipeline>,
-    pub(crate) lm_store: Arc<ComputePipeline>,
+    pub(crate) sdf: Arc<ComputePipeline>,
+    pub(crate) radiance: Arc<ComputePipeline>,
+    pub(crate) radiance_precalc: Arc<ComputePipeline>,
 }
 
 impl Pipelines {
@@ -51,20 +50,18 @@ impl Pipelines {
             },
         );
 
-        let lm_init = create_compute_pipeline(device.clone(), shaders.lm_init.clone(), &());
+        let sdf = create_compute_pipeline(device.clone(), shaders.sdf.clone(), &());
 
-        let lm_render = create_compute_pipeline(device.clone(), shaders.lm_render.clone(), &());
+        let radiance = create_compute_pipeline(device.clone(), shaders.radiance.clone(), &());
 
-        let lm_denoise = create_compute_pipeline(device.clone(), shaders.lm_denoise.clone(), &());
-        
-        let lm_store = create_compute_pipeline(device.clone(), shaders.lm_store.clone(), &());
-        
+        let radiance_precalc =
+            create_compute_pipeline(device.clone(), shaders.radiance_precalc.clone(), &());
+
         Self {
             direct,
-            lm_init,
-            lm_render,
-            lm_denoise,
-            lm_store,
+            sdf,
+            radiance,
+            radiance_precalc,
         }
     }
 }

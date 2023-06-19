@@ -89,10 +89,7 @@ pub(crate) fn recreate_swapchain(
             },
         );
 
-        eh.state.images.color = create_color_image(
-            eh.state.allocators.clone(),
-            eh.window.clone(),
-        );
+        eh.state.images.color = create_color_image(eh.state.allocators.clone(), eh.window.clone());
 
         eh.state.descriptor_sets = DescriptorSets::new(
             eh.state.allocators.clone(),

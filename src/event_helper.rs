@@ -57,30 +57,21 @@ pub(crate) struct Data {
 }
 
 impl Data {
-    pub(crate) fn next_lm_render_command_buffer(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
-        match self.state.command_buffers.pathtraces.state {
-            LmPathtraceState::Init => {
-                *self.state.buffers.lm_buffers.counter.write().unwrap() = 0;
-                self.state.command_buffers.pathtraces.state = LmPathtraceState::InitToRender;
-                self.state.command_buffers.pathtraces.lm_init.clone()
-            }
-            LmPathtraceState::InitToRender => {
-                let point_count = self.state.buffers.lm_buffers.read_point_count();
-                self.state.command_buffers.pathtraces.state =
-                    LmPathtraceState::Render { point_count };
-                self.next_lm_render_command_buffer()
-            }
-            LmPathtraceState::Render { point_count } => {
-                // TODO: handle points within the last 64 that are not supposed to be calculated
-                let dispatch_lm_render = [(point_count + 64 - 1) / 64, 1, 1];
+    pub(crate) fn next_render_command_buffer(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
+        println!("{:#?}", self.state.command_buffers.pathtraces.state); // DEBUG:
 
-                PathtraceCommandBuffers::create_lm_render_command_buffer(
+        match self.state.command_buffers.pathtraces.state {
+            LmPathtraceState::Sdf => {
+                self.state.command_buffers.pathtraces.state = LmPathtraceState::Render;
+                self.state.command_buffers.pathtraces.sdf.clone()
+            }
+            LmPathtraceState::Render => {
+                PathtraceCommandBuffers::create_radiance_command_buffer( // TODO: multiple use command buffer
                     self.state.allocators.clone(),
                     self.state.queue.clone(),
                     self.state.pipelines.clone(),
                     self.state.descriptor_sets.clone(),
                     PathtraceCommandBuffers::calculate_direct_dispatches(self.window.clone()),
-                    dispatch_lm_render,
                 )
             }
         }

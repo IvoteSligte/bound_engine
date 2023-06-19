@@ -4,7 +4,7 @@ use event_helper::create_callbacks;
 use glam::*;
 use images::create_color_image;
 
-use shaders::LM_COUNT;
+use shaders::LM_LAYERS;
 use vulkano::{
     swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
     sync::{self, FlushError, GpuFuture},
@@ -28,7 +28,6 @@ mod fences;
 mod images;
 mod instance;
 mod pipelines;
-mod random;
 mod scene;
 mod shaders;
 mod state;
@@ -117,8 +116,6 @@ fn main() {
             Vec3::from_array(*eh.state.real_time_data.position.as_ref()) + eh.delta_position();
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
-        eh.state.real_time_data.previousRotation = eh.state.real_time_data.rotation;
-        eh.state.real_time_data.previousPosition = eh.state.real_time_data.position;
         eh.state.real_time_data.rotation = eh.rotation().to_array();
         eh.state.real_time_data.position = new_position.to_array().into();
         eh.delta_position = Vec3::ZERO;
@@ -127,7 +124,7 @@ fn main() {
         let new_pos = new_position.as_ivec3();
 
         const SMALLEST_UNIT: f32 = 0.5;
-        const LARGEST_UNIT: f32 = (1 << (LM_COUNT - 1)) as f32 * SMALLEST_UNIT;
+        const LARGEST_UNIT: f32 = (1 << (LM_LAYERS - 1)) as f32 * SMALLEST_UNIT;
 
         let largest_delta_pos = (new_pos - old_pos).as_vec3() / LARGEST_UNIT;
 
@@ -136,7 +133,7 @@ fn main() {
             eh.state.real_time_data.lightmapOrigin =
                 (old_pos + delta_pos.as_ivec3()).to_array().into();
 
-            for i in 0..(LM_COUNT as usize) {
+            for i in 0..(LM_LAYERS as usize) {
                 let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
                 let delta_units = (delta_pos / unit_size).as_ivec3();
                 eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
@@ -161,12 +158,7 @@ fn main() {
 
         eh.frame_counter += 1;
 
-        let lm_render_command_buffer = eh.next_lm_render_command_buffer();
-
-        eh.state.real_time_data.noiseDirection = random::RAY_DIRECTIONS
-            [(eh.frame_counter % (random::RAY_DIRECTIONS.len() as u64)) as usize];
-        eh.state.real_time_data.denoiseRotation = random::DENOISE_QUATERNIONS
-            [(eh.frame_counter % (random::DENOISE_QUATERNIONS.len() as u64)) as usize];
+        let render_command_buffer = eh.next_render_command_buffer();
 
         *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
 
@@ -185,7 +177,7 @@ fn main() {
         }
 
         let future = sync::now(eh.state.device.clone())
-            .then_execute(eh.state.queue.clone(), lm_render_command_buffer)
+            .then_execute(eh.state.queue.clone(), render_command_buffer)
             .unwrap()
             .then_execute(
                 // TODO: try using dedicated compute, transfer and present queues
