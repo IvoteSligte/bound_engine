@@ -66,7 +66,8 @@ impl Data {
                 self.state.command_buffers.pathtraces.sdf.clone()
             }
             LmPathtraceState::Render => {
-                PathtraceCommandBuffers::create_radiance_command_buffer( // TODO: multiple use command buffer
+                PathtraceCommandBuffers::create_radiance_command_buffer(
+                    // TODO: multiple use command buffer
                     self.state.allocators.clone(),
                     self.state.queue.clone(),
                     self.state.pipelines.clone(),

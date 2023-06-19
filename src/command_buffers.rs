@@ -145,7 +145,11 @@ impl PathtraceCommandBuffers {
         descriptor_sets: DescriptorSets,
         dispatch_direct: [u32; 3],
     ) -> Arc<PrimaryAutoCommandBuffer> {
-        let dispatch_radiance_precalc = [RADIANCE_SIZE / 4 * LM_LAYERS, RADIANCE_SIZE / 4, RADIANCE_SIZE / 4];
+        let dispatch_radiance_precalc = [
+            RADIANCE_SIZE / 4 * LM_LAYERS,
+            RADIANCE_SIZE / 4,
+            RADIANCE_SIZE / 4,
+        ];
         let dispatch_radiance = [RADIANCE_SIZE * LM_LAYERS, RADIANCE_SIZE, RADIANCE_SIZE];
 
         let mut builder = AutoCommandBufferBuilder::primary(

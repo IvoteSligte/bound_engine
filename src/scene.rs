@@ -21,7 +21,7 @@ impl Into<shaders::Material> for CpuMaterial {
 }
 
 fn custom_materials() -> Vec<CpuMaterial> {
-    let mut materials: Vec<CpuMaterial> = vec![
+    let materials: Vec<CpuMaterial> = vec![
         CpuMaterial {
             reflectance: Vec3::splat(0.99),
             emittance: Vec3::splat(0.0),
@@ -30,27 +30,24 @@ fn custom_materials() -> Vec<CpuMaterial> {
             reflectance: Vec3::splat(0.0),
             emittance: Vec3::splat(1.0),
         },
+        CpuMaterial {
+            reflectance: Vec3::splat(0.0),
+            emittance: Vec3::new(1.0, 0.0, 0.0),
+        },
+        CpuMaterial {
+            reflectance: Vec3::splat(0.0),
+            emittance: Vec3::new(0.0, 1.0, 0.0),
+        },
+        CpuMaterial {
+            reflectance: Vec3::splat(0.0),
+            emittance: Vec3::new(0.0, 0.0, 1.0),
+        },
     ];
-
-    for i in 1..10 {
-        let color = if i < 4 {
-            Vec3::new(i as f32, 0.0, 0.0)
-        } else if i < 7 {
-            Vec3::new(0.0, (i - 2) as f32, 0.0)
-        } else {
-            Vec3::new(0.0, 0.0, (i - 5) as f32)
-        };
-
-        materials.push(CpuMaterial {
-            reflectance: Vec3::splat(0.1),
-            emittance: color,
-        });
-    }
 
     materials
 }
 
-pub(crate) fn get_materials() -> Vec<shaders::Material> {
+pub(crate) fn load_materials() -> Vec<shaders::Material> {
     let mut materials = custom_materials();
 
     materials.insert(
@@ -125,7 +122,7 @@ fn custom_objects() -> Vec<CpuObject> {
                     0.0,
                 ),
                 radius: 4.0,
-                material: 2 + i,
+                material: 2 + i / 3,
             });
         }
     }
@@ -133,7 +130,7 @@ fn custom_objects() -> Vec<CpuObject> {
     objects
 }
 
-pub(crate) fn get_objects() -> Vec<RawObject> {
+pub(crate) fn load_objects() -> Vec<RawObject> {
     let mut objects = custom_objects();
 
     objects.resize(

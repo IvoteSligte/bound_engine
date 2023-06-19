@@ -13,7 +13,7 @@ use vulkano::{
 
 use crate::{
     allocators::Allocators,
-    scene::{get_materials, get_objects, RawObject},
+    scene::{self, RawObject},
     shaders,
 };
 
@@ -35,9 +35,9 @@ impl Buffers {
         .unwrap();
 
         let buffers = Self {
-            real_time: get_real_time_buffer(allocators.clone()),
-            materials: get_material_buffer(allocators.clone(), &mut builder),
-            objects: get_object_buffer(allocators.clone(), &mut builder),
+            real_time: create_real_time_buffer(allocators.clone()),
+            materials: create_material_buffer(allocators.clone(), &mut builder),
+            objects: create_object_buffer(allocators.clone(), &mut builder),
             radiance: create_zeroed_buffer(
                 allocators.clone(),
                 &mut builder,
@@ -142,7 +142,7 @@ fn create_zeroed_buffer(
     buffer
 }
 
-fn get_real_time_buffer(allocators: Arc<Allocators>) -> Subbuffer<shaders::RealTimeBuffer> {
+fn create_real_time_buffer(allocators: Arc<Allocators>) -> Subbuffer<shaders::RealTimeBuffer> {
     Buffer::from_data(
         &allocators.memory,
         BufferCreateInfo {
@@ -163,7 +163,7 @@ fn get_real_time_buffer(allocators: Arc<Allocators>) -> Subbuffer<shaders::RealT
     .unwrap()
 }
 
-fn get_material_buffer(
+fn create_material_buffer(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<shaders::MaterialBuffer> {
@@ -174,7 +174,7 @@ fn get_material_buffer(
         }
         .into(); 32], // TODO: dynamic size
     };
-    let materials = get_materials()
+    let materials = scene::load_materials()
         .into_iter()
         .map(|x| x.into())
         .collect::<Vec<_>>();
@@ -198,11 +198,11 @@ fn get_material_buffer(
     buffer
 }
 
-fn get_object_buffer(
+fn create_object_buffer(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<[RawObject]> {
-    let object_data = get_objects();
+    let object_data = scene::load_objects();
 
     let buffer = Buffer::new_slice(
         &allocators.memory,
