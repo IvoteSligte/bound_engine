@@ -23,7 +23,7 @@ uint calculateMaterialIntersect(vec3 position, uint lmLayer) {
 
         float dist = distance(position, obj.position);
 
-        if (dist < obj.radius + 2.0 * radUnitSizeLayer(lmLayer)) {
+        if (dist < obj.radius + radUnitSizeLayer(lmLayer)) {
             return obj.material;
         }
     }

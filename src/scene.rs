@@ -106,7 +106,7 @@ fn custom_objects() -> Vec<CpuObject> {
         },
         CpuObject {
             position: Vec3::new(0.0, 0.0, 20.0),
-            radius: 10.0,
+            radius: 1.0,
             material: 1,
         },
     ];
