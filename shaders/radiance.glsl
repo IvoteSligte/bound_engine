@@ -15,8 +15,8 @@ shared Material SharedMaterial;
 
 // TODO: checkerboard rendering, emission, solid objects
 void main() {
-    const uint LAYER = gl_WorkGroupID.x / RADIANCE_SIZE;
-    const uvec3 IIL = uvec3(gl_WorkGroupID.x % RADIANCE_SIZE, gl_WorkGroupID.yz); // index in layer
+    const int LAYER = int(gl_WorkGroupID.x / RADIANCE_SIZE);
+    const ivec3 IIL = ivec3(gl_WorkGroupID.x % RADIANCE_SIZE, gl_WorkGroupID.yz); // index in layer
 
     vec3 direction = directFibonacciSphere(float(gl_LocalInvocationID.x));
 
@@ -24,7 +24,7 @@ void main() {
     const float M = (1.0 / (1.0 + 3.0 * F));
     vec3 weights = direction * direction * M + (F * M);
 
-    uvec3 index;
+    ivec3 index;
     for (uint i = 0; i < 3; i++) {
         index[i] = direction[i] >= 0.0 ? (max(IIL[i], 1) - 1) : (min(IIL[i], RADIANCE_SIZE - 2) + 1);
     }

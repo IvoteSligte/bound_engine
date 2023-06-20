@@ -30,9 +30,6 @@ float maximum(vec3 v) {
     return max(max(v.x, v.y), v.z);
 }
 
-const int HALF_LM_SIZE = LM_SIZE / 2;
-const float INV_HALF_LM_SIZE = 1.0 / (float(HALF_LM_SIZE) * LM_UNIT_SIZE);
-
 uvec4 unpackBytesUint(uint bytes) {
     return uvec4(
          bytes        & 255, // [0, 8)
@@ -50,6 +47,7 @@ uint packBytesUint(uvec4 bytes) {
 }
 
 int lmLayerAtPos(vec3 v, vec3 lmOrigin) {
+    const float INV_HALF_LM_SIZE = 1.0 / (float(LM_SIZE / 2) * LM_UNIT_SIZE);
     return int(log2(max(maximum(abs(v - lmOrigin)) * INV_HALF_LM_SIZE, 0.5)) + 1.001);
 }
 
@@ -61,7 +59,11 @@ float lmMultsLayer(uint lmLayer) {
     return (1.0 / float(LM_SIZE)) / lmUnitSizeLayer(lmLayer);
 }
 
-float lmCompsLayer(uint lmLayer) {
+float lmSizeLayer(uint lmLayer) {
+    return float(LM_SIZE) * lmUnitSizeLayer(lmLayer);
+}
+
+float lmHalfSizeLayer(uint lmLayer) {
     return (float(LM_SIZE) * 0.5) * lmUnitSizeLayer(lmLayer);
 }
 
@@ -69,30 +71,32 @@ float lmCompsLayer(uint lmLayer) {
 // TODO: lmOrigin per layer
 ivec4 lmIndexAtPos(vec3 pos, vec3 lmOrigin) {
     uint lmLayer = lmLayerAtPos(pos, lmOrigin);
-    ivec3 index = ivec3(floor((pos - lmOrigin) / lmUnitSizeLayer(lmLayer))) + HALF_LM_SIZE;
+    ivec3 index = ivec3(floor((pos - lmOrigin) / lmUnitSizeLayer(lmLayer))) + LM_SIZE / 2;
 
     return ivec4(index, lmLayer);
 }
 
 // TODO: lmOrigin per layer
 vec3 posAtLmIndex(ivec4 lmIndex, vec3 lmOrigin) {
-    return (vec3(lmIndex.xyz - HALF_LM_SIZE) + 0.5) * lmUnitSizeLayer(lmIndex.w) + lmOrigin;
-}
-
-ivec4 radIndexToLmIndex(uvec4 radIndex) {
-    return ivec4(radIndex.xyz * (LM_SIZE / RADIANCE_SIZE), radIndex.w);
-}
-
-vec3 posAtRadIndex(uvec4 radIndex) { // FIXME: scale with LM_SIZE
-    return posAtLmIndex(radIndexToLmIndex(radIndex), vec3(0.0)); // TODO: movable origin
+    return (vec3(lmIndex.xyz - LM_SIZE / 2) + 0.5) * lmUnitSizeLayer(lmIndex.w) + lmOrigin;
 }
 
 float radUnitSizeLayer(uint lmLayer) {
     return lmUnitSizeLayer(lmLayer) * float(LM_SIZE / RADIANCE_SIZE);
 }
 
-uvec4 radIndexAtPos(vec3 pos) {
-    return uvec4(lmIndexAtPos(pos, vec3(0.0))) / (LM_SIZE / RADIANCE_SIZE); // TODO: movable origin
+vec3 posAtRadIndex(ivec4 radIndex) { // FIXME: scale with LM_SIZE
+    return (vec3(radIndex.xyz - RADIANCE_SIZE / 2) + 0.5) * radUnitSizeLayer(radIndex.w); // TODO: movable origin
+}
+
+vec3 posToLMTextureCoord(vec3 pos, uint lmLayer, vec3 lmOrigin) {
+    return ((pos - lmOrigin) / lmSizeLayer(lmLayer)) + 0.5;
+}
+
+ivec4 radIndexAtPos(vec3 pos) {
+    ivec4 lmIndex = lmIndexAtPos(pos, vec3(0.0));
+    lmIndex.xyz /= (LM_SIZE / RADIANCE_SIZE);
+    return ivec4(lmIndex); // TODO: movable origin
 }
 
 bool marchRay(sampler3D[LM_LAYERS] SDFImages, inout vec3 pos, vec3 dir, vec3 sdfOrigin, float threshold, uint samples, inout float totalDist) {
@@ -106,7 +110,7 @@ bool marchRay(sampler3D[LM_LAYERS] SDFImages, inout vec3 pos, vec3 dir, vec3 sdf
         pos += dir * dist;
 
         vec3 idx = pos - sdfOrigin; // TODO: sdfOrigin varying between layers
-        bool outOfLayer = maximum(abs(idx)) > lmCompsLayer(layer);
+        bool outOfLayer = maximum(abs(idx)) > lmHalfSizeLayer(layer);
         bool coneTooBig = threshold * totalDist > 0.5 * lmUnitSizeLayer(layer);
         bool increaseLayer = outOfLayer || coneTooBig;
         layer = increaseLayer ? layer + 1 : layer;
@@ -127,19 +131,19 @@ bool marchRay(sampler3D[LM_LAYERS] SDFImages, inout vec3 pos, vec3 dir, vec3 sdf
 
 // Originally sourced from https://www.shadertoy.com/view/ldfSWs
 vec3 calcNormalSDF(sampler3D sdf, vec3 pos, float eps) {
-  const vec3 v1 = vec3( 1.0,-1.0,-1.0);
-  const vec3 v2 = vec3(-1.0,-1.0, 1.0);
-  const vec3 v3 = vec3(-1.0, 1.0,-1.0);
-  const vec3 v4 = vec3( 1.0, 1.0, 1.0);
+    const vec3 v1 = vec3( 1.0,-1.0,-1.0);
+    const vec3 v2 = vec3(-1.0,-1.0, 1.0);
+    const vec3 v3 = vec3(-1.0, 1.0,-1.0);
+    const vec3 v4 = vec3( 1.0, 1.0, 1.0);
 
-  return normalize( v1 * texture(sdf, pos + v1*eps).x +
+    return normalize( v1 * texture(sdf, pos + v1*eps).x +
                     v2 * texture(sdf, pos + v2*eps).x +
                     v3 * texture(sdf, pos + v3*eps).x +
                     v4 * texture(sdf, pos + v4*eps).x );
 }
 
 vec3 calcNormalSDF(sampler3D sdf, vec3 pos) {
-  return calcNormalSDF(sdf, pos, 0.002);
+    return calcNormalSDF(sdf, pos, 0.002);
 }
 
 // direct version of fibonacci_sphere algorithm (https://gist.github.com/Seanmatthews/a51ac697db1a4f58a6bca7996d75f68c)

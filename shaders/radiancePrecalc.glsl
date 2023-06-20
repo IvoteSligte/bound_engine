@@ -17,27 +17,32 @@ layout(binding = 2) buffer writeonly RadianceBuffer {
     Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
 } cache;
 
-uint calculateMaterialIntersect(vec3 position, uint lmLayer) {
+Material calculateMaterialIntersect(vec3 position, uint lmLayer) {
+    Material combinedMat = Material(vec3(0.0), vec3(0.0));
+
     for (uint i = 0; i < MAX_OBJECTS; i++) {
         Object obj = objBuffer.objects[i];
 
         float dist = distance(position, obj.position);
 
-        if (dist < obj.radius + radUnitSizeLayer(lmLayer)) {
-            return obj.material;
+        if (dist < 0.71 * radUnitSizeLayer(lmLayer) + obj.radius) {
+             // TODO: multiply by how much of the voxel is occupied by the object
+            Material mat = mats.materials[obj.material];
+            combinedMat.reflectance += mat.reflectance;
+            combinedMat.emittance += mat.emittance;
         }
     }
 
-    return 0;
+    return combinedMat;
 }
 
 void main() {
-    const uint LAYER = gl_GlobalInvocationID.x / RADIANCE_SIZE;
-    const uvec3 IIL = uvec3(gl_GlobalInvocationID.x % RADIANCE_SIZE, gl_GlobalInvocationID.yz);
+    const int LAYER = int(gl_GlobalInvocationID.x / RADIANCE_SIZE);
+    const ivec3 IIL = ivec3(gl_GlobalInvocationID.x % RADIANCE_SIZE, gl_GlobalInvocationID.yz);
 
-    vec3 position = posAtRadIndex(uvec4(IIL, LAYER)); // TODO: movable radiance cache origin
+    vec3 position = posAtRadIndex(ivec4(IIL, LAYER)); // TODO: movable radiance cache origin
 
-    uint matIndex = calculateMaterialIntersect(position, LAYER); // bottleneck // TODO: object acceleration structure
+    Material material = calculateMaterialIntersect(position, LAYER); // bottleneck // TODO: object acceleration structure
 
-    cache.materials[LAYER][IIL.x][IIL.y][IIL.z] = mats.materials[matIndex];
+    cache.materials[LAYER][IIL.x][IIL.y][IIL.z] = material;
 }

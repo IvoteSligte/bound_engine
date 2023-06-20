@@ -53,14 +53,24 @@ void main() {
         return;
     }
 
-    uvec4 radIndex = radIndexAtPos(position);
+    ivec4 radIndex = radIndexAtPos(position);
+
+    uint layer = lmLayerAtPos(position, lmOrigin);
+    vec3 normal = calcNormalSDF(SDFImages[layer], posToLMTextureCoord(position, layer, lmOrigin));
 
     vec3 color = vec3(0.0); // TODO: handle light reflection in `radiance.glsl`
+    float dotSum = 0.0;
+
+    vec3 reflectance = cache.materials[radIndex.w][radIndex.x][radIndex.y][radIndex.z].reflectance;
+
     for (uint i = 0; i < 64; i++) {
+        vec3 radDir = directFibonacciSphere(float(i));
         vec4 radiance = unpackUnorm4x8(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].packed[i]);
-        color += radiance.rgb / radiance.w;
+        float d = clamp(dot(normal, -radDir) * dot(-dir, normal), 0.0, 1.0);
+        dotSum += d;
+        color += radiance.rgb * (d / radiance.w);
     }
-    color *= (1.0 / 64.0);
+    color = color * reflectance / dotSum;
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }
