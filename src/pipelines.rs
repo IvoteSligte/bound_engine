@@ -32,7 +32,7 @@ where
 pub(crate) struct Pipelines {
     pub(crate) direct: Arc<ComputePipeline>,
     pub(crate) sdf: Arc<ComputePipeline>,
-    pub(crate) radiance: Arc<ComputePipeline>,
+    pub(crate) radiance: [Arc<ComputePipeline>; 2],
     pub(crate) radiance_precalc: Arc<ComputePipeline>,
 }
 
@@ -52,7 +52,22 @@ impl Pipelines {
 
         let sdf = create_compute_pipeline(device.clone(), shaders.sdf.clone(), &());
 
-        let radiance = create_compute_pipeline(device.clone(), shaders.radiance.clone(), &());
+        let radiance = [
+            create_compute_pipeline(
+                device.clone(),
+                shaders.radiance.clone(),
+                &shaders::RadianceSpecializationConstants {
+                    CHECKERBOARD_OFFSET: 0,
+                },
+            ),
+            create_compute_pipeline(
+                device.clone(),
+                shaders.radiance.clone(),
+                &shaders::RadianceSpecializationConstants {
+                    CHECKERBOARD_OFFSET: 1,
+                },
+            ),
+        ];
 
         let radiance_precalc =
             create_compute_pipeline(device.clone(), shaders.radiance_precalc.clone(), &());

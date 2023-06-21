@@ -150,7 +150,11 @@ impl PathtraceCommandBuffers {
             RADIANCE_SIZE / 4,
             RADIANCE_SIZE / 4,
         ];
-        let dispatch_radiance = [RADIANCE_SIZE * LM_LAYERS, RADIANCE_SIZE, RADIANCE_SIZE];
+        let dispatch_radiance = [
+            RADIANCE_SIZE * LM_LAYERS,
+            RADIANCE_SIZE / 2, // halved for checkerboard rendering
+            RADIANCE_SIZE
+        ];
 
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
@@ -173,13 +177,16 @@ impl PathtraceCommandBuffers {
 
         // radiance
         builder
-            .bind_pipeline_compute(pipelines.radiance.clone())
+            .bind_pipeline_compute(pipelines.radiance[0].clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
-                pipelines.radiance.layout().clone(),
+                pipelines.radiance[0].layout().clone(),
                 0,
                 descriptor_sets.radiance.clone(),
             )
+            .dispatch(dispatch_radiance)
+            .unwrap()
+            .bind_pipeline_compute(pipelines.radiance[1].clone())
             .dispatch(dispatch_radiance)
             .unwrap();
 

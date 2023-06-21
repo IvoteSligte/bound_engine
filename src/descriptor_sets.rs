@@ -82,7 +82,7 @@ impl DescriptorSets {
 
         let radiance = PersistentDescriptorSet::new(
             &allocators.descriptor_set,
-            pipelines.radiance.layout().set_layouts()[0].clone(),
+            pipelines.radiance[0].layout().set_layouts()[0].clone(),
             [WriteDescriptorSet::buffer(0, buffers.radiance.clone())],
         )
         .unwrap();

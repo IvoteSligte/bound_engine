@@ -4,6 +4,8 @@
 
 #include "includes_general.glsl"
 
+layout(constant_id = 0) const int CHECKERBOARD_OFFSET = 0;
+
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) buffer RadianceBuffer {
@@ -16,7 +18,11 @@ shared Material SharedMaterial;
 // TODO: checkerboard rendering, occlusion, spherical harmonic radiance encoding
 void main() {
     const int LAYER = int(gl_WorkGroupID.x / RADIANCE_SIZE);
-    const ivec3 IIL = ivec3(gl_WorkGroupID.x % RADIANCE_SIZE, gl_WorkGroupID.yz); // index in layer
+    const ivec3 IIL = ivec3(
+        gl_WorkGroupID.x % RADIANCE_SIZE,
+        gl_WorkGroupID.y * 2 + (gl_WorkGroupID.x + gl_WorkGroupID.z + CHECKERBOARD_OFFSET) % 2, // checkerboard transform
+        gl_WorkGroupID.z
+    ); // index in layer
 
     vec3 direction = directFibonacciSphere(float(gl_LocalInvocationID.x));
 
