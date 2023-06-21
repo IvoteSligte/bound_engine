@@ -47,7 +47,7 @@ void main() {
     bool isHit = marchRay(SDFImages, position, dir, lmOrigin, 1e-3, 128, totalDist);
 
     if (!isHit) {
-        vec3 color = vec3(dot(dir, vec3(0.0, 0.0, 1.0)) * 0.5 + 0.5);
+        vec3 color = vec3(dir.z * 0.5 + 0.5);
         color = pow(color, vec3(5.0)) * 0.1;
         imageStore(colorImage, IPOS, vec4(color, 0.0));
         return;
@@ -61,8 +61,6 @@ void main() {
     vec3 color = vec3(0.0); // TODO: handle light reflection in `radiance.glsl`
     float dotSum = 0.0;
 
-    vec3 reflectance = cache.materials[radIndex.w][radIndex.x][radIndex.y][radIndex.z].reflectance;
-
     for (uint i = 0; i < 64; i++) {
         vec3 radDir = directFibonacciSphere(float(i));
         uvec2 packedRadiance = cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].packed[i];
@@ -71,6 +69,8 @@ void main() {
         dotSum += d;
         color += radiance * d;
     }
+    
+    vec3 reflectance = cache.materials[radIndex.w][radIndex.x][radIndex.y][radIndex.z].reflectance;
     color = color * reflectance / dotSum;
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));
