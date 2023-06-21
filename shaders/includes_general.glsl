@@ -18,7 +18,7 @@ struct Object {
 };
 
 struct Radiance {
-    uint packed[64]; // INFO: may need to be packed into `uvec4`s, 16 byte array elements might be more performant
+    uvec2 packed[64]; // INFO: may need to be packed into `uvec4`s, 16 byte array elements might be more performant
 };
 
 vec3 rotateWithQuat(vec4 q, vec3 v) {

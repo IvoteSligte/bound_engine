@@ -65,10 +65,11 @@ void main() {
 
     for (uint i = 0; i < 64; i++) {
         vec3 radDir = directFibonacciSphere(float(i));
-        vec4 radiance = unpackUnorm4x8(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].packed[i]);
+        uvec2 packedRadiance = cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].packed[i];
+        vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
         float d = clamp(dot(normal, -radDir) * dot(-dir, normal), 0.0, 1.0);
         dotSum += d;
-        color += radiance.rgb * (d / radiance.w);
+        color += radiance * d;
     }
     color = color * reflectance / dotSum;
 

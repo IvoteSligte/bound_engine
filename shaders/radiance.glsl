@@ -13,7 +13,7 @@ layout(binding = 0) buffer RadianceBuffer {
 
 shared Material SharedMaterial;
 
-// TODO: checkerboard rendering, emission, solid objects
+// TODO: checkerboard rendering, occlusion, spherical harmonic radiance encoding
 void main() {
     const int LAYER = int(gl_WorkGroupID.x / RADIANCE_SIZE);
     const ivec3 IIL = ivec3(gl_WorkGroupID.x % RADIANCE_SIZE, gl_WorkGroupID.yz); // index in layer
@@ -29,33 +29,28 @@ void main() {
         index[i] = direction[i] >= 0.0 ? (max(IIL[i], 1) - 1) : (min(IIL[i], RADIANCE_SIZE - 2) + 1);
     }
 
-    uint packedRadiance;
-    vec4 radiance;
     vec3 color = vec3(0.0);
 
     if (index.x != IIL.x) {
-        packedRadiance = cache.radiances[LAYER][index.x][IIL.y][IIL.z].packed[gl_LocalInvocationID.x];
-        radiance = unpackUnorm4x8(packedRadiance);
-        color += radiance.rgb / (radiance.w <= 0.0 ? 1.0 : radiance.w) * weights[0];
+        uvec2 packedRadiance = cache.radiances[LAYER][index.x][IIL.y][IIL.z].packed[gl_LocalInvocationID.x];
+        vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
+        color += radiance * weights[0];
     }
 
     if (index.y != IIL.y) {
-        packedRadiance = cache.radiances[LAYER][IIL.x][index.y][IIL.z].packed[gl_LocalInvocationID.x];
-        radiance = unpackUnorm4x8(packedRadiance);
-        color += radiance.rgb / (radiance.w <= 0.0 ? 1.0 : radiance.w) * weights[1];
+        uvec2 packedRadiance = cache.radiances[LAYER][IIL.x][index.y][IIL.z].packed[gl_LocalInvocationID.x];
+        vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
+        color += radiance * weights[1];
     }
 
     if (index.z != IIL.z) {
-        packedRadiance = cache.radiances[LAYER][IIL.x][IIL.y][index.z].packed[gl_LocalInvocationID.x];
-        radiance = unpackUnorm4x8(packedRadiance);
-        color += radiance.rgb / (radiance.w <= 0.0 ? 1.0 : radiance.w) * weights[2]; // TODO: just initialize radiance.w to 1.0 on the CPU, the check is unnecessary
+        uvec2 packedRadiance = cache.radiances[LAYER][IIL.x][IIL.y][index.z].packed[gl_LocalInvocationID.x];
+        vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
+        color += radiance * weights[2];
     }
 
     color += cache.materials[LAYER][IIL.x][IIL.y][IIL.z].emittance;
 
-    float d = clamp(1.0 / maximum(color), 0.0, 1.0); // TODO: maximum(color) == 0.0
-    color *= d;
-
-    uint packed = packUnorm4x8(vec4(color, d));
+    uvec2 packed = uvec2(packHalf2x16(color.rg), packHalf2x16(vec2(color.b, 0.0)));
     cache.radiances[LAYER][IIL.x][IIL.y][IIL.z].packed[gl_LocalInvocationID.x] = packed;
 }
