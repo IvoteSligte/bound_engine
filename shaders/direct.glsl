@@ -58,14 +58,14 @@ void main() {
     uint layer = lmLayerAtPos(position, lmOrigin);
     vec3 normal = calcNormalSDF(SDFImages[layer], posToLMTextureCoord(position, layer, lmOrigin));
 
-    vec3 color = vec3(0.0); // TODO: handle light reflection in `radiance.glsl`
+    vec3 color = vec3(0.0); // TODO: handle light reflection and absorption in `radiance.glsl`
     float dotSum = 0.0;
 
     for (uint i = 0; i < 64; i++) {
         vec3 radDir = directFibonacciSphere(float(i));
         uvec2 packedRadiance = cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].packed[i];
         vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
-        float d = clamp(dot(normal, -radDir) * dot(-dir, normal), 0.0, 1.0);
+        float d = clamp(dot(normal, -radDir), 0.0, 1.0);
         dotSum += d;
         color += radiance * d;
     }
