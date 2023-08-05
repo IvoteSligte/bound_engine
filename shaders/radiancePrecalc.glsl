@@ -41,7 +41,6 @@ void main() {
     const ivec3 IIL = ivec3(gl_GlobalInvocationID.x % RADIANCE_SIZE, gl_GlobalInvocationID.yz);
 
     vec3 position = posAtRadIndex(ivec4(IIL, LAYER)); // TODO: movable radiance cache origin
-
     Material material = calculateMaterialIntersect(position, LAYER); // bottleneck // TODO: object acceleration structure
 
     cache.materials[LAYER][IIL.x][IIL.y][IIL.z] = material;

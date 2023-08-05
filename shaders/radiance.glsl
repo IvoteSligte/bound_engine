@@ -3,6 +3,7 @@
 #extension GL_EXT_shader_atomic_float : enable
 
 #include "includes_general.glsl"
+#include "sh_rotation.glsl"
 
 layout(constant_id = 0) const int CHECKERBOARD_OFFSET = 0;
 
@@ -14,49 +15,75 @@ layout(binding = 0) buffer RadianceBuffer {
 } cache;
 
 shared Material SharedMaterial;
+shared vec3[9] SharedCoefs;
 
-// TODO: checkerboard rendering, occlusion, spherical harmonic radiance encoding
+// TODO: checkerboard rendering, occlusion
 void main() {
     const int LAYER = int(gl_WorkGroupID.x / RADIANCE_SIZE);
+    // index in layer
     const ivec3 IIL = ivec3(
         gl_WorkGroupID.x % RADIANCE_SIZE,
         gl_WorkGroupID.y * 2 + (gl_WorkGroupID.x + gl_WorkGroupID.z + CHECKERBOARD_OFFSET) % 2, // checkerboard transform
-        gl_WorkGroupID.z
-    ); // index in layer
+        gl_WorkGroupID.z);
 
-    vec3 direction = directFibonacciSphere(float(gl_LocalInvocationID.x));
+    if (gl_LocalInvocationID.x < 9) {
+        SharedCoefs[gl_LocalInvocationID.x] = vec3(0.0);
+    }
+    barrier();
 
-    const float F = 0.15; // arbitrary value, determines how much energy moves to the sides instead of along the `direction`
-    const float M = (1.0 / (1.0 + 3.0 * F));
-    vec3 weights = direction * direction * M + (F * M);
+    vec3[9] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
 
-    ivec3 index;
-    for (uint i = 0; i < 3; i++) {
-        index[i] = direction[i] >= 0.0 ? (max(IIL[i], 1) - 1) : (min(IIL[i], RADIANCE_SIZE - 2) + 1);
+    // TODO: diffuse reflections etc
+
+    if (IIL.x != 0) {
+        vec3[9] rCoefs = unpackSHCoefs(cache.radiances[LAYER][IIL.x-1][IIL.y][IIL.z].sh);
+        for (int i = 0; i < 9; i++) {
+            coefs[i] += rCoefs[i];
+        }
+    }
+    if (IIL.y != 0) {
+        vec3[9] rCoefs = unpackSHCoefs(cache.radiances[LAYER][IIL.x][IIL.y-1][IIL.z].sh);
+        for (int i = 0; i < 9; i++) {
+            coefs[i] += rCoefs[i];
+        }
+    }
+    if (IIL.z != 0) {
+        vec3[9] rCoefs = unpackSHCoefs(cache.radiances[LAYER][IIL.x][IIL.y][IIL.z-1].sh);
+        for (int i = 0; i < 9; i++) {
+            coefs[i] += rCoefs[i];
+        }
     }
 
-    vec3 color = vec3(0.0);
-
-    if (index.x != IIL.x) {
-        uvec2 packedRadiance = cache.radiances[LAYER][index.x][IIL.y][IIL.z].packed[gl_LocalInvocationID.x];
-        vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
-        color += radiance * weights[0];
+    if (IIL.x != RADIANCE_SIZE - 1) {
+        vec3[9] rCoefs = unpackSHCoefs(cache.radiances[LAYER][IIL.x+1][IIL.y][IIL.z].sh);
+        for (int i = 0; i < 9; i++) {
+            coefs[i] += rCoefs[i];
+        }
+    }
+    if (IIL.y != RADIANCE_SIZE - 1) {
+        vec3[9] rCoefs = unpackSHCoefs(cache.radiances[LAYER][IIL.x][IIL.y+1][IIL.z].sh);
+        for (int i = 0; i < 9; i++) {
+            coefs[i] += rCoefs[i];
+        }
+    }
+    if (IIL.z != RADIANCE_SIZE - 1) {
+        vec3[9] rCoefs = unpackSHCoefs(cache.radiances[LAYER][IIL.x][IIL.y][IIL.z+1].sh);
+        for (int i = 0; i < 9; i++) {
+            coefs[i] += rCoefs[i];
+        }
     }
 
-    if (index.y != IIL.y) {
-        uvec2 packedRadiance = cache.radiances[LAYER][IIL.x][index.y][IIL.z].packed[gl_LocalInvocationID.x];
-        vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
-        color += radiance * weights[1];
+    coefs[0] += cache.materials[LAYER][IIL.x][IIL.y][IIL.z].emittance;
+
+    for (int i = 0; i < 9; i++) {
+        vec3 c = coefs[i] * (1.0 / 6.0);
+        atomicAdd(SharedCoefs[i].x, c.x);
+        atomicAdd(SharedCoefs[i].y, c.y);
+        atomicAdd(SharedCoefs[i].z, c.z);
     }
+    barrier();
 
-    if (index.z != IIL.z) {
-        uvec2 packedRadiance = cache.radiances[LAYER][IIL.x][IIL.y][index.z].packed[gl_LocalInvocationID.x];
-        vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
-        color += radiance * weights[2];
+    if (gl_LocalInvocationID.x < 9) {
+        cache.radiances[LAYER][IIL.x][IIL.y][IIL.z].sh[gl_LocalInvocationID.x] = packSHCoef(SharedCoefs[gl_LocalInvocationID.x]);
     }
-
-    color += cache.materials[LAYER][IIL.x][IIL.y][IIL.z].emittance;
-
-    uvec2 packed = uvec2(packHalf2x16(color.rg), packHalf2x16(vec2(color.b, 0.0)));
-    cache.radiances[LAYER][IIL.x][IIL.y][IIL.z].packed[gl_LocalInvocationID.x] = packed;
 }

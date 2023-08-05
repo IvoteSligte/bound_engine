@@ -41,7 +41,7 @@ void main() {
     vec3 position = rt.position;
     vec4 rotation = rt.rotation;
     vec3 lmOrigin = rt.lightmapOrigin;
-
+    
     vec3 dir = rotateWithQuat(rotation, DIRECTION);
     float totalDist = NEAR_CLIPPING;
     bool isHit = marchRay(SDFImages, position, dir, lmOrigin, 1e-3, 128, totalDist);
@@ -54,24 +54,8 @@ void main() {
     }
 
     ivec4 radIndex = radIndexAtPos(position);
-
-    uint layer = lmLayerAtPos(position, lmOrigin);
-    vec3 normal = calcNormalSDF(SDFImages[layer], posToLMTextureCoord(position, layer, lmOrigin));
-
-    vec3 color = vec3(0.0); // TODO: handle light reflection and absorption in `radiance.glsl`
-    float dotSum = 0.0;
-
-    for (uint i = 0; i < 64; i++) {
-        vec3 radDir = directFibonacciSphere(float(i));
-        uvec2 packedRadiance = cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].packed[i];
-        vec3 radiance = vec3(unpackHalf2x16(packedRadiance.x), unpackHalf2x16(packedRadiance.y).x);
-        float d = clamp(dot(normal, -radDir), 0.0, 1.0);
-        dotSum += d;
-        color += radiance * d;
-    }
-    
-    vec3 reflectance = cache.materials[radIndex.w][radIndex.x][radIndex.y][radIndex.z].reflectance;
-    color = color * reflectance / dotSum;
+    vec3[9] coefs = unpackSHCoefs(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].sh);
+    vec3 color = evaluateRGBSphericalHarmonics(-dir, coefs);
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }

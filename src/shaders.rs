@@ -18,7 +18,7 @@ vulkano_shaders::shader! {
         },
     },
     custom_derives: [Copy, Clone, Debug],
-    include: ["includes_general.glsl"],
+    include: ["includes_general.glsl", "sh_rotation.glsl"],
     define: [
         ("LM_LAYERS", "6"),
         ("LM_SIZE", "128"),

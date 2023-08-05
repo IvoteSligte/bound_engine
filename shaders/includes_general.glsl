@@ -18,7 +18,7 @@ struct Object {
 };
 
 struct Radiance {
-    uvec2 packed[64]; // INFO: may need to be packed into `uvec4`s, 16 byte array elements might be more performant
+    uvec2 sh[9]; // INFO: may need to be packed into `uvec4`s, 16 byte array elements might be more performant
 };
 
 vec3 rotateWithQuat(vec4 q, vec3 v) {
@@ -183,4 +183,64 @@ uint inverseFibonacciSphere(vec3 v) {
     float index_offset = deviation * indices_circle;
     
     return uint(z_index + index_offset);
+}
+
+float evaluateSphericalHarmonic(vec3 dir, float[9] coefs) {
+    float x = dir.x;
+    float y = dir.y;
+    float z = dir.z;
+
+    float s = 0.0;
+
+    s += coefs[0] * 0.28209479;
+
+    s += coefs[1] * 0.48860251 * y;
+    s += coefs[2] * 0.48860251 * z;
+    s += coefs[3] * 0.48860251 * x;
+
+    s += coefs[4] * 1.09254843 * x * y;
+    s += coefs[5] * 1.09254843 * y * z;
+    s += coefs[6] * 0.31539156 * (3 * z * z - 1);
+    s += coefs[7] * 1.09254843 * x * z;
+    s += coefs[8] * 0.54627421 * (x * x - y * y);
+
+    return s;
+}
+
+vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[9] coefs) {
+    float x = dir.x;
+    float y = dir.y;
+    float z = dir.z;
+
+    vec3 s = vec3(0.0);
+
+    s += coefs[0] * 0.28209479;
+
+    s += coefs[1] * 0.48860251 * y;
+    s += coefs[2] * 0.48860251 * z;
+    s += coefs[3] * 0.48860251 * x;
+
+    s += coefs[4] * 1.09254843 * x * y;
+    s += coefs[5] * 1.09254843 * y * z;
+    s += coefs[6] * 0.31539156 * (3 * z * z - 1);
+    s += coefs[7] * 1.09254843 * x * z;
+    s += coefs[8] * 0.54627421 * (x * x - y * y);
+
+    return s;
+}
+
+vec3 unpackSHCoef(uvec2 smallCoef) {
+    return vec3(unpackHalf2x16(smallCoef.x), unpackHalf2x16(smallCoef.y).x);
+}
+
+vec3[9] unpackSHCoefs(uvec2[9] smallCoefs) {
+    vec3[9] coefs;
+    for (int i = 0; i < 9; i++) {
+        coefs[i] = unpackSHCoef(smallCoefs[i]);
+    }
+    return coefs;
+}
+
+uvec2 packSHCoef(vec3 coef) {
+    return uvec2(packHalf2x16(coef.rg), packHalf2x16(vec2(coef.b, 0.0)));
 }

@@ -58,8 +58,6 @@ pub(crate) struct Data {
 
 impl Data {
     pub(crate) fn next_render_command_buffer(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
-        println!("{:#?}", self.state.command_buffers.pathtraces.state); // DEBUG:
-
         match self.state.command_buffers.pathtraces.state {
             LmPathtraceState::Sdf => {
                 self.state.command_buffers.pathtraces.state = LmPathtraceState::Render;
