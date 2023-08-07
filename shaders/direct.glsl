@@ -54,7 +54,7 @@ void main() {
     }
 
     ivec4 radIndex = radIndexAtPos(position);
-    vec3[9] coefs = unpackSHCoefs(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].sh);
+    vec3[4] coefs = unpackSHCoefs(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].sh);
     vec3 color = evaluateRGBSphericalHarmonics(-dir, coefs);
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));

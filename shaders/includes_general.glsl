@@ -6,6 +6,9 @@ const float LM_UNIT_SIZE = 0.5; // TODO: sync this with the rust code (defines)
 
 #define EPSILON 1e-5
 
+#define SH_cosLobe_C0 0.886226925 // sqrt(pi)/2
+#define SH_cosLobe_C1 1.02332671 // sqrt(pi/3)
+
 struct Material {
     vec3 reflectance;
     vec3 emittance;
@@ -18,7 +21,7 @@ struct Object {
 };
 
 struct Radiance {
-    uvec2 sh[9]; // INFO: may need to be packed into `uvec4`s, 16 byte array elements might be more performant
+    uvec2 sh[4]; // INFO: may need to be packed into `uvec4`s, 16 byte array elements might be more performant
 };
 
 vec3 rotateWithQuat(vec4 q, vec3 v) {
@@ -146,68 +149,7 @@ vec3 calcNormalSDF(sampler3D sdf, vec3 pos) {
     return calcNormalSDF(sdf, pos, 0.002);
 }
 
-// direct version of fibonacci_sphere algorithm (https://gist.github.com/Seanmatthews/a51ac697db1a4f58a6bca7996d75f68c)
-// uses 64 points
-vec3 directFibonacciSphere(float i) {
-    const float GA = 2.39996322973; // golden angle
-
-    float theta = GA * i;
-
-    float z = mix((1.0 / 64) - 1.0, 1.0 - (1.0 / 64), i / (64.0 - 1.0));
-
-    float radius = sqrt(1.0 - z * z);
-
-    float y = radius * sin(theta);
-    float x = radius * cos(theta);
-
-    return vec3(x, y, z);
-}
-
-uint inverseFibonacciSphere(vec3 v) {
-    const float PI = 3.1415927;
-    const float GA = 2.3999632; // golden angle
-    const float N = 64.0;
-    
-    float theta = atan(v.x, v.y);
-    
-    float z_index = (N - 1.0) - ((N - 1.0) / 2.0) * (v.z / (1.0 / N - 1.0) + 1.0);
-    
-    float z_theta = mod(GA * z_index, 2.0 * PI);
-    
-    float deviation = fract((theta - z_theta) / (2.0 * PI) + 0.5) - 0.5;
-    
-    float circles = (GA * N) / (2.0 * PI);
-    
-    float indices_circle = N / circles;
-    
-    float index_offset = deviation * indices_circle;
-    
-    return uint(z_index + index_offset);
-}
-
-float evaluateSphericalHarmonic(vec3 dir, float[9] coefs) {
-    float x = dir.x;
-    float y = dir.y;
-    float z = dir.z;
-
-    float s = 0.0;
-
-    s += coefs[0] * 0.28209479;
-
-    s += coefs[1] * 0.48860251 * y;
-    s += coefs[2] * 0.48860251 * z;
-    s += coefs[3] * 0.48860251 * x;
-
-    s += coefs[4] * 1.09254843 * x * y;
-    s += coefs[5] * 1.09254843 * y * z;
-    s += coefs[6] * 0.31539156 * (3 * z * z - 1);
-    s += coefs[7] * 1.09254843 * x * z;
-    s += coefs[8] * 0.54627421 * (x * x - y * y);
-
-    return s;
-}
-
-vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[9] coefs) {
+vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[4] coefs) {
     float x = dir.x;
     float y = dir.y;
     float z = dir.z;
@@ -220,11 +162,11 @@ vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[9] coefs) {
     s += coefs[2] * 0.48860251 * z;
     s += coefs[3] * 0.48860251 * x;
 
-    s += coefs[4] * 1.09254843 * x * y;
-    s += coefs[5] * 1.09254843 * y * z;
-    s += coefs[6] * 0.31539156 * (3 * z * z - 1);
-    s += coefs[7] * 1.09254843 * x * z;
-    s += coefs[8] * 0.54627421 * (x * x - y * y);
+    // s += coefs[4] * 1.09254843 * x * y;
+    // s += coefs[5] * 1.09254843 * y * z;
+    // s += coefs[6] * 0.31539156 * (3 * z * z - 1);
+    // s += coefs[7] * 1.09254843 * x * z;
+    // s += coefs[8] * 0.54627421 * (x * x - y * y);
 
     return s;
 }
@@ -233,9 +175,9 @@ vec3 unpackSHCoef(uvec2 smallCoef) {
     return vec3(unpackHalf2x16(smallCoef.x), unpackHalf2x16(smallCoef.y).x);
 }
 
-vec3[9] unpackSHCoefs(uvec2[9] smallCoefs) {
-    vec3[9] coefs;
-    for (int i = 0; i < 9; i++) {
+vec3[4] unpackSHCoefs(uvec2[4] smallCoefs) {
+    vec3[4] coefs;
+    for (int i = 0; i < 4; i++) {
         coefs[i] = unpackSHCoef(smallCoefs[i]);
     }
     return coefs;
@@ -243,4 +185,10 @@ vec3[9] unpackSHCoefs(uvec2[9] smallCoefs) {
 
 uvec2 packSHCoef(vec3 coef) {
     return uvec2(packHalf2x16(coef.rg), packHalf2x16(vec2(coef.b, 0.0)));
+}
+
+// credit to https://ericpolman.com/2016/06/28/light-propagation-volumes/
+vec4 dirToCosineLobe(vec3 dir) {
+    //dir = normalize(dir);
+    return vec4(SH_cosLobe_C0, -SH_cosLobe_C1 * dir.y, SH_cosLobe_C1 * dir.z, -SH_cosLobe_C1 * dir.x);
 }
