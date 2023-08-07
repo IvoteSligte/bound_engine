@@ -151,9 +151,9 @@ impl PathtraceCommandBuffers {
             RADIANCE_SIZE / 4,
         ];
         let dispatch_radiance = [
-            RADIANCE_SIZE * LM_LAYERS,
-            RADIANCE_SIZE / 2, // halved for checkerboard rendering
-            RADIANCE_SIZE
+            RADIANCE_SIZE / 4 * LM_LAYERS,
+            RADIANCE_SIZE / 4 / 2, // halved for checkerboard rendering
+            RADIANCE_SIZE / 4
         ];
 
         let mut builder = AutoCommandBufferBuilder::primary(

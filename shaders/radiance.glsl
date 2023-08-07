@@ -7,29 +7,20 @@
 
 layout(constant_id = 0) const int CHECKERBOARD_OFFSET = 0;
 
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(binding = 0) buffer RadianceBuffer {
     Radiance radiances[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
     Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
 } cache;
 
-shared Material SharedMaterial;
-shared vec3[4] SharedCoefs;
-
-// TODO: checkerboard rendering, occlusion
 void main() {
-    const int LAYER = int(gl_WorkGroupID.x / RADIANCE_SIZE);
+    const int LAYER = int(gl_GlobalInvocationID.x / RADIANCE_SIZE);
     // index in layer
     const ivec3 IIL = ivec3(
-        gl_WorkGroupID.x % RADIANCE_SIZE,
-        gl_WorkGroupID.y * 2 + (gl_WorkGroupID.x + gl_WorkGroupID.z + CHECKERBOARD_OFFSET) % 2, // checkerboard transform
-        gl_WorkGroupID.z);
-
-    if (gl_LocalInvocationID.x < 4) {
-        SharedCoefs[gl_LocalInvocationID.x] = vec3(0.0);
-    }
-    barrier();
+        gl_GlobalInvocationID.x % RADIANCE_SIZE,
+        gl_GlobalInvocationID.y * 2 + (gl_GlobalInvocationID.x + gl_GlobalInvocationID.z + CHECKERBOARD_OFFSET) % 2, // checkerboard transform
+        gl_GlobalInvocationID.z);
 
     // stores coefs as array of RGB channels
     vec3[4] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
@@ -88,11 +79,13 @@ void main() {
     vec4 cosLobe = dirToCosineLobe(normal);
 
     vec4[3] tempCoefs = vec4[](
-        cosLobe * dot(cosLobe, vec4(coefs[0].x, coefs[1].x, coefs[2].x, coefs[3].x)),
-        cosLobe * dot(cosLobe, vec4(coefs[0].y, coefs[1].y, coefs[2].y, coefs[3].y)),
-        cosLobe * dot(cosLobe, vec4(coefs[0].z, coefs[1].z, coefs[2].z, coefs[3].z))
+        vec4(coefs[0].x, coefs[1].x, coefs[2].x, coefs[3].x),
+        vec4(coefs[0].y, coefs[1].y, coefs[2].y, coefs[3].y),
+        vec4(coefs[0].z, coefs[1].z, coefs[2].z, coefs[3].z)
+        // cosLobe * dot(cosLobe, vec4(coefs[0].x, coefs[1].x, coefs[2].x, coefs[3].x)),
+        // cosLobe * dot(cosLobe, vec4(coefs[0].y, coefs[1].y, coefs[2].y, coefs[3].y)),
+        // cosLobe * dot(cosLobe, vec4(coefs[0].z, coefs[1].z, coefs[2].z, coefs[3].z))
     );
-
     coefs = vec3[](
         vec3(tempCoefs[0].x, tempCoefs[1].x, tempCoefs[2].x),
         vec3(tempCoefs[0].y, tempCoefs[1].y, tempCoefs[2].y),
@@ -101,15 +94,8 @@ void main() {
     );
 
     for (int i = 0; i < 4; i++) {
-        vec3 c = coefs[i] * (1.0 / 6.0);
-        c /= 128.0; // TODO: use one global invocation per voxel instead of an entire workgroup
-        atomicAdd(SharedCoefs[i].r, c.r);
-        atomicAdd(SharedCoefs[i].g, c.g);
-        atomicAdd(SharedCoefs[i].b, c.b);
+        float distFallOff = radUnitSizeLayer(0) / radUnitSizeLayer(LAYER);
+        coefs[i] *= (1.0 / 6.0) * distFallOff;
     }
-    barrier();
-
-    if (gl_LocalInvocationID.x < 4) {
-        cache.radiances[LAYER][IIL.x][IIL.y][IIL.z].sh[gl_LocalInvocationID.x] = packSHCoef(SharedCoefs[gl_LocalInvocationID.x]);
-    }
+    cache.radiances[LAYER][IIL.x][IIL.y][IIL.z].sh = packSHCoefs(coefs);
 }

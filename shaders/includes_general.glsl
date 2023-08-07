@@ -187,6 +187,14 @@ uvec2 packSHCoef(vec3 coef) {
     return uvec2(packHalf2x16(coef.rg), packHalf2x16(vec2(coef.b, 0.0)));
 }
 
+uvec2[4] packSHCoefs(vec3[4] coefs) {
+    uvec2[4] smallCoefs;
+    for (int i = 0; i < 4; i++) {
+        smallCoefs[i] = packSHCoef(coefs[i]);
+    }
+    return smallCoefs;
+}
+
 // credit to https://ericpolman.com/2016/06/28/light-propagation-volumes/
 vec4 dirToCosineLobe(vec3 dir) {
     //dir = normalize(dir);
