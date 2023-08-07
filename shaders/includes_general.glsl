@@ -71,35 +71,46 @@ float lmHalfSizeLayer(uint lmLayer) {
 }
 
 /// returns an index into a lightmap image in xyz, and the image index in w
-// TODO: lmOrigin per layer
-ivec4 lmIndexAtPos(vec3 pos, vec3 lmOrigin) {
-    uint lmLayer = lmLayerAtPos(pos, lmOrigin);
-    ivec3 index = ivec3(floor((pos - lmOrigin) / lmUnitSizeLayer(lmLayer))) + LM_SIZE / 2;
-
-    return ivec4(index, lmLayer);
+// TODO: origin per layer
+ivec4 lmIndexAtPos(vec3 pos, vec3 origin) {
+    uint layer = lmLayerAtPos(pos, origin);
+    ivec3 index = ivec3(floor((pos - origin) / lmUnitSizeLayer(layer))) + LM_SIZE / 2;
+    return ivec4(index, layer);
 }
 
-// TODO: lmOrigin per layer
-vec3 posAtLmIndex(ivec4 lmIndex, vec3 lmOrigin) {
-    return (vec3(lmIndex.xyz - LM_SIZE / 2) + 0.5) * lmUnitSizeLayer(lmIndex.w) + lmOrigin;
+vec3 lmIndexAtPosF(vec3 pos, vec3 origin, out int layer) {
+    layer = lmLayerAtPos(pos, origin);
+    vec3 index = (pos - origin) / float(lmUnitSizeLayer(layer)) + float(LM_SIZE / 2);
+    return index;
 }
 
-float radUnitSizeLayer(uint lmLayer) {
-    return lmUnitSizeLayer(lmLayer) * float(LM_SIZE / RADIANCE_SIZE);
+// TODO: origin per layer
+vec3 posAtLmIndex(ivec4 index, vec3 origin) {
+    return (vec3(index.xyz - LM_SIZE / 2) + 0.5) * lmUnitSizeLayer(index.w) + origin;
 }
 
-vec3 posAtRadIndex(ivec4 radIndex) { // FIXME: scale with LM_SIZE
-    return (vec3(radIndex.xyz - RADIANCE_SIZE / 2) + 0.5) * radUnitSizeLayer(radIndex.w); // TODO: movable origin
+float radUnitSizeLayer(uint layer) {
+    return lmUnitSizeLayer(layer) * float(LM_SIZE / RADIANCE_SIZE);
 }
 
-vec3 posToLMTextureCoord(vec3 pos, uint lmLayer, vec3 lmOrigin) {
-    return ((pos - lmOrigin) / lmSizeLayer(lmLayer)) + 0.5;
+vec3 posAtRadIndex(ivec4 index) { // FIXME: scale with LM_SIZE
+    return (vec3(index.xyz - RADIANCE_SIZE / 2) + 0.5) * radUnitSizeLayer(index.w); // TODO: movable origin
+}
+
+vec3 posToLmTextureCoord(vec3 pos, uint layer, vec3 origin) {
+    return ((pos - origin) / lmSizeLayer(layer)) + 0.5;
 }
 
 ivec4 radIndexAtPos(vec3 pos) {
-    ivec4 lmIndex = lmIndexAtPos(pos, vec3(0.0));
-    lmIndex.xyz /= (LM_SIZE / RADIANCE_SIZE);
-    return ivec4(lmIndex); // TODO: movable origin
+    ivec4 index = lmIndexAtPos(pos, vec3(0.0));
+    index.xyz /= (LM_SIZE / RADIANCE_SIZE);
+    return index; // TODO: movable origin
+}
+
+vec3 radIndexAtPosF(vec3 pos, out int layer) {
+    vec3 index = lmIndexAtPosF(pos, vec3(0.0), layer);
+    index.xyz /= float(LM_SIZE / RADIANCE_SIZE);
+    return index;
 }
 
 bool marchRay(sampler3D[LM_LAYERS] SDFImages, inout vec3 pos, vec3 dir, vec3 sdfOrigin, float threshold, uint samples, inout float totalDist) {

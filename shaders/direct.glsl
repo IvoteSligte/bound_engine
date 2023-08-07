@@ -25,6 +25,43 @@ layout(binding = 3) buffer readonly RadianceBuffer {
     Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
 } cache;
 
+void addAssign(inout vec3[4] dst, vec3[4] src) {
+    for (int i = 0; i < 4; i++) {
+        dst[i] += src[i];
+    }
+}
+
+vec3 sampleRadiance(ivec4 radIndex, vec3 dir) {
+    vec3[4] coefs = unpackSHCoefs(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].sh);
+    return evaluateRGBSphericalHarmonics(dir, coefs);
+}
+
+// TODO: movable radiance volume origin
+vec3 sampleRadianceInterpolated(vec3 radIndexF, int layer, vec3 dir) {
+    ivec3 V = ivec3(radIndexF); // corner 1
+    ivec3 W = min(V + 1, ivec3(RADIANCE_SIZE - 1)); // corner 2
+    
+    vec3 weights = radIndexF - vec3(V);
+
+    vec3 c1 = mix(sampleRadiance(ivec4(V,               layer), dir),
+                  sampleRadiance(ivec4(W.x,  V.yz,      layer), dir),
+                  weights.x);
+    vec3 c2 = mix(sampleRadiance(ivec4(V.x,  W.y,  V.z, layer), dir),
+                  sampleRadiance(ivec4(W.xy, V.z,       layer), dir),
+                  weights.x);
+    vec3 c3 = mix(sampleRadiance(ivec4(V.xy, W.z,       layer), dir),
+                  sampleRadiance(ivec4(W.x,  V.y,  W.z, layer), dir),
+                  weights.x);
+    vec3 c4 = mix(sampleRadiance(ivec4(V.x,  W.yz,      layer), dir),
+                  sampleRadiance(ivec4(W,               layer), dir),
+                  weights.x);
+
+    c1 = mix(c1, c2, weights.y);
+    c2 = mix(c3, c4, weights.y);
+
+    return mix(c1, c2, weights.z);
+}
+
 const float NEAR_CLIPPING = 1.0;
 
 // TODO: change to fragment shader if beneficial
@@ -53,9 +90,11 @@ void main() {
         return;
     }
 
-    ivec4 radIndex = radIndexAtPos(position);
-    vec3[4] coefs = unpackSHCoefs(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].sh);
-    vec3 color = evaluateRGBSphericalHarmonics(-dir, coefs);
+    int radLayer;
+    vec3 radIndexF = radIndexAtPosF(position, radLayer);
+    vec3 color = sampleRadianceInterpolated(radIndexF, radLayer, -dir);
+    
+    // TODO: hit direction reprojection (calculate outgoing in direct.glsl so that the direction towards the SH probes can be used instead)
 
     imageStore(colorImage, IPOS, vec4(color, 0.0));
 }
