@@ -23,7 +23,7 @@ Material calculateMaterialIntersect(vec3 position, uint lmLayer) {
     for (uint i = 0; i < MAX_OBJECTS; i++) {
         Object obj = objBuffer.objects[i];
 
-        float dist = distance(position, obj.position);
+        float dist = sdAABB(position, obj.position, obj.radius);
 
         if (dist < 0.71 * radUnitSizeLayer(lmLayer) + obj.radius) {
              // TODO: multiply by how much of the voxel is occupied by the object

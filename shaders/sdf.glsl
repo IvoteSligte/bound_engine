@@ -23,7 +23,7 @@ float calculateSDF(vec3 position) {
     for (uint i = 0; i < MAX_OBJECTS; i++) {
         Object obj = objBuffer.objects[i];
 
-        float dist = distance(position, obj.position) - obj.radius;
+        float dist = sdAABB(position, obj.position, obj.radius);
 
         if (dist < minDist) {
             minDist = dist;

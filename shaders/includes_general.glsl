@@ -211,3 +211,13 @@ vec4 dirToCosineLobe(vec3 dir) {
     //dir = normalize(dir);
     return vec4(SH_cosLobe_C0, -SH_cosLobe_C1 * dir.y, SH_cosLobe_C1 * dir.z, -SH_cosLobe_C1 * dir.x);
 }
+
+// credit to https://iquilezles.org/articles/distfunctions/
+float sdBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+float sdAABB(vec3 p, vec3 bc, float br) {
+    return sdBox(p - bc, vec3(br));
+}
