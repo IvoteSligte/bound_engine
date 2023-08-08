@@ -11,54 +11,54 @@ use vulkano::{
 use winit::window::Window;
 
 use crate::{
-    allocators::Allocators,
+    allocator::Allocators,
     shaders::{LM_LAYERS, LM_SIZE},
 };
 
-use self::image::CustomImage;
+use self::custom::CustomImage;
 
 #[derive(Clone)]
-pub(crate) struct Images {
-    pub(crate) color: Arc<CustomImage>,
-    pub(crate) lightmap: LightmapImages,
-    pub(crate) swapchain: Vec<Arc<SwapchainImage>>,
-    pub(crate) sampler: Arc<Sampler>,
+pub struct Images {
+    pub color: Arc<CustomImage>,
+    pub lightmap: SdfImages,
+    pub swapchain: Vec<Arc<SwapchainImage>>,
+    pub sampler: Arc<Sampler>,
 }
 
 impl Images {
-    pub(crate) fn new(
+    pub fn new(
         allocators: Arc<Allocators>,
         window: Arc<Window>,
         swapchain_images: Vec<Arc<SwapchainImage>>,
         sampler: Arc<Sampler>,
     ) -> Self {
         Self {
-            color: create_color_image(allocators.clone(), window),
-            lightmap: LightmapImages::new(allocators.clone()),
+            color: color(allocators.clone(), window),
+            lightmap: SdfImages::new(allocators.clone()),
             swapchain: swapchain_images,
             sampler,
         }
     }
 
-    pub(crate) fn image_views(&self) -> ImageViews {
+    pub fn views(&self) -> ImageViews {
         ImageViews {
             color: ImageView::new_default(self.color.clone()).unwrap(),
-            lightmap: self.lightmap.image_views(),
+            lightmap: self.lightmap.views(),
         }
     }
 
-    pub(crate) fn sampler(&self) -> Arc<Sampler> {
+    pub fn sampler(&self) -> Arc<Sampler> {
         self.sampler.clone()
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct ImageViews {
-    pub(crate) color: Arc<ImageView<CustomImage>>,
-    pub(crate) lightmap: LightmapImageViews,
+pub struct ImageViews {
+    pub color: Arc<ImageView<CustomImage>>,
+    pub lightmap: SdfImageViews,
 }
 
-pub(crate) fn create_color_image(
+pub fn color(
     allocators: Arc<Allocators>,
     window: Arc<Window>,
 ) -> Arc<CustomImage> {
@@ -77,18 +77,16 @@ pub(crate) fn create_color_image(
 }
 
 #[derive(Clone)]
-pub(crate) struct LightmapImages {
-    pub(crate) sdfs: Vec<Arc<CustomImage>>,
-}
+pub struct SdfImages(Vec<Arc<CustomImage>>);
 
 #[derive(Clone)]
-pub(crate) struct LightmapImageViews {
-    pub(crate) sdfs_storage: Vec<Arc<dyn ImageViewAbstract>>,
-    pub(crate) sdfs_sampled: Vec<Arc<dyn ImageViewAbstract>>,
+pub struct SdfImageViews {
+    pub storage: Vec<Arc<dyn ImageViewAbstract>>,
+    pub sampled: Vec<Arc<dyn ImageViewAbstract>>,
 }
 
-impl LightmapImages {
-    pub(crate) fn new(allocators: Arc<Allocators>) -> Self {
+impl SdfImages {
+    pub fn new(allocators: Arc<Allocators>) -> Self {
         let dimensions = ImageDimensions::Dim3d {
             width: LM_SIZE,
             height: LM_SIZE,
@@ -117,10 +115,10 @@ impl LightmapImages {
             })
             .collect::<Vec<_>>();
 
-        Self { sdfs }
+        Self(sdfs)
     }
 
-    pub(crate) fn image_views(&self) -> LightmapImageViews {
+    pub fn views(&self) -> SdfImageViews {
         let views = |imgs: &Vec<Arc<CustomImage>>, usage: ImageUsage| {
             imgs.iter()
                 .map(|img| {
@@ -136,17 +134,17 @@ impl LightmapImages {
                 .collect()
         };
 
-        let sdfs_storage = views(&self.sdfs, ImageUsage::STORAGE);
-        let sdfs_sampled = views(&self.sdfs, ImageUsage::SAMPLED);
+        let storage = views(&self.0, ImageUsage::STORAGE);
+        let sampled = views(&self.0, ImageUsage::SAMPLED);
 
-        LightmapImageViews {
-            sdfs_storage,
-            sdfs_sampled,
+        SdfImageViews {
+            storage,
+            sampled,
         }
     }
 }
 
-mod image {
+mod custom {
     use vulkano::{
         device::{Device, DeviceOwned},
         format::Format,
@@ -176,7 +174,7 @@ mod image {
 
     /// ADAPTED FROM [vulkano::image::StorageImage]
     #[derive(Debug)]
-    pub(crate) struct CustomImage {
+    pub struct CustomImage {
         inner: Arc<Image>,
         /// If false, the image is in the `Undefined` layout.
         layout_initialized: AtomicBool,
@@ -184,7 +182,7 @@ mod image {
 
     impl CustomImage {
         /// Creates an image with a specific usage
-        pub(crate) fn with_usage(
+        pub fn with_usage(
             allocator: &(impl MemoryAllocator + ?Sized),
             dimensions: ImageDimensions,
             format: Format,

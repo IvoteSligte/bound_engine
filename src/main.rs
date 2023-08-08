@@ -1,12 +1,9 @@
 use std::{f32::consts::PI, sync::Arc};
-
-use event_helper::{create_callbacks, create_event_helper};
 use glam::*;
-use images::create_color_image;
 
 use shaders::LM_LAYERS;
 use vulkano::{
-    swapchain::{acquire_next_image, AcquireError, SwapchainPresentInfo},
+    swapchain::{AcquireError, SwapchainPresentInfo},
     sync::{self, FlushError, GpuFuture},
 };
 use winit::{
@@ -14,20 +11,18 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{CursorGrabMode, WindowBuilder},
 };
-use winit_event_helper::*;
+use winit_event_helper::KeyCode;
 
-use crate::swapchain::recreate_swapchain;
-
-mod allocators;
-mod buffers;
-mod command_buffers;
+mod allocator;
+mod buffer;
+mod command_buffer;
 mod descriptor_sets;
 mod device;
 mod event_helper;
 mod fences;
-mod images;
+mod image;
 mod instance;
-mod pipelines;
+mod pipeline;
 mod scene;
 mod shaders;
 mod state;
@@ -51,9 +46,9 @@ fn main() {
     );
     window.set_cursor_visible(false);
 
-    let mut eh = create_event_helper(window);
+    let mut eh = event_helper::create(window);
 
-    let callbacks = create_callbacks();
+    let callbacks = event_helper::callbacks();
 
     event_loop.run(move |event, _, control_flow| {
         if eh.quit {
@@ -145,7 +140,7 @@ fn main() {
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {
-            let success = recreate_swapchain(&mut eh);
+            let success = swapchain::recreate(&mut eh);
 
             if !success {
                 return;
@@ -161,7 +156,7 @@ fn main() {
         *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
 
         let (image_index, suboptimal, image_future) =
-            match acquire_next_image(eh.state.swapchain.clone(), None) {
+            match vulkano::swapchain::acquire_next_image(eh.state.swapchain.clone(), None) {
                 Ok(ok) => ok,
                 Err(AcquireError::OutOfDate) => {
                     return eh.recreate_swapchain = true;

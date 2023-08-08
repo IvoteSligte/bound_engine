@@ -15,7 +15,7 @@ mod rotation {
     pub const RIGHT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
 }
 
-pub(crate) fn create_event_helper(window: Arc<Window>) -> EventHelper<Data> {
+pub fn create(window: Arc<Window>) -> EventHelper<Data> {
     EventHelper::new(Data {
         state: State::new(window.clone()),
         window,
@@ -33,31 +33,31 @@ pub(crate) fn create_event_helper(window: Arc<Window>) -> EventHelper<Data> {
     })
 }
 
-pub(crate) struct Data {
-    pub(crate) state: State,
-    pub(crate) window: Arc<Window>,
-    pub(crate) window_frozen: bool,
-    pub(crate) window_resized: bool,
-    pub(crate) recreate_swapchain: bool,
+pub struct Data {
+    pub state: State,
+    pub window: Arc<Window>,
+    pub window_frozen: bool,
+    pub window_resized: bool,
+    pub recreate_swapchain: bool,
     /// change in cursor position
-    pub(crate) cursor_delta: Vec2,
+    pub cursor_delta: Vec2,
     /// change in position relative to the rotation axes
-    pub(crate) delta_position: Vec3,
+    pub delta_position: Vec3,
     /// absolute rotation around the x and z axes
-    pub(crate) rotation: Vec2,
-    pub(crate) quit: bool,
-    pub(crate) movement_multiplier: f32,
-    pub(crate) rotation_multiplier: f32,
-    pub(crate) fps_counter: FPSCounter,
-    pub(crate) frame_counter: u64,
+    pub rotation: Vec2,
+    pub quit: bool,
+    pub movement_multiplier: f32,
+    pub rotation_multiplier: f32,
+    pub fps_counter: FPSCounter,
+    pub frame_counter: u64,
 }
 
 impl Data {
-    pub(crate) fn rotation(&self) -> Quat {
+    pub fn rotation(&self) -> Quat {
         Quat::from_rotation_z(-self.rotation.x) * Quat::from_rotation_x(self.rotation.y)
     }
 
-    pub(crate) fn delta_position(&self) -> Vec3 {
+    pub fn delta_position(&self) -> Vec3 {
         let rotation = self.rotation();
 
         let right = rotation.mul_vec3(rotation::RIGHT);
@@ -67,12 +67,12 @@ impl Data {
         self.delta_position.x * right + self.delta_position.y * forward + self.delta_position.z * up
     }
 
-    pub(crate) fn dimensions(&self) -> Vec2 {
+    pub fn dimensions(&self) -> Vec2 {
         Vec2::from_array(self.window.inner_size().into())
     }
 }
 
-pub(crate) fn create_callbacks() -> Callbacks<Data> {
+pub fn callbacks() -> Callbacks<Data> {
     let mut callbacks = Callbacks::<Data>::default();
 
     callbacks.window.quit(|eh, _| eh.quit = true);

@@ -10,16 +10,15 @@ use winit::window::Window;
 use winit_event_helper::EventHelper;
 
 use crate::{
-    command_buffers::{self, PathtraceCommandBuffers},
-    create_color_image,
+    command_buffer::{self, PathtraceCommandBuffers},
     descriptor_sets::*,
     event_helper::Data,
-    pipelines::create_compute_pipeline,
+    image, pipeline,
     shaders::{self},
     FOV,
 };
 
-pub(crate) fn create_swapchain(
+pub fn create(
     device: Arc<Device>,
     surface: Arc<Surface>,
     window: Arc<Window>,
@@ -55,7 +54,7 @@ pub(crate) fn create_swapchain(
 }
 
 /// Returns if the swapchain was recreated successfully
-pub(crate) fn recreate_swapchain(eh: &mut EventHelper<Data>) -> bool {
+pub fn recreate(eh: &mut EventHelper<Data>) -> bool {
     eh.recreate_swapchain = false;
     let dimensions = eh.window.inner_size(); // TODO: function input
     let (new_swapchain, new_swapchain_images) =
@@ -78,7 +77,7 @@ pub(crate) fn recreate_swapchain(eh: &mut EventHelper<Data>) -> bool {
             future.wait(None).unwrap();
         }
 
-        eh.state.pipelines.direct = create_compute_pipeline(
+        eh.state.pipelines.direct = pipeline::compute(
             eh.state.device.clone(),
             eh.state.shaders.direct.clone(),
             &shaders::DirectSpecializationConstants {
@@ -87,7 +86,7 @@ pub(crate) fn recreate_swapchain(eh: &mut EventHelper<Data>) -> bool {
             },
         );
 
-        eh.state.images.color = create_color_image(eh.state.allocators.clone(), eh.window.clone());
+        eh.state.images.color = image::color(eh.state.allocators.clone(), eh.window.clone());
 
         eh.state.descriptor_sets = DescriptorSets::new(
             eh.state.allocators.clone(),
@@ -106,7 +105,7 @@ pub(crate) fn recreate_swapchain(eh: &mut EventHelper<Data>) -> bool {
 
         eh.state.images.swapchain = new_swapchain_images;
 
-        eh.state.command_buffers.swapchains = command_buffers::swapchain(
+        eh.state.command_buffers.swapchains = command_buffer::swapchain(
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
             eh.state.images.clone(),

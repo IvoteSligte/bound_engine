@@ -30,13 +30,13 @@ vulkano_shaders::shader! {
     spirv_version: "1.6"
 }
 
-pub(crate) const LM_LAYERS: u32 = 6;
-pub(crate) const LM_SIZE: u32 = 128;
+pub const LM_LAYERS: u32 = 6;
+pub const LM_SIZE: u32 = 128;
 
-pub(crate) const RADIANCE_SIZE: u32 = 32;
+pub const RADIANCE_SIZE: u32 = 32;
 
-pub(crate) const MAX_OBJECTS: usize = 128;
-pub(crate) const MAX_MATERIALS: usize = 32;
+pub const MAX_OBJECTS: usize = 128;
+pub const MAX_MATERIALS: usize = 32;
 
 use vulkano::device::Device;
 
@@ -45,15 +45,15 @@ use vulkano::shader::ShaderModule;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub(crate) struct Shaders {
-    pub(crate) direct: Arc<ShaderModule>,
-    pub(crate) sdf: Arc<ShaderModule>,
-    pub(crate) radiance: Arc<ShaderModule>,
-    pub(crate) radiance_precalc: Arc<ShaderModule>,
+pub struct Shaders {
+    pub direct: Arc<ShaderModule>,
+    pub sdf: Arc<ShaderModule>,
+    pub radiance: Arc<ShaderModule>,
+    pub radiance_precalc: Arc<ShaderModule>,
 }
 
 impl Shaders {
-    pub(crate) fn load(device: Arc<Device>) -> Self {
+    pub fn load(device: Arc<Device>) -> Self {
         Self {
             direct: load_direct(device.clone()).unwrap(),
             sdf: load_sdf(device.clone()).unwrap(),

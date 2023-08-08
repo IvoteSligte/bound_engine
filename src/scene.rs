@@ -6,7 +6,7 @@ use glam::*;
 use vulkano::{buffer::BufferContents, padded::Padded};
 
 #[derive(Clone, Debug)]
-pub(crate) struct CpuMaterial {
+pub struct CpuMaterial {
     reflectance: Vec3,
     emittance: Vec3,
 }
@@ -47,7 +47,7 @@ fn custom_materials() -> Vec<CpuMaterial> {
     materials
 }
 
-pub(crate) fn load_materials() -> Vec<shaders::Material> {
+pub fn load_materials() -> Vec<shaders::Material> {
     let mut materials = custom_materials();
 
     materials.insert(
@@ -70,7 +70,7 @@ pub(crate) fn load_materials() -> Vec<shaders::Material> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CpuObject {
+pub struct CpuObject {
     position: Vec3,
     radius: f32,
     material: usize,
@@ -130,7 +130,7 @@ fn custom_objects() -> Vec<CpuObject> {
     objects
 }
 
-pub(crate) fn load_objects() -> Vec<RawObject> {
+pub fn load_objects() -> Vec<RawObject> {
     let mut objects = custom_objects();
 
     objects.resize(
@@ -151,7 +151,7 @@ pub(crate) fn load_objects() -> Vec<RawObject> {
 #[derive(Clone, Debug, BufferContents)]
 #[repr(C)]
 /// Required for proper alignment in the shader. shaders::Object does not work properly.
-pub(crate) struct RawObject {
+pub struct RawObject {
     position: [f32; 3],
     radius: f32,
     material: Padded<usize, 8>,

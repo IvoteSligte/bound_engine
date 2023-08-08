@@ -9,7 +9,7 @@ use vulkano::{
     swapchain::Surface,
 };
 
-pub(crate) fn select_physical_device<'a>(
+pub fn select_physical_device<'a>(
     instance: Arc<Instance>,
     surface: &'a Surface,
     extensions: &'a DeviceExtensions,
@@ -31,7 +31,7 @@ pub(crate) fn select_physical_device<'a>(
         .unwrap()
 }
 
-pub(crate) fn create_device(
+pub fn create_device(
     physical_device: Arc<PhysicalDevice>,
     extensions: DeviceExtensions,
     features: Features,

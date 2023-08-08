@@ -12,21 +12,21 @@ use vulkano::{
 };
 
 use crate::{
-    allocators::Allocators,
+    allocator::Allocators,
     scene::{self, RawObject},
     shaders,
 };
 
 #[derive(Clone)]
-pub(crate) struct Buffers {
-    pub(crate) real_time: Subbuffer<shaders::RealTimeBuffer>,
-    pub(crate) materials: Subbuffer<shaders::MaterialBuffer>, // TODO: rename to MaterialBuffer
-    pub(crate) objects: Subbuffer<[RawObject]>,
-    pub(crate) radiance: Subbuffer<[u8]>,
+pub struct Buffers {
+    pub real_time: Subbuffer<shaders::RealTimeBuffer>,
+    pub materials: Subbuffer<shaders::MaterialBuffer>, // TODO: rename to MaterialBuffer
+    pub objects: Subbuffer<[RawObject]>,
+    pub radiance: Subbuffer<[u8]>,
 }
 
 impl Buffers {
-    pub(crate) fn new(allocators: Arc<Allocators>, queue: Arc<Queue>) -> Self {
+    pub fn new(allocators: Arc<Allocators>, queue: Arc<Queue>) -> Self {
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
             queue.queue_family_index(),
@@ -35,10 +35,10 @@ impl Buffers {
         .unwrap();
 
         let buffers = Self {
-            real_time: create_real_time_buffer(allocators.clone()),
-            materials: create_material_buffer(allocators.clone(), &mut builder),
-            objects: create_object_buffer(allocators.clone(), &mut builder),
-            radiance: create_zeroed_buffer(
+            real_time: real_time_buffer(allocators.clone()),
+            materials: materials(allocators.clone(), &mut builder),
+            objects: objects(allocators.clone(), &mut builder),
+            radiance: zeroed(
                 allocators.clone(),
                 &mut builder,
                 size_of::<shaders::RadianceBuffer>() as u64,
@@ -60,8 +60,7 @@ impl Buffers {
     }
 }
 
-// TODO: move these functions to impl Buffers
-fn stage_buffer_with_data<T: BufferContents>(
+fn stage_with_data<T: BufferContents>(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     buffer: Subbuffer<T>,
@@ -86,7 +85,7 @@ fn stage_buffer_with_data<T: BufferContents>(
         .unwrap();
 }
 
-fn stage_buffer_with_iter<T, I>(
+fn stage_with_iter<T, I>(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     buffer: Subbuffer<[T]>,
@@ -115,7 +114,7 @@ fn stage_buffer_with_iter<T, I>(
         .unwrap();
 }
 
-fn create_zeroed_buffer(
+fn zeroed(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     byte_size: u64,
@@ -137,12 +136,12 @@ fn create_zeroed_buffer(
     )
     .unwrap();
 
-    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), iter);
+    stage_with_iter(allocators, cmb_builder, buffer.clone(), iter);
 
     buffer
 }
 
-fn create_real_time_buffer(allocators: Arc<Allocators>) -> Subbuffer<shaders::RealTimeBuffer> {
+fn real_time_buffer(allocators: Arc<Allocators>) -> Subbuffer<shaders::RealTimeBuffer> {
     Buffer::from_data(
         &allocators.memory,
         BufferCreateInfo {
@@ -163,7 +162,7 @@ fn create_real_time_buffer(allocators: Arc<Allocators>) -> Subbuffer<shaders::Re
     .unwrap()
 }
 
-fn create_material_buffer(
+fn materials(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<shaders::MaterialBuffer> {
@@ -193,12 +192,12 @@ fn create_material_buffer(
     )
     .unwrap();
 
-    stage_buffer_with_data(allocators, cmb_builder, buffer.clone(), material_data);
+    stage_with_data(allocators, cmb_builder, buffer.clone(), material_data);
 
     buffer
 }
 
-fn create_object_buffer(
+fn objects(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Subbuffer<[RawObject]> {
@@ -218,7 +217,7 @@ fn create_object_buffer(
     )
     .unwrap();
 
-    stage_buffer_with_iter(allocators, cmb_builder, buffer.clone(), object_data);
+    stage_with_iter(allocators, cmb_builder, buffer.clone(), object_data);
 
     buffer
 }

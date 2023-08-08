@@ -9,14 +9,14 @@ use vulkano::{
     memory::allocator::StandardMemoryAllocator,
 };
 
-pub(crate) struct Allocators {
-    pub(crate) memory: StandardMemoryAllocator,
-    pub(crate) command_buffer: StandardCommandBufferAllocator,
-    pub(crate) descriptor_set: StandardDescriptorSetAllocator,
+pub struct Allocators {
+    pub memory: StandardMemoryAllocator,
+    pub command_buffer: StandardCommandBufferAllocator,
+    pub descriptor_set: StandardDescriptorSetAllocator,
 }
 
 impl Allocators {
-    pub(crate) fn new(device: Arc<Device>) -> Arc<Self> {
+    pub fn new(device: Arc<Device>) -> Arc<Self> {
         // TODO: optimize each allocator's settings
         Arc::new(Self {
             memory: StandardMemoryAllocator::new_default(device.clone()),

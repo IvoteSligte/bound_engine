@@ -12,38 +12,38 @@ use vulkano::{
 use winit::window::Window;
 
 use crate::{
-    allocators::Allocators,
-    buffers::Buffers,
-    command_buffers::CommandBuffers,
+    allocator::Allocators,
+    buffer::Buffers,
+    command_buffer::CommandBuffers,
     descriptor_sets::DescriptorSets,
     device::{create_device, select_physical_device},
     fences::Fences,
-    images::Images,
+    image::Images,
     instance::create_instance,
-    pipelines::Pipelines,
+    pipeline::Pipelines,
     shaders::{self, Shaders},
-    swapchain::create_swapchain,
+    swapchain::create,
 };
 
-pub(crate) struct State {
-    pub(crate) device: Arc<Device>,
-    pub(crate) queue: Arc<Queue>,
-    pub(crate) swapchain: Arc<Swapchain>,
-    pub(crate) shaders: Shaders,
-    pub(crate) pipelines: Pipelines,
-    pub(crate) buffers: Buffers,
-    pub(crate) images: Images,
-    pub(crate) allocators: Arc<Allocators>,
-    pub(crate) descriptor_sets: DescriptorSets,
-    pub(crate) command_buffers: CommandBuffers,
-    pub(crate) real_time_data: shaders::RealTimeBuffer, // TODO: struct abstraction
-    pub(crate) fences: Fences,
+pub struct State {
+    pub device: Arc<Device>,
+    pub queue: Arc<Queue>,
+    pub swapchain: Arc<Swapchain>,
+    pub shaders: Shaders,
+    pub pipelines: Pipelines,
+    pub buffers: Buffers,
+    pub images: Images,
+    pub allocators: Arc<Allocators>,
+    pub descriptor_sets: DescriptorSets,
+    pub command_buffers: CommandBuffers,
+    pub real_time_data: shaders::RealTimeBuffer, // TODO: struct abstraction
+    pub fences: Fences,
     #[cfg(debug_assertions)]
     _debugger: DebugUtilsMessenger,
 }
 
 impl State {
-    pub(crate) fn new(window: Arc<Window>) -> Self {
+    pub fn new(window: Arc<Window>) -> Self {
         let instance = create_instance();
 
         let surface =
@@ -74,7 +74,7 @@ impl State {
             queue_family_index,
         );
 
-        let (swapchain, swapchain_images) = create_swapchain(
+        let (swapchain, swapchain_images) = create(
             device.clone(),
             surface.clone(),
             window.clone(),
@@ -83,7 +83,7 @@ impl State {
 
         let shaders = Shaders::load(device.clone());
 
-        let pipelines = Pipelines::from_shaders(device.clone(), shaders.clone(), window.clone());
+        let pipelines = Pipelines::new(device.clone(), shaders.clone(), window.clone());
 
         let allocators = Allocators::new(device.clone());
 

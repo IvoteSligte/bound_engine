@@ -11,22 +11,22 @@ use vulkano::{
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    allocators::Allocators,
+    allocator::Allocators,
     descriptor_sets::DescriptorSets,
-    images::Images,
-    pipelines::Pipelines,
+    image::Images,
+    pipeline::Pipelines,
     shaders::{LM_SIZE, RADIANCE_SIZE},
     LM_LAYERS,
 };
 
 #[derive(Clone)]
-pub(crate) struct CommandBuffers {
-    pub(crate) pathtraces: PathtraceCommandBuffers,
-    pub(crate) swapchains: Vec<Arc<PrimaryAutoCommandBuffer>>,
+pub struct CommandBuffers {
+    pub pathtraces: PathtraceCommandBuffers,
+    pub swapchains: Vec<Arc<PrimaryAutoCommandBuffer>>,
 }
 
 impl CommandBuffers {
-    pub(crate) fn new(
+    pub fn new(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
@@ -52,7 +52,7 @@ impl CommandBuffers {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum PathTraceState {
+pub enum PathTraceState {
     Sdf,
     Radiance(usize),
 }
@@ -69,14 +69,45 @@ impl PathTraceState {
 }
 
 #[derive(Clone)]
-pub(crate) struct PathtraceCommandBuffers {
-    pub(crate) sdf: Arc<PrimaryAutoCommandBuffer>,
-    pub(crate) radiance: Vec<Arc<PrimaryAutoCommandBuffer>>,
-    pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
-    pub(crate) state: PathTraceState,
+pub struct PathtraceCommandBuffers {
+    pub sdf: Arc<PrimaryAutoCommandBuffer>,
+    pub radiance: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    pub direct: Arc<PrimaryAutoCommandBuffer>,
+    state: PathTraceState,
 }
 
 impl PathtraceCommandBuffers {
+    pub fn new(
+        allocators: Arc<Allocators>,
+        queue: Arc<Queue>,
+        pipelines: Pipelines,
+        window: Arc<Window>,
+        descriptor_sets: DescriptorSets,
+    ) -> PathtraceCommandBuffers {
+        let sdf = Self::sdf(
+            allocators.clone(),
+            queue.clone(),
+            pipelines.clone(),
+            descriptor_sets.clone(),
+        );
+
+        let radiance = Self::radiance(
+            allocators.clone(),
+            queue.clone(),
+            pipelines.clone(),
+            descriptor_sets.clone(),
+        );
+
+        let direct = Self::direct(allocators, queue, pipelines, descriptor_sets, window);
+
+        PathtraceCommandBuffers {
+            sdf,
+            radiance,
+            direct,
+            state: PathTraceState::Sdf,
+        }
+    }
+
     pub fn restart(&mut self) {
         self.state = PathTraceState::Sdf;
     }
@@ -88,7 +119,7 @@ impl PathtraceCommandBuffers {
         }
     }
 
-    pub(crate) fn calculate_direct_dispatches(window: Arc<Window>) -> [u32; 3] {
+    pub fn calculate_direct_dispatches(window: Arc<Window>) -> [u32; 3] {
         let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
         [
@@ -98,7 +129,7 @@ impl PathtraceCommandBuffers {
         ]
     }
 
-    pub(crate) fn direct(
+    pub fn direct(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
@@ -174,7 +205,7 @@ impl PathtraceCommandBuffers {
         Arc::new(builder.build().unwrap())
     }
 
-    pub(crate) fn radiance(
+    pub fn radiance(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
@@ -211,40 +242,9 @@ impl PathtraceCommandBuffers {
         }
         cmbs
     }
-
-    pub(crate) fn new(
-        allocators: Arc<Allocators>,
-        queue: Arc<Queue>,
-        pipelines: Pipelines,
-        window: Arc<Window>,
-        descriptor_sets: DescriptorSets,
-    ) -> PathtraceCommandBuffers {
-        let sdf = Self::sdf(
-            allocators.clone(),
-            queue.clone(),
-            pipelines.clone(),
-            descriptor_sets.clone(),
-        );
-
-        let radiance = Self::radiance(
-            allocators.clone(),
-            queue.clone(),
-            pipelines.clone(),
-            descriptor_sets.clone(),
-        );
-
-        let direct = Self::direct(allocators, queue, pipelines, descriptor_sets, window);
-
-        PathtraceCommandBuffers {
-            sdf,
-            radiance,
-            direct,
-            state: PathTraceState::Sdf,
-        }
-    }
 }
 
-pub(crate) fn swapchain(
+pub fn swapchain(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
     images: Images,

@@ -1,8 +1,8 @@
-use crate::allocators::Allocators;
-use crate::buffers::Buffers;
-use crate::images::Images;
+use crate::allocator::Allocators;
+use crate::buffer::Buffers;
+use crate::image::Images;
 
-use crate::pipelines::Pipelines;
+use crate::pipeline::Pipelines;
 
 use vulkano::pipeline::Pipeline;
 
@@ -14,25 +14,25 @@ use std::iter::repeat;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub(crate) struct DescriptorSets {
-    pub(crate) direct: Arc<PersistentDescriptorSet>,
-    pub(crate) sdf: Arc<PersistentDescriptorSet>,
-    pub(crate) radiance: Arc<PersistentDescriptorSet>,
-    pub(crate) radiance_precalc: Arc<PersistentDescriptorSet>,
+pub struct DescriptorSets {
+    pub direct: Arc<PersistentDescriptorSet>,
+    pub sdf: Arc<PersistentDescriptorSet>,
+    pub radiance: Arc<PersistentDescriptorSet>,
+    pub radiance_precalc: Arc<PersistentDescriptorSet>,
 }
 
 impl DescriptorSets {
-    pub(crate) fn new(
+    pub fn new(
         allocators: Arc<Allocators>,
         pipelines: Pipelines,
         buffers: Buffers,
         images: Images,
     ) -> DescriptorSets {
-        let image_views = images.image_views(); // TODO: change image usage here to optimize
+        let image_views = images.views(); // TODO: change image usage here to optimize
 
         let combined_image_sampler_sdfs = image_views
             .lightmap
-            .sdfs_sampled
+            .sampled
             .iter()
             .cloned()
             .zip(repeat(images.sampler()))
@@ -47,7 +47,7 @@ impl DescriptorSets {
                 WriteDescriptorSet::image_view_array(
                     2,
                     0,
-                    image_views.lightmap.sdfs_storage.clone(),
+                    image_views.lightmap.storage.clone(),
                 ),
             ],
         )

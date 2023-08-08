@@ -8,24 +8,24 @@ use vulkano::sync::{future::FenceSignalFuture, GpuFuture};
 type NestedFence = FenceSignalFuture<Box<dyn GpuFuture>>;
 
 #[derive(Clone)]
-pub(crate) struct Fences {
+pub struct Fences {
     inner: Vec<Option<Arc<NestedFence>>>,
     previous_index: usize,
 }
 
 impl Fences {
-    pub(crate) fn new(count: usize) -> Self {
+    pub fn new(count: usize) -> Self {
         Self {
             inner: vec![None; count],
             previous_index: 0,
         }
     }
 
-    pub(crate) fn previous(&self) -> Option<Arc<NestedFence>> {
+    pub fn previous(&self) -> Option<Arc<NestedFence>> {
         self.inner[self.previous_index].clone()
     }
 
-    pub(crate) fn set_previous(&mut self, previous_index: usize) {
+    pub fn set_previous(&mut self, previous_index: usize) {
         self.previous_index = previous_index;
     }
 }

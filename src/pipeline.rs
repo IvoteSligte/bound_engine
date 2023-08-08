@@ -10,7 +10,7 @@ use winit::window::Window;
 
 use std::sync::Arc;
 
-pub(crate) fn create_compute_pipeline<Css>(
+pub fn compute<Css>(
     device: Arc<Device>,
     shader: Arc<ShaderModule>,
     specialization_constants: &Css,
@@ -29,19 +29,19 @@ where
 }
 
 #[derive(Clone)]
-pub(crate) struct Pipelines {
-    pub(crate) direct: Arc<ComputePipeline>,
-    pub(crate) sdf: Arc<ComputePipeline>,
-    pub(crate) radiance: [Arc<ComputePipeline>; 2],
-    pub(crate) radiance_precalc: Arc<ComputePipeline>,
+pub struct Pipelines {
+    pub direct: Arc<ComputePipeline>,
+    pub sdf: Arc<ComputePipeline>,
+    pub radiance: [Arc<ComputePipeline>; 2],
+    pub radiance_precalc: Arc<ComputePipeline>,
 }
 
 impl Pipelines {
-    pub(crate) fn from_shaders(device: Arc<Device>, shaders: Shaders, window: Arc<Window>) -> Self {
+    pub fn new(device: Arc<Device>, shaders: Shaders, window: Arc<Window>) -> Self {
         let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
         // TODO: refactor into separate function
-        let direct = create_compute_pipeline(
+        let direct = compute(
             device.clone(),
             shaders.direct.clone(),
             &shaders::DirectSpecializationConstants {
@@ -50,17 +50,17 @@ impl Pipelines {
             },
         );
 
-        let sdf = create_compute_pipeline(device.clone(), shaders.sdf.clone(), &());
+        let sdf = compute(device.clone(), shaders.sdf.clone(), &());
 
         let radiance = [
-            create_compute_pipeline(
+            compute(
                 device.clone(),
                 shaders.radiance.clone(),
                 &shaders::RadianceSpecializationConstants {
                     CHECKERBOARD_OFFSET: 0,
                 },
             ),
-            create_compute_pipeline(
+            compute(
                 device.clone(),
                 shaders.radiance.clone(),
                 &shaders::RadianceSpecializationConstants {
@@ -70,7 +70,7 @@ impl Pipelines {
         ];
 
         let radiance_precalc =
-            create_compute_pipeline(device.clone(), shaders.radiance_precalc.clone(), &());
+            compute(device.clone(), shaders.radiance_precalc.clone(), &());
 
         Self {
             direct,
