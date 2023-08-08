@@ -65,8 +65,6 @@ vec3 sampleRadianceInterpolated(vec3 radIndexF, int layer, vec3 dir) {
 const float NEAR_CLIPPING = 1.0;
 
 // TODO: change to fragment shader
-// TODO: do lower res raymarch first, then higher res, etc.
-// TODO: multisampling
 void main() {
     const ivec2 VIEWPORT = ivec2(imageSize(colorImage).xy);
     const ivec2 IPOS = ivec2(gl_GlobalInvocationID.xy);
