@@ -2,14 +2,10 @@ use std::sync::Arc;
 
 use fps_counter::FPSCounter;
 use glam::*;
-use vulkano::command_buffer::PrimaryAutoCommandBuffer;
 use winit::window::{CursorGrabMode, Fullscreen, Window};
 use winit_event_helper::{Callbacks, EventHelper, KeyCode};
 
-use crate::{
-    command_buffers::{LmPathtraceState, PathtraceCommandBuffers},
-    state::State,
-};
+use crate::state::State;
 
 mod rotation {
     use glam::Vec3;
@@ -57,25 +53,6 @@ pub(crate) struct Data {
 }
 
 impl Data {
-    pub(crate) fn next_render_command_buffer(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
-        match self.state.command_buffers.pathtraces.state {
-            LmPathtraceState::Sdf => {
-                self.state.command_buffers.pathtraces.state = LmPathtraceState::Render;
-                self.state.command_buffers.pathtraces.sdf.clone()
-            }
-            LmPathtraceState::Render => {
-                PathtraceCommandBuffers::create_radiance_command_buffer(
-                    // TODO: multiple use command buffer
-                    self.state.allocators.clone(),
-                    self.state.queue.clone(),
-                    self.state.pipelines.clone(),
-                    self.state.descriptor_sets.clone(),
-                    PathtraceCommandBuffers::calculate_direct_dispatches(self.window.clone()),
-                )
-            }
-        }
-    }
-
     pub(crate) fn rotation(&self) -> Quat {
         Quat::from_rotation_z(-self.rotation.x) * Quat::from_rotation_x(self.rotation.y)
     }

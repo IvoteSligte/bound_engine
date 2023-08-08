@@ -4,7 +4,6 @@ use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, PrimaryAutoCommandBuffer,
     },
-    descriptor_set::DescriptorSetsCollection,
     device::Queue,
     pipeline::{Pipeline, PipelineBindPoint},
     sampler::Filter,
@@ -43,8 +42,7 @@ impl CommandBuffers {
             descriptor_sets.clone(),
         );
 
-        let swapchains =
-            create_swapchain_command_buffers(allocators.clone(), queue.clone(), images.clone());
+        let swapchains = swapchain(allocators.clone(), queue.clone(), images.clone());
 
         CommandBuffers {
             pathtraces,
@@ -56,16 +54,32 @@ impl CommandBuffers {
 #[derive(Clone, Debug)]
 pub(crate) enum LmPathtraceState {
     Sdf,
-    Render,
+    Radiance,
 }
 
 #[derive(Clone)]
 pub(crate) struct PathtraceCommandBuffers {
     pub(crate) sdf: Arc<PrimaryAutoCommandBuffer>,
+    pub(crate) radiance: Arc<PrimaryAutoCommandBuffer>,
+    pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
     pub(crate) state: LmPathtraceState,
 }
 
 impl PathtraceCommandBuffers {
+    pub fn restart(&mut self) {
+        self.state = LmPathtraceState::Sdf;
+    }
+
+    pub fn next(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
+        match self.state {
+            LmPathtraceState::Sdf => {
+                self.state = LmPathtraceState::Radiance;
+                self.sdf.clone()
+            }
+            LmPathtraceState::Radiance => self.radiance.clone(),
+        }
+    }
+
     pub(crate) fn calculate_direct_dispatches(window: Arc<Window>) -> [u32; 3] {
         let dimensions: PhysicalSize<f32> = window.inner_size().cast();
 
@@ -76,38 +90,48 @@ impl PathtraceCommandBuffers {
         ]
     }
 
-    pub(crate) fn restart(&mut self) {
-        self.state = LmPathtraceState::Sdf;
-    }
-
-    pub(crate) fn extend_with_direct<S>(
-        cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    pub(crate) fn direct(
+        allocators: Arc<Allocators>,
+        queue: Arc<Queue>,
         pipelines: Pipelines,
-        descriptor_set: S,
-        dispatch: [u32; 3],
-    ) where
-        S: DescriptorSetsCollection,
-    {
-        cmb_builder
+        descriptor_sets: DescriptorSets,
+        window: Arc<Window>,
+    ) -> Arc<PrimaryAutoCommandBuffer> {
+        let dispatch = Self::calculate_direct_dispatches(window);
+
+        let mut builder = AutoCommandBufferBuilder::primary(
+            &allocators.command_buffer,
+            queue.queue_family_index(),
+            CommandBufferUsage::MultipleSubmit,
+        )
+        .unwrap();
+
+        builder
             .bind_pipeline_compute(pipelines.direct.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Compute,
                 pipelines.direct.layout().clone(),
                 0,
-                descriptor_set,
+                descriptor_sets.direct.clone(),
             )
             .dispatch(dispatch)
             .unwrap();
+
+        Arc::new(builder.build().unwrap())
     }
 
-    fn create_sdf_command_buffer(
+    fn sdf(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
-        dispatch_direct: [u32; 3],
     ) -> Arc<PrimaryAutoCommandBuffer> {
         let dispatch_sdf = [LM_SIZE / 4 * LM_LAYERS, LM_SIZE / 4, LM_SIZE / 4];
+        let dispatch_radiance_precalc = [
+            RADIANCE_SIZE / 4 * LM_LAYERS,
+            RADIANCE_SIZE / 4,
+            RADIANCE_SIZE / 4,
+        ];
 
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
@@ -127,42 +151,6 @@ impl PathtraceCommandBuffers {
             .dispatch(dispatch_sdf)
             .unwrap();
 
-        // direct
-        PathtraceCommandBuffers::extend_with_direct(
-            &mut builder,
-            pipelines.clone(),
-            descriptor_sets.direct.clone(),
-            dispatch_direct,
-        );
-
-        Arc::new(builder.build().unwrap())
-    }
-
-    pub(crate) fn create_radiance_command_buffer(
-        allocators: Arc<Allocators>,
-        queue: Arc<Queue>,
-        pipelines: Pipelines,
-        descriptor_sets: DescriptorSets,
-        dispatch_direct: [u32; 3],
-    ) -> Arc<PrimaryAutoCommandBuffer> {
-        let dispatch_radiance_precalc = [
-            RADIANCE_SIZE / 4 * LM_LAYERS,
-            RADIANCE_SIZE / 4,
-            RADIANCE_SIZE / 4,
-        ];
-        let dispatch_radiance = [
-            RADIANCE_SIZE / 4 * LM_LAYERS,
-            RADIANCE_SIZE / 4 / 2, // halved for checkerboard rendering
-            RADIANCE_SIZE / 4
-        ];
-
-        let mut builder = AutoCommandBufferBuilder::primary(
-            &allocators.command_buffer,
-            queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
-
         // radiance precalc
         builder
             .bind_pipeline_compute(pipelines.radiance_precalc.clone())
@@ -174,6 +162,28 @@ impl PathtraceCommandBuffers {
             )
             .dispatch(dispatch_radiance_precalc)
             .unwrap();
+
+        Arc::new(builder.build().unwrap())
+    }
+
+    pub(crate) fn radiance(
+        allocators: Arc<Allocators>,
+        queue: Arc<Queue>,
+        pipelines: Pipelines,
+        descriptor_sets: DescriptorSets,
+    ) -> Arc<PrimaryAutoCommandBuffer> {
+        let dispatch_radiance = [
+            RADIANCE_SIZE / 4 * LM_LAYERS,
+            RADIANCE_SIZE / 4 / 2, // halved for checkerboard rendering
+            RADIANCE_SIZE / 4,
+        ];
+
+        let mut builder = AutoCommandBufferBuilder::primary(
+            &allocators.command_buffer,
+            queue.queue_family_index(),
+            CommandBufferUsage::MultipleSubmit,
+        )
+        .unwrap();
 
         // radiance
         builder
@@ -190,14 +200,6 @@ impl PathtraceCommandBuffers {
             .dispatch(dispatch_radiance)
             .unwrap();
 
-        // direct
-        PathtraceCommandBuffers::extend_with_direct(
-            &mut builder,
-            pipelines,
-            descriptor_sets.direct.clone(),
-            dispatch_direct,
-        );
-
         Arc::new(builder.build().unwrap())
     }
 
@@ -208,24 +210,32 @@ impl PathtraceCommandBuffers {
         window: Arc<Window>,
         descriptor_sets: DescriptorSets,
     ) -> PathtraceCommandBuffers {
-        let dispatch_direct = PathtraceCommandBuffers::calculate_direct_dispatches(window);
-
-        let sdf = Self::create_sdf_command_buffer(
+        let sdf = Self::sdf(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
             descriptor_sets.clone(),
-            dispatch_direct,
         );
+
+        let radiance = Self::radiance(
+            allocators.clone(),
+            queue.clone(),
+            pipelines.clone(),
+            descriptor_sets.clone(),
+        );
+
+        let direct = Self::direct(allocators, queue, pipelines, descriptor_sets, window);
 
         PathtraceCommandBuffers {
             sdf,
+            radiance,
+            direct,
             state: LmPathtraceState::Sdf,
         }
     }
 }
 
-pub(crate) fn create_swapchain_command_buffers(
+pub(crate) fn swapchain(
     allocators: Arc<Allocators>,
     queue: Arc<Queue>,
     images: Images,

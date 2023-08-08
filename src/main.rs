@@ -1,6 +1,6 @@
 use std::{f32::consts::PI, sync::Arc};
 
-use event_helper::create_callbacks;
+use event_helper::{create_callbacks, create_event_helper};
 use glam::*;
 use images::create_color_image;
 
@@ -16,7 +16,7 @@ use winit::{
 };
 use winit_event_helper::*;
 
-use crate::{event_helper::*, swapchain::*};
+use crate::swapchain::recreate_swapchain;
 
 mod allocators;
 mod buffers;
@@ -158,8 +158,6 @@ fn main() {
 
         eh.frame_counter += 1;
 
-        let render_command_buffer = eh.next_render_command_buffer();
-
         *eh.state.buffers.real_time.write().unwrap() = eh.state.real_time_data;
 
         let (image_index, suboptimal, image_future) =
@@ -177,10 +175,17 @@ fn main() {
         }
 
         let future = sync::now(eh.state.device.clone())
-            .then_execute(eh.state.queue.clone(), render_command_buffer)
+            .then_execute(
+                eh.state.queue.clone(),
+                eh.state.command_buffers.pathtraces.next(),
+            )
             .unwrap()
             .then_execute(
-                // TODO: try using dedicated compute, transfer and present queues
+                eh.state.queue.clone(),
+                eh.state.command_buffers.pathtraces.direct.clone(),
+            )
+            .unwrap()
+            .then_execute(
                 eh.state.queue.clone(),
                 eh.state.command_buffers.swapchains[image_index as usize].clone(),
             )

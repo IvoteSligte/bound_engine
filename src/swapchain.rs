@@ -10,7 +10,7 @@ use winit::window::Window;
 use winit_event_helper::EventHelper;
 
 use crate::{
-    command_buffers::{create_swapchain_command_buffers, PathtraceCommandBuffers},
+    command_buffers::{self, PathtraceCommandBuffers},
     create_color_image,
     descriptor_sets::*,
     event_helper::Data,
@@ -54,10 +54,8 @@ pub(crate) fn create_swapchain(
     .unwrap()
 }
 
-pub(crate) fn recreate_swapchain(
-    // TODO: refactor eh.state.
-    eh: &mut EventHelper<Data>,
-) -> bool {
+/// Returns if the swapchain was recreated successfully
+pub(crate) fn recreate_swapchain(eh: &mut EventHelper<Data>) -> bool {
     eh.recreate_swapchain = false;
     let dimensions = eh.window.inner_size(); // TODO: function input
     let (new_swapchain, new_swapchain_images) =
@@ -98,21 +96,20 @@ pub(crate) fn recreate_swapchain(
             eh.state.images.clone(),
         );
 
-        eh.state.images.swapchain = new_swapchain_images;
-
-        eh.state.command_buffers.swapchains = create_swapchain_command_buffers(
-            eh.state.allocators.clone(),
-            eh.state.queue.clone(),
-            eh.state.images.clone(),
-        );
-
-        eh.state.command_buffers.pathtraces = PathtraceCommandBuffers::new(
-            // TODO: the lightmap does not need to be rerendered
+        eh.state.command_buffers.pathtraces.direct = PathtraceCommandBuffers::direct(
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
             eh.state.pipelines.clone(),
-            eh.window.clone(),
             eh.state.descriptor_sets.clone(),
+            eh.window.clone(),
+        );
+
+        eh.state.images.swapchain = new_swapchain_images;
+
+        eh.state.command_buffers.swapchains = command_buffers::swapchain(
+            eh.state.allocators.clone(),
+            eh.state.queue.clone(),
+            eh.state.images.clone(),
         );
     }
 

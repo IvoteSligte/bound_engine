@@ -37,7 +37,6 @@ void main() {
     const ivec4 LM_INDEX = ivec4(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz, gl_GlobalInvocationID.x / LM_SIZE);
 
     vec3 position = posAtLmIndex(LM_INDEX, rt.lightmapOrigin);
-
     float dist = calculateSDF(position); // bottleneck // TODO: object acceleration structure
 
     imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
