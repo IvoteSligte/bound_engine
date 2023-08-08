@@ -52,31 +52,39 @@ impl CommandBuffers {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum LmPathtraceState {
+pub(crate) enum PathTraceState {
     Sdf,
-    Radiance,
+    Radiance(usize),
+}
+
+impl PathTraceState {
+    fn next(&mut self) -> Self {
+        let old = self.clone();
+        match old {
+            Self::Sdf => *self = Self::Radiance(0),
+            Self::Radiance(frame) => *self = Self::Radiance(frame + 1),
+        }
+        old
+    }
 }
 
 #[derive(Clone)]
 pub(crate) struct PathtraceCommandBuffers {
     pub(crate) sdf: Arc<PrimaryAutoCommandBuffer>,
-    pub(crate) radiance: Arc<PrimaryAutoCommandBuffer>,
+    pub(crate) radiance: Vec<Arc<PrimaryAutoCommandBuffer>>,
     pub(crate) direct: Arc<PrimaryAutoCommandBuffer>,
-    pub(crate) state: LmPathtraceState,
+    pub(crate) state: PathTraceState,
 }
 
 impl PathtraceCommandBuffers {
     pub fn restart(&mut self) {
-        self.state = LmPathtraceState::Sdf;
+        self.state = PathTraceState::Sdf;
     }
 
     pub fn next(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
-        match self.state {
-            LmPathtraceState::Sdf => {
-                self.state = LmPathtraceState::Radiance;
-                self.sdf.clone()
-            }
-            LmPathtraceState::Radiance => self.radiance.clone(),
+        match self.state.next() {
+            PathTraceState::Sdf => self.sdf.clone(),
+            PathTraceState::Radiance(frame) => self.radiance[frame % 2].clone(),
         }
     }
 
@@ -171,36 +179,37 @@ impl PathtraceCommandBuffers {
         queue: Arc<Queue>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
-    ) -> Arc<PrimaryAutoCommandBuffer> {
+    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
         let dispatch_radiance = [
             RADIANCE_SIZE / 4 * LM_LAYERS,
             RADIANCE_SIZE / 4 / 2, // halved for checkerboard rendering
             RADIANCE_SIZE / 4,
         ];
 
-        let mut builder = AutoCommandBufferBuilder::primary(
-            &allocators.command_buffer,
-            queue.queue_family_index(),
-            CommandBufferUsage::MultipleSubmit,
-        )
-        .unwrap();
-
-        // radiance
-        builder
-            .bind_pipeline_compute(pipelines.radiance[0].clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.radiance[0].layout().clone(),
-                0,
-                descriptor_sets.radiance.clone(),
+        let mut cmbs = Vec::new();
+        for i in 0..2 {
+            let mut builder = AutoCommandBufferBuilder::primary(
+                &allocators.command_buffer,
+                queue.queue_family_index(),
+                CommandBufferUsage::MultipleSubmit,
             )
-            .dispatch(dispatch_radiance)
-            .unwrap()
-            .bind_pipeline_compute(pipelines.radiance[1].clone())
-            .dispatch(dispatch_radiance)
             .unwrap();
 
-        Arc::new(builder.build().unwrap())
+            // radiance
+            builder
+                .bind_pipeline_compute(pipelines.radiance[i].clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.radiance[i].layout().clone(),
+                    0,
+                    descriptor_sets.radiance.clone(),
+                )
+                .dispatch(dispatch_radiance)
+                .unwrap();
+
+            cmbs.push(Arc::new(builder.build().unwrap()));
+        }
+        cmbs
     }
 
     pub(crate) fn new(
@@ -230,7 +239,7 @@ impl PathtraceCommandBuffers {
             sdf,
             radiance,
             direct,
-            state: LmPathtraceState::Sdf,
+            state: PathTraceState::Sdf,
         }
     }
 }
