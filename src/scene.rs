@@ -28,19 +28,19 @@ fn custom_materials() -> Vec<CpuMaterial> {
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::splat(1.0),
+            emittance: Vec3::splat(100.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(100.0, 0.0, 0.0),
+            emittance: Vec3::new(10.0, 0.0, 0.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(0.0, 100.0, 0.0),
+            emittance: Vec3::new(0.0, 10.0, 0.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(0.0, 0.0, 100.0),
+            emittance: Vec3::new(0.0, 0.0, 10.0),
         },
     ];
 

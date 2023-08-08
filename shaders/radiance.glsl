@@ -31,7 +31,7 @@ void main() {
         for (int i = 0; i < 4; i++) {
             coefs[i] += SH_cosLobe_C0 * rCoefs[i];
         }
-        coefs[3] += SH_cosLobe_C1 * rCoefs[3];
+        coefs[3] += SH_cosLobe_C1 * rCoefs[0];
     }
     // +X
     if (IIL.x != RADIANCE_SIZE - 1) {
@@ -39,7 +39,7 @@ void main() {
         for (int i = 0; i < 4; i++) {
             coefs[i] += SH_cosLobe_C0 * rCoefs[i];
         }
-        coefs[3] -= SH_cosLobe_C1 * rCoefs[3];
+        coefs[3] -= SH_cosLobe_C1 * rCoefs[0];
     }
     // -Y
     if (IIL.y != 0) {
@@ -47,7 +47,7 @@ void main() {
         for (int i = 0; i < 4; i++) {
             coefs[i] += SH_cosLobe_C0 * rCoefs[i];
         }
-        coefs[1] += SH_cosLobe_C1 * rCoefs[1];
+        coefs[1] += SH_cosLobe_C1 * rCoefs[0];
     }
     // +Y
     if (IIL.y != RADIANCE_SIZE - 1) {
@@ -55,21 +55,21 @@ void main() {
         for (int i = 0; i < 4; i++) {
             coefs[i] += SH_cosLobe_C0 * rCoefs[i];
         }
-        coefs[1] -= SH_cosLobe_C1 * rCoefs[1];
+        coefs[1] -= SH_cosLobe_C1 * rCoefs[0];
     }
     if (IIL.z != 0) {
         vec3[4] rCoefs = unpackSHCoefs(cache.radiances[LAYER][IIL.x][IIL.y][IIL.z-1].sh);
         for (int i = 0; i < 4; i++) {
             coefs[i] += SH_cosLobe_C0 * rCoefs[i];
         }
-        coefs[2] -= SH_cosLobe_C1 * rCoefs[2];
+        coefs[2] -= SH_cosLobe_C1 * rCoefs[0];
     }
     if (IIL.z != RADIANCE_SIZE - 1) {
         vec3[4] rCoefs = unpackSHCoefs(cache.radiances[LAYER][IIL.x][IIL.y][IIL.z+1].sh);
         for (int i = 0; i < 4; i++) {
             coefs[i] += SH_cosLobe_C0 * rCoefs[i];
         }
-        coefs[2] += SH_cosLobe_C1 * rCoefs[2];
+        coefs[2] += SH_cosLobe_C1 * rCoefs[0];
     }
 
     coefs[0] += cache.materials[LAYER][IIL.x][IIL.y][IIL.z].emittance;
@@ -94,8 +94,10 @@ void main() {
     );
 
     for (int i = 0; i < 4; i++) {
+        // FIXME: minimal BASE_FALLOFF value where the radiance doesn't diverge is dependent on either the number of tiles in a layer or the tile size
+        const float BASE_FALLOFF = 0.185;
         float distFallOff = radUnitSizeLayer(0) / radUnitSizeLayer(LAYER);
-        coefs[i] *= (1.0 / 6.0) * distFallOff;
+        coefs[i] *= BASE_FALLOFF * distFallOff;
     }
     cache.radiances[LAYER][IIL.x][IIL.y][IIL.z].sh = packSHCoefs(coefs);
 }

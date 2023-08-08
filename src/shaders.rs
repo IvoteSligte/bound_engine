@@ -22,7 +22,6 @@ vulkano_shaders::shader! {
     define: [
         ("LM_LAYERS", "6"),
         ("LM_SIZE", "128"),
-        ("LM_MAX_POINTS", "524288"),
         ("RADIANCE_SIZE", "32"),
         ("MAX_OBJECTS", "128"),
         ("MAX_MATERIALS", "32")
