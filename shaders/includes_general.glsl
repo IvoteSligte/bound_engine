@@ -150,10 +150,10 @@ vec3 calcNormalSDF(sampler3D sdf, vec3 pos, float eps) {
     const vec3 v3 = vec3(-1.0, 1.0,-1.0);
     const vec3 v4 = vec3( 1.0, 1.0, 1.0);
 
-    return normalize( v1 * texture(sdf, pos + v1*eps).x +
-                    v2 * texture(sdf, pos + v2*eps).x +
-                    v3 * texture(sdf, pos + v3*eps).x +
-                    v4 * texture(sdf, pos + v4*eps).x );
+    return normalize(v1 * texture(sdf, pos + v1*eps).x +
+                     v2 * texture(sdf, pos + v2*eps).x +
+                     v3 * texture(sdf, pos + v3*eps).x +
+                     v4 * texture(sdf, pos + v4*eps).x);
 }
 
 vec3 calcNormalSDF(sampler3D sdf, vec3 pos) {
@@ -213,11 +213,25 @@ vec4 dirToCosineLobe(vec3 dir) {
 }
 
 // credit to https://iquilezles.org/articles/distfunctions/
+// p is the sample point relative to the box center,
+// b is the corner of the box relative to the box center
 float sdBox(vec3 p, vec3 b) {
     vec3 q = abs(p) - b;
     return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
 
-float sdAABB(vec3 p, vec3 bc, float br) {
-    return sdBox(p - bc, vec3(br));
+// Function to calculate overlapping volume between a cube and a cuboid
+float calculateOverlappingVolume(vec3 cubePosition, float cubeSize, vec3 cuboidMin, vec3 cuboidMax) {
+    vec3 cubeMin = cubePosition - cubeSize * 0.5;
+    vec3 cubeMax = cubePosition + cubeSize * 0.5;
+
+    // Calculate the ranges of positions along each dimension
+    vec3 minRange = max(cubeMin, cuboidMin);
+    vec3 maxRange = min(cubeMax, cuboidMax);
+    
+    // Calculate overlapping dimensions along each axis
+    vec3 overlapDimensions = max(vec3(0.0), maxRange - minRange);
+    
+    // Calculate and return overlapping volume
+    return overlapDimensions.x * overlapDimensions.y * overlapDimensions.z;
 }

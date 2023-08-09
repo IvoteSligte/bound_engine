@@ -17,20 +17,22 @@ layout(binding = 2) buffer writeonly RadianceBuffer {
     Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
 } cache;
 
-Material calculateMaterialIntersect(vec3 position, uint lmLayer) {
+Material calculateMaterialIntersect(vec3 position, uint layer) {
     Material combinedMat = Material(vec3(0.0), vec3(0.0));
+
+    float unit = radUnitSizeLayer(layer);
 
     for (uint i = 0; i < MAX_OBJECTS; i++) {
         Object obj = objBuffer.objects[i];
+        Material mat = mats.materials[obj.material];
 
-        float dist = sdAABB(position, obj.position, obj.radius);
+        vec3 objMin = obj.position - obj.radius * 0.5;
+        vec3 objMax = obj.position + obj.radius * 0.5;
 
-        if (dist < 0.71 * radUnitSizeLayer(lmLayer) + obj.radius) {
-             // TODO: multiply by how much of the voxel is occupied by the object
-            Material mat = mats.materials[obj.material];
-            combinedMat.reflectance += mat.reflectance;
-            combinedMat.emittance += mat.emittance;
-        }
+        float area = calculateOverlappingVolume(position, unit, objMin, objMax);
+
+        combinedMat.reflectance += mat.reflectance * area;
+        combinedMat.emittance += mat.emittance * area;
     }
 
     return combinedMat;

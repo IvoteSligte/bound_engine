@@ -22,17 +22,14 @@ float calculateSDF(vec3 position) {
 
     for (uint i = 0; i < MAX_OBJECTS; i++) {
         Object obj = objBuffer.objects[i];
-
-        float dist = sdAABB(position, obj.position, obj.radius);
-
-        if (dist < minDist) {
-            minDist = dist;
-        }
+        float dist = sdBox(position - obj.position, vec3(obj.radius));
+        minDist = min(dist, minDist);
     }
 
     return minDist;
 }
 
+// TODO: move the origin by using a modulo when the point is outside the bounds of the image3D
 void main() {
     const ivec4 LM_INDEX = ivec4(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz, gl_GlobalInvocationID.x / LM_SIZE);
 
