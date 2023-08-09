@@ -31,7 +31,15 @@ impl DescriptorSets {
         let image_views = images.views(); // TODO: change image usage here to optimize
 
         let combined_image_sampler_sdfs = image_views
-            .lightmap
+            .sdf
+            .sampled
+            .iter()
+            .cloned()
+            .zip(repeat(images.sampler()))
+            .collect::<Vec<_>>();
+
+        let combined_image_sampler_radiances = image_views
+            .radiance
             .sampled
             .iter()
             .cloned()
@@ -44,7 +52,7 @@ impl DescriptorSets {
             [
                 WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
                 WriteDescriptorSet::buffer(1, buffers.objects.clone()),
-                WriteDescriptorSet::image_view_array(2, 0, image_views.lightmap.storage.clone()),
+                WriteDescriptorSet::image_view_array(2, 0, image_views.sdf.storage.clone()),
             ],
         )
         .unwrap();
@@ -71,7 +79,7 @@ impl DescriptorSets {
                     0,
                     combined_image_sampler_sdfs.clone(),
                 ),
-                WriteDescriptorSet::buffer(3, buffers.radiance.clone()),
+                WriteDescriptorSet::image_view_array(3, 0, image_views.radiance.storage.clone()), // TODO: sampled
             ],
         )
         .unwrap();
@@ -79,7 +87,10 @@ impl DescriptorSets {
         let radiance = PersistentDescriptorSet::new(
             &allocators.descriptor_set,
             pipelines.radiance[0].layout().set_layouts()[0].clone(),
-            [WriteDescriptorSet::buffer(0, buffers.radiance.clone())],
+            [
+                WriteDescriptorSet::buffer(0, buffers.radiance.clone()),
+                WriteDescriptorSet::image_view_array(1, 0, image_views.radiance.storage.clone()),
+            ],
         )
         .unwrap();
 

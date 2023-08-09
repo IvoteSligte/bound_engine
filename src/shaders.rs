@@ -34,6 +34,7 @@ pub const LM_LAYERS: u32 = 6;
 pub const LM_SIZE: u32 = 128;
 
 pub const RADIANCE_SIZE: u32 = 32;
+pub const RADIANCE_SH_COEFS: u32 = 4;
 
 pub const MAX_OBJECTS: usize = 128;
 pub const MAX_MATERIALS: usize = 32;

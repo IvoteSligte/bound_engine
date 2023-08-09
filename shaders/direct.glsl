@@ -20,19 +20,18 @@ layout(binding = 1, rgba16) uniform restrict writeonly image2D colorImage;
 
 layout(binding = 2) uniform sampler3D SDFImages[LM_LAYERS];
 
-layout(binding = 3) buffer readonly RadianceBuffer {
-    Radiance radiances[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
-    Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
-} cache;
+layout(binding = 3, rgba16f) uniform image3D[LM_LAYERS * 4] radianceImages;
 
-void addAssign(inout vec3[4] dst, vec3[4] src) {
+vec3[4] loadSHCoefs(ivec3 index, int layer) {
+    vec3[4] coefs;
     for (int i = 0; i < 4; i++) {
-        dst[i] += src[i];
+        coefs[i] = imageLoad(radianceImages[i * LM_LAYERS + layer], index).rgb;
     }
+    return coefs;
 }
 
-vec3 sampleRadiance(ivec4 radIndex, vec3 dir) {
-    vec3[4] coefs = unpackSHCoefs(cache.radiances[radIndex.w][radIndex.x][radIndex.y][radIndex.z].sh);
+vec3 sampleRadiance(ivec4 index, vec3 dir) {
+    vec3[4] coefs = loadSHCoefs(index.xyz, index.w);
     return evaluateRGBSphericalHarmonics(dir, coefs);
 }
 

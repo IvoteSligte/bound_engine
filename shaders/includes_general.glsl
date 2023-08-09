@@ -182,28 +182,12 @@ vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[4] coefs) {
     return s;
 }
 
-vec3 unpackSHCoef(uvec2 smallCoef) {
-    return vec3(unpackHalf2x16(smallCoef.x), unpackHalf2x16(smallCoef.y).x);
-}
-
-vec3[4] unpackSHCoefs(uvec2[4] smallCoefs) {
-    vec3[4] coefs;
-    for (int i = 0; i < 4; i++) {
-        coefs[i] = unpackSHCoef(smallCoefs[i]);
-    }
-    return coefs;
-}
-
-uvec2 packSHCoef(vec3 coef) {
-    return uvec2(packHalf2x16(coef.rg), packHalf2x16(vec2(coef.b, 0.0)));
-}
-
-uvec2[4] packSHCoefs(vec3[4] coefs) {
-    uvec2[4] smallCoefs;
-    for (int i = 0; i < 4; i++) {
-        smallCoefs[i] = packSHCoef(coefs[i]);
-    }
-    return smallCoefs;
+vec4[3] transposeSHCoefs(vec3[4] coefs) {
+    return vec4[](
+        vec4(coefs[0].x, coefs[1].x, coefs[2].x, coefs[3].x),
+        vec4(coefs[0].y, coefs[1].y, coefs[2].y, coefs[3].y),
+        vec4(coefs[0].z, coefs[1].z, coefs[2].z, coefs[3].z)
+    );
 }
 
 // credit to https://ericpolman.com/2016/06/28/light-propagation-volumes/

@@ -13,7 +13,6 @@ layout(binding = 1) uniform restrict readonly MaterialBuffer {
 } mats;
 
 layout(binding = 2) buffer writeonly RadianceBuffer {
-    Radiance radiances[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
     Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
 } cache;
 
