@@ -44,11 +44,7 @@ impl DescriptorSets {
             [
                 WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
                 WriteDescriptorSet::buffer(1, buffers.objects.clone()),
-                WriteDescriptorSet::image_view_array(
-                    2,
-                    0,
-                    image_views.lightmap.storage.clone(),
-                ),
+                WriteDescriptorSet::image_view_array(2, 0, image_views.lightmap.storage.clone()),
             ],
         )
         .unwrap();

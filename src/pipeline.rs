@@ -69,8 +69,7 @@ impl Pipelines {
             ),
         ];
 
-        let radiance_precalc =
-            compute(device.clone(), shaders.radiance_precalc.clone(), &());
+        let radiance_precalc = compute(device.clone(), shaders.radiance_precalc.clone(), &());
 
         Self {
             direct,

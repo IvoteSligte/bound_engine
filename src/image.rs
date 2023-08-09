@@ -58,10 +58,7 @@ pub struct ImageViews {
     pub lightmap: SdfImageViews,
 }
 
-pub fn color(
-    allocators: Arc<Allocators>,
-    window: Arc<Window>,
-) -> Arc<CustomImage> {
+pub fn color(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<CustomImage> {
     CustomImage::with_usage(
         &allocators.memory,
         ImageDimensions::Dim2d {
@@ -137,10 +134,7 @@ impl SdfImages {
         let storage = views(&self.0, ImageUsage::STORAGE);
         let sampled = views(&self.0, ImageUsage::SAMPLED);
 
-        SdfImageViews {
-            storage,
-            sampled,
-        }
+        SdfImageViews { storage, sampled }
     }
 }
 
