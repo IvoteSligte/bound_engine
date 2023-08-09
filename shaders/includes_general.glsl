@@ -222,8 +222,8 @@ float sdBox(vec3 p, vec3 b) {
 
 // Function to calculate overlapping volume between a cube and a cuboid
 float calculateOverlappingVolume(vec3 cubePosition, float cubeSize, vec3 cuboidMin, vec3 cuboidMax) {
-    vec3 cubeMin = cubePosition - cubeSize * 0.5;
-    vec3 cubeMax = cubePosition + cubeSize * 0.5;
+    vec3 cubeMin = cubePosition - 0.5 * cubeSize;
+    vec3 cubeMax = cubePosition + 0.5 * cubeSize;
 
     // Calculate the ranges of positions along each dimension
     vec3 minRange = max(cubeMin, cuboidMin);
@@ -233,5 +233,23 @@ float calculateOverlappingVolume(vec3 cubePosition, float cubeSize, vec3 cuboidM
     vec3 overlapDimensions = max(vec3(0.0), maxRange - minRange);
     
     // Calculate and return overlapping volume
-    return overlapDimensions.x * overlapDimensions.y * overlapDimensions.z;
+    float overlappingVolume = overlapDimensions.x * overlapDimensions.y * overlapDimensions.z;
+    return overlappingVolume;
+}
+
+// Function to calculate surface area of the portion of a cuboid inside a cube
+float surfaceAreaInsideCube(vec3 cubePosition, float cubeSize, vec3 cuboidMin, vec3 cuboidMax) {
+    vec3 cubeMin = cubePosition - cubeSize * 0.5;
+    vec3 cubeMax = cubePosition + cubeSize * 0.5;
+
+    // The ranges of positions along each dimension
+    vec3 minRange = max(cubeMin, cuboidMin);
+    vec3 maxRange = min(cubeMax, cuboidMax);
+    
+    // Overlapping dimensions along each axis
+    vec3 overlapDimensions = max(vec3(0.0), maxRange - minRange);
+        
+    // Return surface area of the portion inside the cube
+    float surfaceArea = 2.0 * dot(overlapDimensions.xyz, overlapDimensions.yzx);
+    return surfaceArea;
 }

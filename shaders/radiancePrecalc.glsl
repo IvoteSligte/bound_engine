@@ -29,10 +29,10 @@ Material calculateMaterialIntersect(vec3 position, uint layer) {
         vec3 objMin = obj.position - obj.radius * 0.5;
         vec3 objMax = obj.position + obj.radius * 0.5;
 
-        float area = calculateOverlappingVolume(position, unit, objMin, objMax);
+        float volume = calculateOverlappingVolume(position, unit, objMin, objMax);
 
-        combinedMat.reflectance += mat.reflectance * area;
-        combinedMat.emittance += mat.emittance * area;
+        combinedMat.reflectance += mat.reflectance * volume;
+        combinedMat.emittance += mat.emittance * volume;
     }
 
     return combinedMat;
