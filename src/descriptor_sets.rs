@@ -35,7 +35,7 @@ impl DescriptorSets {
             .sampled
             .iter()
             .cloned()
-            .zip(repeat(images.sampler()))
+            .zip(repeat(images.sdf.sampler()))
             .collect::<Vec<_>>();
 
         let combined_image_sampler_radiances = image_views
@@ -43,7 +43,7 @@ impl DescriptorSets {
             .sampled
             .iter()
             .cloned()
-            .zip(repeat(images.sampler()))
+            .zip(repeat(images.radiance.sampler()))
             .collect::<Vec<_>>();
 
         let sdf = PersistentDescriptorSet::new(
@@ -79,7 +79,11 @@ impl DescriptorSets {
                     0,
                     combined_image_sampler_sdfs.clone(),
                 ),
-                WriteDescriptorSet::image_view_array(3, 0, image_views.radiance.storage.clone()), // TODO: sampled
+                WriteDescriptorSet::image_view_sampler_array(
+                    3,
+                    0,
+                    combined_image_sampler_radiances,
+                ), // TODO: sampled
             ],
         )
         .unwrap();

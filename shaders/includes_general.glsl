@@ -20,10 +20,6 @@ struct Object {
     uint material;
 };
 
-struct Radiance {
-    uvec2 sh[4]; // INFO: may need to be packed into `uvec4`s, 16 byte array elements might be more performant
-};
-
 vec3 rotateWithQuat(vec4 q, vec3 v) {
     vec3 t = q.w * v + cross(q.xyz, v);
     return 2.0 * cross(q.xyz, t) + v;
@@ -31,22 +27,6 @@ vec3 rotateWithQuat(vec4 q, vec3 v) {
 
 float maximum(vec3 v) {
     return max(max(v.x, v.y), v.z);
-}
-
-uvec4 unpackBytesUint(uint bytes) {
-    return uvec4(
-         bytes        & 255, // [0, 8)
-        (bytes >>  8) & 255, // [8, 16)
-        (bytes >> 16) & 255, // [16, 24)
-        (bytes >> 24) & 255  // [24, 32)
-    );
-}
-
-// packs 4 bytes into a uint, assumes the inputs are in the range [0, 255]
-uint packBytesUint(uvec4 bytes) {
-    return uint(
-        bytes.x | (bytes.y << 8) | (bytes.z << 16) | (bytes.w << 24)
-    );
 }
 
 int lmLayerAtPos(vec3 v, vec3 lmOrigin) {
@@ -72,8 +52,8 @@ float lmHalfSizeLayer(uint lmLayer) {
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 // TODO: origin per layer
-ivec4 lmIndexAtPos(vec3 pos, vec3 origin) {
-    uint layer = lmLayerAtPos(pos, origin);
+ivec4 lmIndexAtPos(vec3 pos, vec3 origin, out int layer) {
+    layer = lmLayerAtPos(pos, origin);
     ivec3 index = ivec3(floor((pos - origin) / lmUnitSizeLayer(layer))) + LM_SIZE / 2;
     return ivec4(index, layer);
 }
@@ -93,7 +73,7 @@ float radUnitSizeLayer(uint layer) {
     return lmUnitSizeLayer(layer) * float(LM_SIZE / RADIANCE_SIZE);
 }
 
-vec3 posAtRadIndex(ivec4 index) { // FIXME: scale with LM_SIZE
+vec3 posAtRadIndex(ivec4 index) {
     return (vec3(index.xyz - RADIANCE_SIZE / 2) + 0.5) * radUnitSizeLayer(index.w); // TODO: movable origin
 }
 
@@ -101,8 +81,8 @@ vec3 posToLmTextureCoord(vec3 pos, uint layer, vec3 origin) {
     return ((pos - origin) / lmSizeLayer(layer)) + 0.5;
 }
 
-ivec4 radIndexAtPos(vec3 pos) {
-    ivec4 index = lmIndexAtPos(pos, vec3(0.0));
+ivec4 radIndexAtPos(vec3 pos, out int layer) {
+    ivec4 index = lmIndexAtPos(pos, vec3(0.0), layer);
     index.xyz /= (LM_SIZE / RADIANCE_SIZE);
     return index; // TODO: movable origin
 }
@@ -111,6 +91,12 @@ vec3 radIndexAtPosF(vec3 pos, out int layer) {
     vec3 index = lmIndexAtPosF(pos, vec3(0.0), layer);
     index.xyz /= float(LM_SIZE / RADIANCE_SIZE);
     return index;
+}
+
+// turns a normal image index into a normalized texture index
+vec3 radIndexTexture(vec3 index, int layer) {
+    vec3 texIndex = index * (1.0 / float(RADIANCE_SIZE));
+    return texIndex;
 }
 
 bool marchRay(sampler3D[LM_LAYERS] SDFImages, inout vec3 pos, vec3 dir, vec3 sdfOrigin, float threshold, uint samples, inout float totalDist) {

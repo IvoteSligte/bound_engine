@@ -6,7 +6,6 @@ use vulkano::{
         DebugUtilsMessageSeverity, DebugUtilsMessageType, DebugUtilsMessenger,
         DebugUtilsMessengerCreateInfo,
     },
-    sampler::{BorderColor, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerReductionMode},
     swapchain::Swapchain,
 };
 use winit::window::Window;
@@ -89,23 +88,11 @@ impl State {
 
         let buffers = Buffers::new(allocators.clone(), queue.clone());
 
-        // TODO: clean up
-        let sampler = Sampler::new(
-            device.clone(),
-            SamplerCreateInfo {
-                address_mode: [SamplerAddressMode::ClampToBorder; 3],
-                border_color: BorderColor::FloatTransparentBlack,
-                reduction_mode: SamplerReductionMode::WeightedAverage,
-                ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
-            },
-        )
-        .unwrap();
-
         let images = Images::new(
+            device.clone(),
             allocators.clone(),
             window.clone(),
             swapchain_images.clone(),
-            sampler.clone(),
         );
 
         let descriptor_sets = DescriptorSets::new(

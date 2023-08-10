@@ -13,19 +13,19 @@ layout(binding = 0) buffer RadianceBuffer {
     Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
 } cache;
 
-layout(binding = 1, rgba16f) uniform image3D[LM_LAYERS * 4] radianceImages;
+layout(binding = 1, rgba16f) uniform image3D radianceImages[LM_LAYERS * 4];
 
 vec3[4] loadSHCoefs(ivec3 index, int layer) {
     vec3[4] coefs;
     for (int i = 0; i < 4; i++) {
-        coefs[i] = imageLoad(radianceImages[i * LM_LAYERS + layer], index).rgb;
+        coefs[i] = imageLoad(radianceImages[layer * LM_LAYERS + i], index).rgb;
     }
     return coefs;
 }
 
 void storeSHCoefs(ivec3 index, int layer, vec3[4] coefs) {
     for (int i = 0; i < 4; i++) {
-        imageStore(radianceImages[i * LM_LAYERS + layer], index, vec4(coefs[i], 0.0));
+        imageStore(radianceImages[layer * LM_LAYERS + i], index, vec4(coefs[i], 0.0));
     }
 }
 
@@ -45,47 +45,36 @@ void main() {
 
     // stores coefs as array of RGB channels
     vec3[4] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
+    vec3[4] tCoefs;
 
     // -X
-    if (IIL.x != 0) {
-        vec3[4] rCoefs = loadSHCoefs(ivec3(IIL.x-1, IIL.yz), LAYER);
-        madAssign(coefs, SH_cosLobe_C0, rCoefs);
-        coefs[3] += SH_cosLobe_C1 * rCoefs[0];
-    }
+    tCoefs = loadSHCoefs(ivec3(IIL.x-1, IIL.yz), LAYER);
+    madAssign(coefs, SH_cosLobe_C0, tCoefs);
+    coefs[3] += SH_cosLobe_C1 * tCoefs[0];
     // +X
-    if (IIL.x != RADIANCE_SIZE - 1) {
-        vec3[4] rCoefs = loadSHCoefs(ivec3(IIL.x+1, IIL.yz), LAYER);
-        madAssign(coefs, SH_cosLobe_C0, rCoefs);
-        coefs[3] -= SH_cosLobe_C1 * rCoefs[0];
-    }
+    tCoefs = loadSHCoefs(ivec3(IIL.x+1, IIL.yz), LAYER);
+    madAssign(coefs, SH_cosLobe_C0, tCoefs);
+    coefs[3] -= SH_cosLobe_C1 * tCoefs[0];
     // -Y
-    if (IIL.y != 0) {
-        vec3[4] rCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y-1, IIL.z), LAYER);
-        madAssign(coefs, SH_cosLobe_C0, rCoefs);
-        coefs[1] += SH_cosLobe_C1 * rCoefs[0];
-    }
+    tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y-1, IIL.z), LAYER);
+    madAssign(coefs, SH_cosLobe_C0, tCoefs);
+    coefs[1] += SH_cosLobe_C1 * tCoefs[0];
     // +Y
-    if (IIL.y != RADIANCE_SIZE - 1) {
-        vec3[4] rCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y+1, IIL.z), LAYER);
-        madAssign(coefs, SH_cosLobe_C0, rCoefs);
-        coefs[1] -= SH_cosLobe_C1 * rCoefs[0];
-    }
-    if (IIL.z != 0) {
-        vec3[4] rCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z-1), LAYER);
-        madAssign(coefs, SH_cosLobe_C0, rCoefs);
-        coefs[2] -= SH_cosLobe_C1 * rCoefs[0];
-    }
-    if (IIL.z != RADIANCE_SIZE - 1) {
-        vec3[4] rCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z+1), LAYER);
-        madAssign(coefs, SH_cosLobe_C0, rCoefs);
-        coefs[2] += SH_cosLobe_C1 * rCoefs[0];
-    }
+    tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y+1, IIL.z), LAYER);
+    madAssign(coefs, SH_cosLobe_C0, tCoefs);
+    coefs[1] -= SH_cosLobe_C1 * tCoefs[0];
+    // -Z
+    tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z-1), LAYER);
+    madAssign(coefs, SH_cosLobe_C0, tCoefs);
+    coefs[2] -= SH_cosLobe_C1 * tCoefs[0];
+    // +Z
+    tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z+1), LAYER);
+    madAssign(coefs, SH_cosLobe_C0, tCoefs);
+    coefs[2] += SH_cosLobe_C1 * tCoefs[0];
 
     // TODO: cosLobe diffuse reflection stuff
     vec3 normal = vec3(0.0, 0.0, 1.0); // TODO: get (average?) normal in voxel from scene
     vec4 cosLobe = dirToCosineLobe(normal);
-
-    coefs[0] += cache.materials[LAYER][IIL.x][IIL.y][IIL.z].emittance;
 
     // FIXME: minimal BASE_FALLOFF value where the radiance doesn't diverge is dependent on either the number of tiles in a layer or the tile size
     const float BASE_FALLOFF = 0.185;
@@ -93,6 +82,8 @@ void main() {
     for (int i = 0; i < 4; i++) {
         coefs[i] *= BASE_FALLOFF * distFallOff;
     }
+
+    coefs[0] += cache.materials[LAYER][IIL.x][IIL.y][IIL.z].emittance;
 
     storeSHCoefs(IIL, LAYER, coefs);
 }
