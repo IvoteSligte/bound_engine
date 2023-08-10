@@ -3,12 +3,13 @@ use std::sync::Arc;
 use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, BlitImageInfo, CommandBufferUsage, PrimaryAutoCommandBuffer,
+        RenderPassBeginInfo, SubpassContents,
     },
     device::Queue,
     pipeline::{Pipeline, PipelineBindPoint},
+    render_pass::Framebuffer,
     sampler::Filter,
 };
-use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
     allocator::Allocators,
@@ -29,17 +30,17 @@ impl CommandBuffers {
     pub fn new(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
+        frame_buffer: Arc<Framebuffer>,
         pipelines: Pipelines,
-        window: Arc<Window>,
         images: Images,
         descriptor_sets: DescriptorSets,
     ) -> CommandBuffers {
         let pathtraces = PathtraceCommandBuffers::new(
             allocators.clone(),
             queue.clone(),
-            pipelines.clone(),
-            window.clone(),
-            descriptor_sets.clone(),
+            frame_buffer,
+            pipelines,
+            descriptor_sets,
         );
 
         let swapchains = swapchain(allocators.clone(), queue.clone(), images.clone());
@@ -80,8 +81,8 @@ impl PathtraceCommandBuffers {
     pub fn new(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
+        frame_buffer: Arc<Framebuffer>,
         pipelines: Pipelines,
-        window: Arc<Window>,
         descriptor_sets: DescriptorSets,
     ) -> PathtraceCommandBuffers {
         let sdf = Self::sdf(
@@ -98,7 +99,13 @@ impl PathtraceCommandBuffers {
             descriptor_sets.clone(),
         );
 
-        let direct = Self::direct(allocators, queue, pipelines, descriptor_sets, window);
+        let direct = Self::direct(
+            allocators,
+            queue,
+            frame_buffer.clone(),
+            pipelines,
+            descriptor_sets,
+        );
 
         PathtraceCommandBuffers {
             sdf,
@@ -119,25 +126,13 @@ impl PathtraceCommandBuffers {
         }
     }
 
-    pub fn calculate_direct_dispatches(window: Arc<Window>) -> [u32; 3] {
-        let dimensions: PhysicalSize<f32> = window.inner_size().cast();
-
-        [
-            (dimensions.width / 8.0).ceil() as u32,
-            (dimensions.height / 8.0).ceil() as u32,
-            1,
-        ]
-    }
-
     pub fn direct(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
+        frame_buffer: Arc<Framebuffer>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
-        window: Arc<Window>,
     ) -> Arc<PrimaryAutoCommandBuffer> {
-        let dispatch = Self::calculate_direct_dispatches(window);
-
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
             queue.queue_family_index(),
@@ -146,14 +141,21 @@ impl PathtraceCommandBuffers {
         .unwrap();
 
         builder
-            .bind_pipeline_compute(pipelines.direct.clone())
+            .begin_render_pass(
+                RenderPassBeginInfo { clear_values: vec![None], ..RenderPassBeginInfo::framebuffer(frame_buffer) },
+                SubpassContents::Inline,
+            )
+            .unwrap()
+            .bind_pipeline_graphics(pipelines.direct.clone())
             .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
+                PipelineBindPoint::Graphics,
                 pipelines.direct.layout().clone(),
                 0,
                 descriptor_sets.direct.clone(),
             )
-            .dispatch(dispatch)
+            .draw(3, 1, 0, 0)
+            .unwrap()
+            .end_render_pass()
             .unwrap();
 
         Arc::new(builder.build().unwrap())
@@ -264,7 +266,7 @@ pub fn swapchain(
             builder
                 .blit_image(BlitImageInfo {
                     filter: Filter::Linear,
-                    ..BlitImageInfo::images(images.color.clone(), swapchain_image.clone())
+                    ..BlitImageInfo::images(images.render.clone(), swapchain_image.clone())
                 })
                 .unwrap();
 

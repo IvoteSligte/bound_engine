@@ -23,6 +23,7 @@ mod fences;
 mod image;
 mod instance;
 mod pipeline;
+mod render_pass;
 mod scene;
 mod shaders;
 mod state;

@@ -73,14 +73,13 @@ impl DescriptorSets {
             pipelines.direct.layout().set_layouts()[0].clone(),
             [
                 WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                WriteDescriptorSet::image_view(1, image_views.color.clone()),
                 WriteDescriptorSet::image_view_sampler_array(
-                    2,
+                    1,
                     0,
                     combined_image_sampler_sdfs.clone(),
                 ),
                 WriteDescriptorSet::image_view_sampler_array(
-                    3,
+                    2,
                     0,
                     combined_image_sampler_radiances,
                 ), // TODO: sampled

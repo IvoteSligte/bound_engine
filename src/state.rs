@@ -6,6 +6,7 @@ use vulkano::{
         DebugUtilsMessageSeverity, DebugUtilsMessageType, DebugUtilsMessenger,
         DebugUtilsMessengerCreateInfo,
     },
+    render_pass::{Framebuffer, RenderPass},
     swapchain::Swapchain,
 };
 use winit::window::Window;
@@ -20,8 +21,10 @@ use crate::{
     image::Images,
     instance::create_instance,
     pipeline::Pipelines,
+    render_pass,
     shaders::{self, Shaders},
     swapchain::create,
+    FOV,
 };
 
 pub struct State {
@@ -29,6 +32,8 @@ pub struct State {
     pub queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain>,
     pub shaders: Shaders,
+    pub render_pass: Arc<RenderPass>,
+    pub frame_buffer: Arc<Framebuffer>,
     pub pipelines: Pipelines,
     pub buffers: Buffers,
     pub images: Images,
@@ -80,10 +85,6 @@ impl State {
             physical_device.clone(),
         );
 
-        let shaders = Shaders::load(device.clone());
-
-        let pipelines = Pipelines::new(device.clone(), shaders.clone(), window.clone());
-
         let allocators = Allocators::new(device.clone());
 
         let buffers = Buffers::new(allocators.clone(), queue.clone());
@@ -93,6 +94,18 @@ impl State {
             allocators.clone(),
             window.clone(),
             swapchain_images.clone(),
+        );
+
+        let shaders = Shaders::load(device.clone());
+
+        let render_pass = render_pass::create(device.clone());
+        let frame_buffer = render_pass::frame_buffer(render_pass.clone(), images.views().render);
+
+        let pipelines = Pipelines::new(
+            device.clone(),
+            shaders.clone(),
+            render_pass.clone(),
+            window.clone(),
         );
 
         let descriptor_sets = DescriptorSets::new(
@@ -105,8 +118,8 @@ impl State {
         let command_buffers = CommandBuffers::new(
             allocators.clone(),
             queue.clone(),
+            frame_buffer.clone(),
             pipelines.clone(),
-            window.clone(),
             images.clone(),
             descriptor_sets.clone(),
         );
@@ -116,6 +129,8 @@ impl State {
             position: Default::default(),
             lightmapOrigin: Default::default(),
             deltaLightmapOrigins: Default::default(),
+            screenSize: [window.inner_size().width as f32, window.inner_size().height as f32],
+            fov: FOV,
         };
 
         let fences = Fences::new(images.swapchain.len());
@@ -145,6 +160,8 @@ impl State {
             queue,
             swapchain,
             shaders,
+            render_pass,
+            frame_buffer,
             pipelines,
             buffers,
             images,

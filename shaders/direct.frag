@@ -2,25 +2,20 @@
 
 #include "includes_general.glsl"
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-layout(constant_id = 0) const float RATIO_X = 1.0;
-layout(constant_id = 1) const float RATIO_Y = 1.0;
-
-const vec2 RATIO = vec2(RATIO_X, RATIO_Y);
+layout(location = 0) out vec3 fragColor;
 
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
     vec3 position;
     ivec3 lightmapOrigin; // TODO: different origin per layer
     ivec4 deltaLightmapOrigins[LM_LAYERS];
+    vec2 screenSize;
+    float fov;
 } rt;
 
-layout(binding = 1, rgba16) uniform restrict writeonly image2D colorImage;
+layout(binding = 1) uniform sampler3D sdfTextures[LM_LAYERS];
 
-layout(binding = 2) uniform sampler3D sdfTextures[LM_LAYERS];
-
-layout(binding = 3) uniform sampler3D radianceTextures[LM_LAYERS * 4];
+layout(binding = 2) uniform sampler3D radianceTextures[LM_LAYERS * 4];
 
 vec3[4] loadSHCoefs(vec3 index, int layer) {   
     vec3 texIndex = radIndexTexture(index, layer);
@@ -41,13 +36,16 @@ vec3 sampleRadiance(vec3 position, vec3 dir) {
 
 const float NEAR_CLIPPING = 1.0;
 
-// TODO: change to fragment shader
-void main() {
-    const ivec2 VIEWPORT = ivec2(imageSize(colorImage).xy);
-    const ivec2 IPOS = ivec2(gl_GlobalInvocationID.xy);
+// maps screen coords to [-1, 1] range
+vec2 normalizedScreenCoords() {
+    vec2 a = vec2(rt.screenSize.x / rt.screenSize.y, -1.0);
+    vec2 n = 2.0 * gl_FragCoord.xy / rt.screenSize - 1.0;
+    return a * rt.fov * n;
+}
 
+void main() {
     // maps FragCoord to xy range [-1.0, 1.0]
-    const vec2 NORM_COORD = RATIO * (IPOS * 2.0 / VIEWPORT - 1.0);
+    const vec2 NORM_COORD = normalizedScreenCoords();
     const vec3 DIRECTION = normalize(vec3(NORM_COORD.x, 1.0, NORM_COORD.y));
 
     vec3 position = rt.position;
@@ -60,13 +58,10 @@ void main() {
 
     if (!isHit) {
         vec3 color = vec3(dir.z * 0.5 + 0.5);
-        color = pow(color, vec3(5.0)) * 0.1;
-        imageStore(colorImage, IPOS, vec4(color, 0.0));
+        fragColor = pow(color, vec3(5.0)) * 0.1;
         return;
     }
 
-    vec3 color = sampleRadiance(position, -dir);
-    // TODO: hit direction reprojection (calculate outgoing in direct.glsl so that the direction towards the SH probes can be used instead)
-
-    imageStore(colorImage, IPOS, vec4(color, 0.0));
+    fragColor = sampleRadiance(position, -dir);
+    // TODO: hit direction reprojection (calculate outgoing here so that the direction towards the SH probes can be used instead)
 }

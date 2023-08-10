@@ -9,6 +9,8 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
     ivec3 lightmapOrigin; // TODO: different origin per layer
     ivec4 deltaLightmapOrigins[LM_LAYERS];
+    vec2 screenSize;
+    float fov;
 } rt;
 
 layout(binding = 1) uniform restrict readonly ObjectBuffer {

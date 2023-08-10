@@ -13,9 +13,7 @@ use crate::{
     command_buffer::{self, PathtraceCommandBuffers},
     descriptor_sets::*,
     event_helper::Data,
-    image, pipeline,
-    shaders::{self},
-    FOV,
+    image, pipeline, render_pass,
 };
 
 pub fn create(
@@ -77,16 +75,17 @@ pub fn recreate(eh: &mut EventHelper<Data>) -> bool {
             future.wait(None).unwrap();
         }
 
-        eh.state.pipelines.direct = pipeline::compute(
+        eh.state.pipelines.direct = pipeline::graphics(
             eh.state.device.clone(),
-            eh.state.shaders.direct.clone(),
-            &shaders::DirectSpecializationConstants {
-                RATIO_X: FOV,
-                RATIO_Y: -FOV * (dimensions.height as f32) / (dimensions.width as f32),
-            },
+            [dimensions.width as f32, dimensions.height as f32],
+            eh.state.render_pass.clone(),
+            eh.state.shaders.direct.vertex.clone(),
+            (),
+            eh.state.shaders.direct.fragment.clone(),
+            (),
         );
 
-        eh.state.images.color = image::color(eh.state.allocators.clone(), eh.window.clone());
+        eh.state.images.render = image::create_render(eh.state.allocators.clone(), eh.window.clone());
 
         eh.state.descriptor_sets = DescriptorSets::new(
             eh.state.allocators.clone(),
@@ -95,12 +94,15 @@ pub fn recreate(eh: &mut EventHelper<Data>) -> bool {
             eh.state.images.clone(),
         );
 
+        eh.state.frame_buffer =
+            render_pass::frame_buffer(eh.state.render_pass.clone(), eh.state.images.views().render);
+
         eh.state.command_buffers.pathtraces.direct = PathtraceCommandBuffers::direct(
             eh.state.allocators.clone(),
             eh.state.queue.clone(),
+            eh.state.frame_buffer.clone(),
             eh.state.pipelines.clone(),
             eh.state.descriptor_sets.clone(),
-            eh.window.clone(),
         );
 
         eh.state.images.swapchain = new_swapchain_images;

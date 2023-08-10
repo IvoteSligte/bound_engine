@@ -1,8 +1,12 @@
 vulkano_shaders::shader! {
     shaders: {
-        Direct: {
-            ty: "compute",
-            path: "shaders/direct.glsl",
+        DirectVertex: {
+            ty: "vertex",
+            path: "shaders/direct.vert",
+        },
+        DirectFragment: {
+            ty: "fragment",
+            path: "shaders/direct.frag",
         },
         Sdf: {
             ty: "compute",
@@ -47,7 +51,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Shaders {
-    pub direct: Arc<ShaderModule>,
+    pub direct: DirectShaders,
     pub sdf: Arc<ShaderModule>,
     pub radiance: Arc<ShaderModule>,
     pub radiance_precalc: Arc<ShaderModule>,
@@ -56,10 +60,25 @@ pub struct Shaders {
 impl Shaders {
     pub fn load(device: Arc<Device>) -> Self {
         Self {
-            direct: load_direct(device.clone()).unwrap(),
+            direct: DirectShaders::load(device.clone()),
             sdf: load_sdf(device.clone()).unwrap(),
             radiance: load_radiance(device.clone()).unwrap(),
             radiance_precalc: load_radiance_precalc(device.clone()).unwrap(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct DirectShaders {
+    pub vertex: Arc<ShaderModule>,
+    pub fragment: Arc<ShaderModule>,
+}
+
+impl DirectShaders {
+    fn load(device: Arc<Device>) -> Self {
+        Self {
+            vertex: load_direct_vertex(device.clone()).unwrap(),
+            fragment: load_direct_fragment(device).unwrap(),
         }
     }
 }

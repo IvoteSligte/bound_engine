@@ -20,7 +20,7 @@ use self::custom::CustomImage;
 
 #[derive(Clone)]
 pub struct Images {
-    pub color: Arc<CustomImage>,
+    pub render: Arc<CustomImage>,
     pub sdf: SdfImages,
     pub radiance: RadianceImages,
     pub swapchain: Vec<Arc<SwapchainImage>>,
@@ -34,7 +34,7 @@ impl Images {
         swapchain_images: Vec<Arc<SwapchainImage>>,
     ) -> Self {
         Self {
-            color: color(allocators.clone(), window),
+            render: create_render(allocators.clone(), window),
             sdf: SdfImages::new(device.clone(), allocators.clone()),
             radiance: RadianceImages::new(device, allocators),
             swapchain: swapchain_images,
@@ -43,14 +43,14 @@ impl Images {
 
     pub fn views(&self) -> ImageViewsCollection {
         ImageViewsCollection {
-            color: ImageView::new_default(self.color.clone()).unwrap(),
+            render: ImageView::new_default(self.render.clone()).unwrap(),
             sdf: self.sdf.views(),
             radiance: self.radiance.views(),
         }
     }
 }
 
-pub fn color(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<CustomImage> {
+pub fn create_render(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<CustomImage> {
     CustomImage::with_usage(
         &allocators.memory,
         ImageDimensions::Dim2d {
@@ -59,7 +59,7 @@ pub fn color(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<CustomImag
             array_layers: 1,
         },
         Format::R16G16B16A16_UNORM, // double precision for copying to srgb
-        ImageUsage::STORAGE | ImageUsage::TRANSFER_SRC,
+        ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_SRC,
         ImageCreateFlags::empty(),
     )
     .unwrap()
@@ -67,7 +67,7 @@ pub fn color(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<CustomImag
 
 #[derive(Clone)]
 pub struct ImageViewsCollection {
-    pub color: Arc<ImageView<CustomImage>>,
+    pub render: Arc<ImageView<CustomImage>>,
     pub sdf: ImageViews,
     pub radiance: ImageViews,
 }

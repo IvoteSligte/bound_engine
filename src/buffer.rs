@@ -157,6 +157,8 @@ fn real_time_buffer(allocators: Arc<Allocators>) -> Subbuffer<shaders::RealTimeB
             position: Default::default(),
             lightmapOrigin: Default::default(),
             deltaLightmapOrigins: Default::default(),
+            screenSize: Default::default(),
+            fov: Default::default(),
         },
     )
     .unwrap()
