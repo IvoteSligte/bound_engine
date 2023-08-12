@@ -62,6 +62,5 @@ void main() {
         return;
     }
 
-    fragColor = sampleRadiance(position, -dir);
-    // TODO: hit direction reprojection (calculate outgoing here so that the direction towards the SH probes can be used instead)
+    fragColor = sampleRadiance(position, dir);
 }

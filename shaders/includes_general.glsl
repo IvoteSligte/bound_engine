@@ -1,6 +1,4 @@
-const uint ALL_ONES = 4294967295;
-
-const float LM_UNIT_SIZE = 0.5; // TODO: sync this with the rust code (defines)
+#define LM_UNIT_SIZE 0.5 // TODO: sync this with the rust code (defines)
 
 #define FLT_MAX 3.402823466e+38
 
@@ -19,6 +17,34 @@ struct Object {
     float radius;
     uint material;
 };
+
+struct PackedVoxel {
+    uvec2 emittance;
+    uint reflectance;
+    uint normal;
+};
+
+struct Voxel {
+    vec3 emittance;
+    vec3 reflectance;
+    vec3 normal;
+};
+
+PackedVoxel packVoxel(Voxel v) {
+    return PackedVoxel(
+        uvec2(packHalf2x16(v.emittance.xy), packHalf2x16(vec2(v.emittance.z, 0.0))),
+        packUnorm4x8(vec4(v.reflectance, 0.0)),
+        packSnorm4x8(vec4(v.normal, 0.0))
+    );
+}
+
+Voxel unpackVoxel(PackedVoxel v) {
+    return Voxel(
+        vec3(unpackHalf2x16(v.emittance.x), unpackHalf2x16(v.emittance.y).x),
+        unpackUnorm4x8(v.reflectance).rgb,
+        unpackSnorm4x8(v.normal).xyz
+    );
+}
 
 vec3 rotateWithQuat(vec4 q, vec3 v) {
     vec3 t = q.w * v + cross(q.xyz, v);
@@ -52,37 +78,35 @@ float lmHalfSizeLayer(uint lmLayer) {
 
 /// returns an index into a lightmap image in xyz, and the image index in w
 // TODO: origin per layer
-ivec4 lmIndexAtPos(vec3 pos, vec3 origin, out int layer) {
+ivec3 lmIndexAtPos(vec3 pos, vec3 origin, out int layer) {
     layer = lmLayerAtPos(pos, origin);
-    ivec3 index = ivec3(floor((pos - origin) / lmUnitSizeLayer(layer))) + LM_SIZE / 2;
-    return ivec4(index, layer);
+    return ivec3(floor((pos - origin) / lmUnitSizeLayer(layer))) + LM_SIZE / 2;
 }
 
 vec3 lmIndexAtPosF(vec3 pos, vec3 origin, out int layer) {
     layer = lmLayerAtPos(pos, origin);
-    vec3 index = (pos - origin) / float(lmUnitSizeLayer(layer)) + float(LM_SIZE / 2);
-    return index;
+    return (pos - origin) / float(lmUnitSizeLayer(layer)) + float(LM_SIZE / 2);
 }
 
 // TODO: origin per layer
-vec3 posAtLmIndex(ivec4 index, vec3 origin) {
-    return (vec3(index.xyz - LM_SIZE / 2) + 0.5) * lmUnitSizeLayer(index.w) + origin;
+vec3 posAtLmIndex(ivec3 index, int layer, vec3 origin) {
+    return (vec3(index - LM_SIZE / 2) + 0.5) * lmUnitSizeLayer(layer) + origin;
 }
 
 float radUnitSizeLayer(uint layer) {
     return lmUnitSizeLayer(layer) * float(LM_SIZE / RADIANCE_SIZE);
 }
 
-vec3 posAtRadIndex(ivec4 index) {
-    return (vec3(index.xyz - RADIANCE_SIZE / 2) + 0.5) * radUnitSizeLayer(index.w); // TODO: movable origin
+vec3 posAtRadIndex(ivec3 index, int layer) {
+    return (vec3(index - RADIANCE_SIZE / 2) + 0.5) * radUnitSizeLayer(layer); // TODO: movable origin
 }
 
 vec3 posToLmTextureCoord(vec3 pos, uint layer, vec3 origin) {
     return ((pos - origin) / lmSizeLayer(layer)) + 0.5;
 }
 
-ivec4 radIndexAtPos(vec3 pos, out int layer) {
-    ivec4 index = lmIndexAtPos(pos, vec3(0.0), layer);
+ivec3 radIndexAtPos(vec3 pos, out int layer) {
+    ivec3 index = lmIndexAtPos(pos, vec3(0.0), layer);
     index.xyz /= (LM_SIZE / RADIANCE_SIZE);
     return index; // TODO: movable origin
 }
@@ -118,7 +142,7 @@ bool marchRay(sampler3D[LM_LAYERS] SDFImages, inout vec3 pos, vec3 dir, vec3 sdf
         float mult = lmMultsLayer(layer);
 
         vec3 texIdx = (pos - sdfOrigin) * mult + 0.5; // TODO: sdfOrigin varying between layers
-        dist = texture(SDFImages[layer], clamp(texIdx, 0.0, 1.0)).x;
+        dist = texture(SDFImages[layer], texIdx).x;
         totalDist += dist;
 
         if (dist <= threshold * totalDist) { // hit or out of bounds
@@ -129,7 +153,13 @@ bool marchRay(sampler3D[LM_LAYERS] SDFImages, inout vec3 pos, vec3 dir, vec3 sdf
     return false;
 }
 
+vec3 normalizeZeroIfNaN(vec3 v) {
+    return v == vec3(0.0) ? v : normalize(v);
+}
+
 // Originally sourced from https://www.shadertoy.com/view/ldfSWs
+// Returns vec3(NaN) if normal == vec3(0.0)
+// pos should be normalized according to the texture
 vec3 calcNormalSDF(sampler3D sdf, vec3 pos, float eps) {
     const vec3 v1 = vec3( 1.0,-1.0,-1.0);
     const vec3 v2 = vec3(-1.0,-1.0, 1.0);

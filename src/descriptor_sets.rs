@@ -82,7 +82,7 @@ impl DescriptorSets {
                     2,
                     0,
                     combined_image_sampler_radiances,
-                ), // TODO: sampled
+                ),
             ],
         )
         .unwrap();

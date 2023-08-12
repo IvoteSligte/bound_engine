@@ -33,10 +33,12 @@ float calculateSDF(vec3 position) {
 
 // TODO: move the origin by using a modulo when the point is outside the bounds of the image3D
 void main() {
-    const ivec4 LM_INDEX = ivec4(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz, gl_GlobalInvocationID.x / LM_SIZE);
+    // index in layer
+    const ivec3 IIL = ivec3(gl_GlobalInvocationID.x % LM_SIZE, gl_GlobalInvocationID.yz);
+    const int LAYER = int(gl_GlobalInvocationID.x / LM_SIZE);
 
-    vec3 position = posAtLmIndex(LM_INDEX, rt.lightmapOrigin);
+    vec3 position = posAtLmIndex(IIL, LAYER, rt.lightmapOrigin);
     float dist = calculateSDF(position); // bottleneck // TODO: object acceleration structure
 
-    imageStore(SDFImages[LM_INDEX.w], LM_INDEX.xyz, vec4(dist));
+    imageStore(SDFImages[LAYER], IIL, vec4(dist));
 }

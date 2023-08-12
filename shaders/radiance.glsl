@@ -10,7 +10,7 @@ layout(constant_id = 0) const int CHECKERBOARD_OFFSET = 0;
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(binding = 0) buffer RadianceBuffer {
-    Material materials[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
+    PackedVoxel voxels[LM_LAYERS][RADIANCE_SIZE][RADIANCE_SIZE][RADIANCE_SIZE];
 } cache;
 
 layout(binding = 1, rgba16f) uniform image3D radianceImages[LM_LAYERS * 4];
@@ -72,9 +72,16 @@ void main() {
     madAssign(coefs, SH_cosLobe_C0, tCoefs);
     coefs[2] += SH_cosLobe_C1 * tCoefs[0];
 
-    // TODO: cosLobe diffuse reflection stuff
-    vec3 normal = vec3(0.0, 0.0, 1.0); // TODO: get (average?) normal in voxel from scene
-    vec4 cosLobe = dirToCosineLobe(normal);
+    Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
+
+    if (voxel.normal != vec3(0.0)) {
+        vec4 cosLobe = dirToCosineLobe(voxel.normal);
+        vec3 s = cosLobe[0] * coefs[0] + cosLobe[1] * coefs[1] + cosLobe[2] * coefs[2] + cosLobe[3] * coefs[3];
+        coefs[0] = s * cosLobe[0]; // TODO: replace with better hemisphere approximation
+        coefs[1] = s * -cosLobe[1]; // opposite direction
+        coefs[2] = s * -cosLobe[2];
+        coefs[3] = s * -cosLobe[3];
+    }
 
     // FIXME: minimal BASE_FALLOFF value where the radiance doesn't diverge is dependent on either the number of tiles in a layer or the tile size
     const float BASE_FALLOFF = 0.185;
@@ -83,7 +90,7 @@ void main() {
         coefs[i] *= BASE_FALLOFF * distFallOff;
     }
 
-    coefs[0] += cache.materials[LAYER][IIL.x][IIL.y][IIL.z].emittance;
+    coefs[0] += voxel.emittance;
 
     storeSHCoefs(IIL, LAYER, coefs);
 }
