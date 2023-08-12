@@ -31,9 +31,11 @@ void calculateIntersect(vec3 position, uint layer, out Voxel voxel) {
         float volume = overlappingVolume(position, unit, objMin, objMax); // FIXME: often doesn't calculate intersections properly
 
         // INFO: can be changed so it only triggers when the volume is a percentage of the total voxel volume
-        voxel.emittance += mat.emittance * volume;
-        voxel.reflectance += mat.reflectance * volume;
-        voxel.normal += normalizeZeroIfNaN(position - obj.position) * volume;
+        if (volume > 0.0) {
+            voxel.emittance += mat.emittance;
+            voxel.reflectance += mat.reflectance;
+            voxel.normal += normalizeZeroIfNaN(position - obj.position);
+        }
     }
     if (voxel.normal != vec3(0.0)) {
         voxel.normal = normalize(voxel.normal);
