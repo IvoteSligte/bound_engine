@@ -15,12 +15,12 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
 
 layout(binding = 1) uniform sampler3D sdfTextures[LM_LAYERS];
 
-layout(binding = 2) uniform sampler3D radianceTextures[LM_LAYERS * 4];
+layout(binding = 2) uniform sampler3D radianceTextures[LM_LAYERS * SH_CS];
 
-vec3[4] loadSHCoefs(vec3 index, int layer) {   
+vec3[SH_CS] loadSHCoefs(vec3 index, int layer) {   
     vec3 texIndex = radIndexTexture(index, layer);
-    vec3[4] coefs;
-    for (int i = 0; i < 4; i++) {
+    vec3[SH_CS] coefs;
+    for (int i = 0; i < SH_CS; i++) {
         coefs[i] = texture(radianceTextures[layer * LM_LAYERS + i], texIndex).rgb;
     }
     return coefs;
@@ -30,7 +30,7 @@ vec3 sampleRadiance(vec3 position, vec3 dir) {
     int layer;
     vec3 index = radIndexAtPosF(position, layer);
     if (layer >= LM_LAYERS) { return vec3(0.0); }
-    vec3[4] coefs = loadSHCoefs(index, layer);
+    vec3[SH_CS] coefs = loadSHCoefs(index, layer);
     return evaluateRGBSphericalHarmonics(dir, coefs);
 }
 

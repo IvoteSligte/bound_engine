@@ -6,6 +6,7 @@
 
 #define SH_cosLobe_C0 0.886226925 // sqrt(pi)/2
 #define SH_cosLobe_C1 1.02332671 // sqrt(pi/3)
+#define SH_cosLobe_C2 0.495415912 // sqrt(5*pi)/8
 
 struct Material {
     vec3 reflectance;
@@ -176,7 +177,7 @@ vec3 calcNormalSDF(sampler3D sdf, vec3 pos) {
     return calcNormalSDF(sdf, pos, 0.002);
 }
 
-vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[4] coefs) {
+vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[SH_CS] coefs) {
     float x = dir.x;
     float y = dir.y;
     float z = dir.z;
@@ -196,14 +197,6 @@ vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[4] coefs) {
     // s += coefs[8] * 0.54627421 * (x * x - y * y);
 
     return s;
-}
-
-vec4[3] transposeSHCoefs(vec3[4] coefs) {
-    return vec4[](
-        vec4(coefs[0].x, coefs[1].x, coefs[2].x, coefs[3].x),
-        vec4(coefs[0].y, coefs[1].y, coefs[2].y, coefs[3].y),
-        vec4(coefs[0].z, coefs[1].z, coefs[2].z, coefs[3].z)
-    );
 }
 
 // credit to https://ericpolman.com/2016/06/28/light-propagation-volumes/

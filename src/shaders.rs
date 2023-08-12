@@ -28,7 +28,8 @@ vulkano_shaders::shader! {
         ("LM_SIZE", "128"),
         ("RADIANCE_SIZE", "32"),
         ("MAX_OBJECTS", "128"),
-        ("MAX_MATERIALS", "32")
+        ("MAX_MATERIALS", "32"),
+        ("SH_CS", "4")
     ], // TODO: sync defines with consts
     vulkan_version: "1.2", // TODO: vulkan 1.3
     spirv_version: "1.6"
@@ -38,7 +39,7 @@ pub const LM_LAYERS: u32 = 6;
 pub const LM_SIZE: u32 = 128;
 
 pub const RADIANCE_SIZE: u32 = 32;
-pub const RADIANCE_SH_COEFS: u32 = 4;
+pub const SH_CS: u32 = 4;
 
 pub const MAX_OBJECTS: usize = 128;
 pub const MAX_MATERIALS: usize = 32;

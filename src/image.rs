@@ -13,7 +13,7 @@ use winit::window::Window;
 
 use crate::{
     allocator::Allocators,
-    shaders::{LM_LAYERS, LM_SIZE, RADIANCE_SH_COEFS, RADIANCE_SIZE},
+    shaders::{LM_LAYERS, LM_SIZE, SH_CS, RADIANCE_SIZE},
 };
 
 use self::custom::CustomImage;
@@ -120,7 +120,7 @@ impl RadianceImages {
         };
 
         // image for every layer and every spherical harmonic coefficient
-        let images = (0..(RADIANCE_SH_COEFS * LM_LAYERS))
+        let images = (0..(SH_CS * LM_LAYERS))
             .map(|_| {
                 CustomImage::with_usage(
                     &allocators.memory,
