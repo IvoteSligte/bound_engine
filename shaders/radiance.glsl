@@ -74,6 +74,7 @@ void main() {
 
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
+    // FIXME: negative part of cosine lobe causes problems
     if (voxel.normal != vec3(0.0)) {
         vec4 cosLobe = dirToCosineLobe(voxel.normal);
         vec3 s = cosLobe[0] * coefs[0] + cosLobe[1] * coefs[1] + cosLobe[2] * coefs[2] + cosLobe[3] * coefs[3];
