@@ -28,9 +28,8 @@ void calculateIntersect(vec3 position, uint layer, out Voxel voxel) {
         vec3 objMin = obj.position - obj.radius;
         vec3 objMax = obj.position + obj.radius;
 
-        float volume = overlappingVolume(position, unit, objMin, objMax); // FIXME: often doesn't calculate intersections properly
+        float volume = overlappingVolume(position, unit, objMin, objMax);
 
-        // INFO: can be changed so it only triggers when the volume is a percentage of the total voxel volume
         if (volume > 0.0) {
             voxel.emittance += mat.emittance;
             voxel.reflectance += mat.reflectance;
