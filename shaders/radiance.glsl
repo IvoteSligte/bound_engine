@@ -78,7 +78,7 @@ void main() {
     if (voxel.normal != vec3(0.0)) {
         vec4 cosLobe = dirToCosineLobe(voxel.normal);
         vec3 s = voxel.reflectance * max(vec3(0.0), cosLobe[0] * coefs[0] + cosLobe[1] * coefs[1] + cosLobe[2] * coefs[2] + cosLobe[3] * coefs[3]);
-        coefs[0] = s * cosLobe[0]; // TODO: replace with better hemisphere approximation
+        coefs[0] = s * cosLobe[0];
         coefs[1] = s * -cosLobe[1]; // opposite direction
         coefs[2] = s * -cosLobe[2];
         coefs[3] = s * -cosLobe[3];

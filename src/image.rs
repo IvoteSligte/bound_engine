@@ -136,7 +136,7 @@ impl RadianceImages {
         let sampler = Sampler::new(
             device.clone(),
             SamplerCreateInfo {
-                address_mode: [SamplerAddressMode::ClampToBorder; 3],
+                address_mode: [SamplerAddressMode::ClampToEdge; 3],
                 border_color: BorderColor::FloatTransparentBlack,
                 ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
             },
@@ -185,7 +185,7 @@ impl SdfImages {
         let sampler = Sampler::new(
             device,
             SamplerCreateInfo {
-                address_mode: [SamplerAddressMode::ClampToEdge; 3],
+                address_mode: [SamplerAddressMode::ClampToBorder; 3],
                 border_color: BorderColor::FloatTransparentBlack,
                 ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
             },
