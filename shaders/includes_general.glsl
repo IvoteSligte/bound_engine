@@ -213,8 +213,8 @@ float sdBox(vec3 p, vec3 b) {
     return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
 
-// Function to calculate overlapping volume between a cube and a cuboid
-float overlappingVolume(vec3 cubePosition, float cubeSize, vec3 cuboidMin, vec3 cuboidMax) {
+// Cube and cuboid intersection test
+bool cubeCuboidIntersect(vec3 cubePosition, float cubeSize, vec3 cuboidMin, vec3 cuboidMax) {
     vec3 cubeMin = cubePosition - 0.5 * cubeSize;
     vec3 cubeMax = cubePosition + 0.5 * cubeSize;
 
@@ -222,8 +222,5 @@ float overlappingVolume(vec3 cubePosition, float cubeSize, vec3 cuboidMin, vec3 
     vec3 minRange = max(cubeMin, cuboidMin);
     vec3 maxRange = min(cubeMax, cuboidMax);
     
-    vec3 overlapDimensions = max(vec3(0.0), maxRange - minRange);
-    
-    float overlappingVolume = overlapDimensions.x * overlapDimensions.y * overlapDimensions.z;
-    return overlappingVolume;
+    return all(greaterThan(maxRange - minRange, vec3(0.0)));
 }

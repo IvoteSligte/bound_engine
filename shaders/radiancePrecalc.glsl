@@ -28,9 +28,8 @@ void calculateIntersect(vec3 position, uint layer, out Voxel voxel) {
         vec3 objMin = obj.position - obj.radius;
         vec3 objMax = obj.position + obj.radius;
 
-        float volume = overlappingVolume(position, unit, objMin, objMax);
-
-        if (volume > 0.0) {
+        bool intersects = cubeCuboidIntersect(position, unit, objMin, objMax);
+        if (intersects) {
             voxel.emittance += mat.emittance;
             voxel.reflectance += mat.reflectance;
             voxel.normal += normalizeZeroIfNaN(position - obj.position);
