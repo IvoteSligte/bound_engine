@@ -10,13 +10,11 @@ use vulkano::descriptor_set::WriteDescriptorSet;
 
 use vulkano::descriptor_set::PersistentDescriptorSet;
 
-use std::iter::repeat;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct DescriptorSets {
     pub direct: Arc<PersistentDescriptorSet>,
-    pub sdf: Arc<PersistentDescriptorSet>,
     pub radiance: Arc<PersistentDescriptorSet>,
     pub radiance_precalc: Arc<PersistentDescriptorSet>,
 }
@@ -30,40 +28,15 @@ impl DescriptorSets {
     ) -> DescriptorSets {
         let image_views = images.views(); // TODO: change image usage here to optimize
 
-        let combined_image_sampler_sdfs = image_views
-            .sdf
-            .sampled
-            .iter()
-            .cloned()
-            .zip(repeat(images.sdf.sampler()))
-            .collect::<Vec<_>>();
-
-        let combined_image_sampler_radiances = image_views
-            .radiance
-            .sampled
-            .iter()
-            .cloned()
-            .zip(repeat(images.radiance.sampler()))
-            .collect::<Vec<_>>();
-
-        let sdf = PersistentDescriptorSet::new(
-            &allocators.descriptor_set,
-            pipelines.sdf.layout().set_layouts()[0].clone(),
-            [
-                WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                WriteDescriptorSet::buffer(1, buffers.objects.clone()),
-                WriteDescriptorSet::image_view_array(2, 0, image_views.sdf.storage.clone()),
-            ],
-        )
-        .unwrap();
-
         let radiance_precalc = PersistentDescriptorSet::new(
             &allocators.descriptor_set,
             pipelines.radiance_precalc.layout().set_layouts()[0].clone(),
             [
-                WriteDescriptorSet::buffer(0, buffers.objects.clone()),
-                WriteDescriptorSet::buffer(1, buffers.materials.clone()),
-                WriteDescriptorSet::buffer(2, buffers.radiance.clone()),
+                WriteDescriptorSet::buffer(0, buffers.vertex.clone()),
+                WriteDescriptorSet::buffer(1, buffers.vertex_idxs.clone()),
+                WriteDescriptorSet::buffer(2, buffers.material_idxs.clone()),
+                WriteDescriptorSet::buffer(3, buffers.material.clone()),
+                WriteDescriptorSet::buffer(4, buffers.radiance.clone()),
             ],
         )
         .unwrap();
@@ -76,12 +49,7 @@ impl DescriptorSets {
                 WriteDescriptorSet::image_view_sampler_array(
                     1,
                     0,
-                    combined_image_sampler_sdfs.clone(),
-                ),
-                WriteDescriptorSet::image_view_sampler_array(
-                    2,
-                    0,
-                    combined_image_sampler_radiances,
+                    images.radiance.combined_image_samplers(),
                 ),
             ],
         )
@@ -99,7 +67,6 @@ impl DescriptorSets {
 
         DescriptorSets {
             direct,
-            sdf,
             radiance,
             radiance_precalc,
         }

@@ -85,7 +85,7 @@ void main() {
 
     // FIXME: minimal BASE_FALLOFF value where the radiance doesn't diverge is dependent on either the number of tiles in a layer or the tile size
     const float BASE_FALLOFF = 0.185;
-    float distFallOff = radUnitSizeLayer(0) / radUnitSizeLayer(LAYER);
+    float distFallOff = radUnitSizeLayer(0) / radUnitSizeLayer(LAYER); // TODO: replace radUnitSizeLayer(0) with 1.0
     for (int i = 0; i < SH_CS; i++) {
         coefs[i] *= BASE_FALLOFF * distFallOff;
     }

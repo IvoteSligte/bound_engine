@@ -8,20 +8,23 @@ use vulkano::{
     },
     device::Queue,
     memory::allocator::{AllocationCreateInfo, MemoryUsage},
+    padded::Padded,
     sync::GpuFuture,
 };
 
 use crate::{
     allocator::Allocators,
-    scene::{self, RawObject},
+    scene::{self},
     shaders,
 };
 
 #[derive(Clone)]
 pub struct Buffers {
     pub real_time: Subbuffer<shaders::RealTimeBuffer>,
-    pub materials: Subbuffer<shaders::MaterialBuffer>, // TODO: rename to MaterialBuffer
-    pub objects: Subbuffer<[RawObject]>,
+    pub vertex: Subbuffer<[scene::Vertex]>,
+    pub vertex_idxs: Subbuffer<[u32]>,
+    pub material_idxs: Subbuffer<[u32]>,
+    pub material: Subbuffer<shaders::MaterialBuffer>,
     pub radiance: Subbuffer<[u8]>,
 }
 
@@ -34,10 +37,15 @@ impl Buffers {
         )
         .unwrap();
 
+        let (vertex, vertex_idxs, material_idxs, material) =
+            scene(allocators.clone(), &mut builder);
+
         let buffers = Self {
             real_time: real_time_buffer(allocators.clone()),
-            materials: materials(allocators.clone(), &mut builder),
-            objects: objects(allocators.clone(), &mut builder),
+            vertex,
+            vertex_idxs,
+            material_idxs,
+            material,
             radiance: zeroed(
                 allocators.clone(),
                 &mut builder,
@@ -159,27 +167,118 @@ fn real_time_buffer(allocators: Arc<Allocators>) -> Subbuffer<shaders::RealTimeB
             deltaLightmapOrigins: Default::default(),
             screenSize: Default::default(),
             fov: Default::default(),
+            projection_view: Default::default(),
         },
     )
     .unwrap()
 }
 
+fn scene(
+    allocators: Arc<Allocators>,
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> (
+    Subbuffer<[scene::Vertex]>,
+    Subbuffer<[u32]>,
+    Subbuffer<[u32]>,
+    Subbuffer<shaders::MaterialBuffer>,
+) {
+    let (vertex_data, vertex_idx_data, material_idx_data, material_data) = scene::load();
+    let vertex_buffer = vertices(allocators.clone(), cmb_builder, vertex_data);
+    let vertex_index_buffer = vertex_indices(allocators.clone(), cmb_builder, vertex_idx_data);
+    let material_index_buffer =
+        material_indices(allocators.clone(), cmb_builder, material_idx_data);
+    let material_buffer = materials(allocators.clone(), cmb_builder, material_data);
+
+    (vertex_buffer, vertex_index_buffer, material_index_buffer, material_buffer)
+}
+
+fn vertices(
+    allocators: Arc<Allocators>,
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    vertices: Vec<scene::Vertex>,
+) -> Subbuffer<[scene::Vertex]> {
+    let buffer = Buffer::new_slice(
+        &allocators.memory,
+        BufferCreateInfo {
+            usage: BufferUsage::STORAGE_BUFFER
+                | BufferUsage::VERTEX_BUFFER
+                | BufferUsage::TRANSFER_DST,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            usage: MemoryUsage::DeviceOnly,
+            ..Default::default()
+        },
+        vertices.len() as u64,
+    )
+    .unwrap();
+
+    stage_with_iter(allocators, cmb_builder, buffer.clone(), vertices);
+
+    buffer
+}
+
+fn vertex_indices(
+    allocators: Arc<Allocators>,
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    vertex_indices: Vec<u32>,
+) -> Subbuffer<[u32]> {
+    let buffer = Buffer::new_slice(
+        &allocators.memory,
+        BufferCreateInfo {
+            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::INDEX_BUFFER | BufferUsage::TRANSFER_DST,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            usage: MemoryUsage::DeviceOnly,
+            ..Default::default()
+        },
+        vertex_indices.len() as u64,
+    )
+    .unwrap();
+
+    stage_with_iter(allocators, cmb_builder, buffer.clone(), vertex_indices);
+
+    buffer
+}
+
+fn material_indices(
+    allocators: Arc<Allocators>,
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    material_indices: Vec<u32>,
+) -> Subbuffer<[u32]> {
+    let buffer = Buffer::new_slice(
+        &allocators.memory,
+        BufferCreateInfo {
+            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            usage: MemoryUsage::DeviceOnly,
+            ..Default::default()
+        },
+        material_indices.len() as u64,
+    )
+    .unwrap();
+
+    stage_with_iter(allocators, cmb_builder, buffer.clone(), material_indices);
+
+    buffer
+}
+
 fn materials(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    materials: Vec<shaders::Material>,
 ) -> Subbuffer<shaders::MaterialBuffer> {
-    let mut material_data = shaders::MaterialBuffer {
-        materials: [shaders::Material {
-            emittance: Default::default(),
-            reflectance: Default::default(),
-        }
-        .into(); 32], // TODO: dynamic size
+    let material_data = shaders::MaterialBuffer {
+        materials: materials
+            .into_iter()
+            .map(<Padded<shaders::Material, 4> as From<shaders::Material>>::from)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap(),
     };
-    let materials = scene::load_materials()
-        .into_iter()
-        .map(|x| x.into())
-        .collect::<Vec<_>>();
-    material_data.materials[..materials.len()].copy_from_slice(&materials);
 
     let buffer = Buffer::new_sized(
         &allocators.memory,
@@ -195,31 +294,6 @@ fn materials(
     .unwrap();
 
     stage_with_data(allocators, cmb_builder, buffer.clone(), material_data);
-
-    buffer
-}
-
-fn objects(
-    allocators: Arc<Allocators>,
-    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-) -> Subbuffer<[RawObject]> {
-    let object_data = scene::load_objects();
-
-    let buffer = Buffer::new_slice(
-        &allocators.memory,
-        BufferCreateInfo {
-            usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::DeviceOnly,
-            ..Default::default()
-        },
-        object_data.len() as u64,
-    )
-    .unwrap();
-
-    stage_with_iter(allocators, cmb_builder, buffer.clone(), object_data);
 
     buffer
 }

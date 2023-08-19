@@ -1,11 +1,22 @@
 #version 460
 
-const vec2[3] VERTICES = vec2[](
-    vec2(-1.0, -1.0),
-    vec2( 3.0, -1.0),
-    vec2(-1.0,  3.0)
-);
+layout(location = 0) in vec4 position;
+
+layout(location = 0) out vec3 worldPosition;
+
+// TODO: model space (?) / model -> world space transformation matrix
+
+layout(binding = 0) uniform restrict readonly RealTimeBuffer {
+    vec4 rotation;
+    vec3 position;
+    ivec3 lightmapOrigin;
+    ivec4 deltaLightmapOrigins[LM_LAYERS];
+    vec2 screenSize;
+    float fov;
+    mat4 projection_view;
+} rt;
 
 void main() {
-    gl_Position = vec4(VERTICES[gl_VertexIndex], 0.0, 1.0);
+    gl_Position = rt.projection_view * vec4(position.xyz, 1.0);
+    worldPosition = position.xyz;
 }

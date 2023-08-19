@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{f32::consts::PI, sync::Arc};
 
+use glam::{Mat4, Quat, Vec2, Vec3};
 use vulkano::{
     device::{Device, DeviceExtensions, Features, Queue},
     instance::debug::{
@@ -99,7 +100,7 @@ impl State {
         let shaders = Shaders::load(device.clone());
 
         let render_pass = render_pass::create(device.clone());
-        let frame_buffer = render_pass::frame_buffer(render_pass.clone(), images.views().render);
+        let frame_buffer = render_pass::frame_buffer(render_pass.clone(), images.views());
 
         let pipelines = Pipelines::new(
             device.clone(),
@@ -122,15 +123,26 @@ impl State {
             pipelines.clone(),
             images.clone(),
             descriptor_sets.clone(),
+            buffers.clone(),
         );
 
+        let screen_size = [
+            window.inner_size().width as f32,
+            window.inner_size().height as f32,
+        ];
         let real_time_data = shaders::RealTimeBuffer {
             rotation: Default::default(),
             position: Default::default(),
             lightmapOrigin: Default::default(),
             deltaLightmapOrigins: Default::default(),
-            screenSize: [window.inner_size().width as f32, window.inner_size().height as f32],
-            fov: FOV,
+            screenSize: screen_size,
+            fov: FOV.into(),
+            projection_view: projection_view_matrix(
+                Default::default(),
+                Default::default(),
+                Vec2::from_array(screen_size),
+            )
+            .to_cols_array_2d(),
         };
 
         let fences = Fences::new(images.swapchain.len());
@@ -174,4 +186,15 @@ impl State {
             _debugger: debugger,
         }
     }
+}
+
+pub fn projection_view_matrix(position: Vec3, rotation: Quat, screen_size: Vec2) -> Mat4 {
+    let eye = position;
+    let center = position + rotation * Vec3::Y;
+    let up = -Vec3::Z; // TODO: make it so UP doesn't need to be flipped
+
+    let view = Mat4::look_at_lh(eye, center, up);
+    let projection =
+        Mat4::perspective_lh(PI / 4.0 * FOV, screen_size.x / screen_size.y, 1.0, 1000.0); // TODO: maybe change z_near and z_far
+    projection * view
 }

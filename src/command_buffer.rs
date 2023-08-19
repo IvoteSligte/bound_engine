@@ -6,18 +6,15 @@ use vulkano::{
         RenderPassBeginInfo, SubpassContents,
     },
     device::Queue,
+    format::ClearValue,
     pipeline::{Pipeline, PipelineBindPoint},
     render_pass::Framebuffer,
     sampler::Filter,
 };
 
 use crate::{
-    allocator::Allocators,
-    descriptor_sets::DescriptorSets,
-    image::Images,
-    pipeline::Pipelines,
-    shaders::{LM_SIZE, RADIANCE_SIZE},
-    LM_LAYERS,
+    allocator::Allocators, buffer::Buffers, descriptor_sets::DescriptorSets, image::Images,
+    pipeline::Pipelines, shaders::RADIANCE_SIZE, LM_LAYERS,
 };
 
 #[derive(Clone)]
@@ -34,6 +31,7 @@ impl CommandBuffers {
         pipelines: Pipelines,
         images: Images,
         descriptor_sets: DescriptorSets,
+        buffers: Buffers,
     ) -> CommandBuffers {
         let pathtraces = PathtraceCommandBuffers::new(
             allocators.clone(),
@@ -41,6 +39,7 @@ impl CommandBuffers {
             frame_buffer,
             pipelines,
             descriptor_sets,
+            buffers,
         );
 
         let swapchains = swapchain(allocators.clone(), queue.clone(), images.clone());
@@ -54,7 +53,7 @@ impl CommandBuffers {
 
 #[derive(Clone, Debug)]
 pub enum PathTraceState {
-    Sdf,
+    Precalc,
     Radiance(usize),
 }
 
@@ -62,7 +61,7 @@ impl PathTraceState {
     fn next(&mut self) -> Self {
         let old = self.clone();
         match old {
-            Self::Sdf => *self = Self::Radiance(0),
+            Self::Precalc => *self = Self::Radiance(0),
             Self::Radiance(frame) => *self = Self::Radiance(frame + 1),
         }
         old
@@ -71,7 +70,7 @@ impl PathTraceState {
 
 #[derive(Clone)]
 pub struct PathtraceCommandBuffers {
-    pub sdf: Arc<PrimaryAutoCommandBuffer>,
+    pub precalc: Arc<PrimaryAutoCommandBuffer>,
     pub radiance: Vec<Arc<PrimaryAutoCommandBuffer>>,
     pub direct: Arc<PrimaryAutoCommandBuffer>,
     state: PathTraceState,
@@ -84,8 +83,9 @@ impl PathtraceCommandBuffers {
         frame_buffer: Arc<Framebuffer>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
+        buffers: Buffers,
     ) -> PathtraceCommandBuffers {
-        let sdf = Self::sdf(
+        let precalc = Self::radiance_precalc(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
@@ -105,23 +105,20 @@ impl PathtraceCommandBuffers {
             frame_buffer.clone(),
             pipelines,
             descriptor_sets,
+            buffers,
         );
 
         PathtraceCommandBuffers {
-            sdf,
+            precalc,
             radiance,
             direct,
-            state: PathTraceState::Sdf,
+            state: PathTraceState::Precalc,
         }
-    }
-
-    pub fn restart(&mut self) {
-        self.state = PathTraceState::Sdf;
     }
 
     pub fn next(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
         match self.state.next() {
-            PathTraceState::Sdf => self.sdf.clone(),
+            PathTraceState::Precalc => self.precalc.clone(),
             PathTraceState::Radiance(frame) => self.radiance[frame % 2].clone(),
         }
     }
@@ -132,6 +129,7 @@ impl PathtraceCommandBuffers {
         frame_buffer: Arc<Framebuffer>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
+        buffers: Buffers,
     ) -> Arc<PrimaryAutoCommandBuffer> {
         let mut builder = AutoCommandBufferBuilder::primary(
             &allocators.command_buffer,
@@ -142,7 +140,13 @@ impl PathtraceCommandBuffers {
 
         builder
             .begin_render_pass(
-                RenderPassBeginInfo { clear_values: vec![None], ..RenderPassBeginInfo::framebuffer(frame_buffer) },
+                RenderPassBeginInfo {
+                    clear_values: vec![
+                        Some(ClearValue::Float([0.0; 4])),
+                        Some(ClearValue::Depth(1e20)),
+                    ],
+                    ..RenderPassBeginInfo::framebuffer(frame_buffer)
+                },
                 SubpassContents::Inline,
             )
             .unwrap()
@@ -153,7 +157,15 @@ impl PathtraceCommandBuffers {
                 0,
                 descriptor_sets.direct.clone(),
             )
-            .draw(3, 1, 0, 0)
+            .bind_vertex_buffers(0, buffers.vertex)
+            .bind_index_buffer(buffers.vertex_idxs.clone())
+            .draw_indexed(
+                buffers.vertex_idxs.len() as u32, // INFO: this will break if the index/vertex count changes
+                1,
+                0,
+                0,
+                0,
+            )
             .unwrap()
             .end_render_pass()
             .unwrap();
@@ -161,14 +173,13 @@ impl PathtraceCommandBuffers {
         Arc::new(builder.build().unwrap())
     }
 
-    fn sdf(
+    fn radiance_precalc(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
     ) -> Arc<PrimaryAutoCommandBuffer> {
-        let dispatch_sdf = [LM_SIZE / 4 * LM_LAYERS, LM_SIZE / 4, LM_SIZE / 4];
-        let dispatch_radiance_precalc = [
+        let dispatch = [
             RADIANCE_SIZE / 4 * LM_LAYERS,
             RADIANCE_SIZE / 4,
             RADIANCE_SIZE / 4,
@@ -181,17 +192,6 @@ impl PathtraceCommandBuffers {
         )
         .unwrap();
 
-        builder
-            .bind_pipeline_compute(pipelines.sdf.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.sdf.layout().clone(),
-                0,
-                descriptor_sets.sdf.clone(),
-            )
-            .dispatch(dispatch_sdf)
-            .unwrap();
-
         // radiance precalc
         builder
             .bind_pipeline_compute(pipelines.radiance_precalc.clone())
@@ -201,7 +201,7 @@ impl PathtraceCommandBuffers {
                 0,
                 descriptor_sets.radiance_precalc.clone(),
             )
-            .dispatch(dispatch_radiance_precalc)
+            .dispatch(dispatch)
             .unwrap();
 
         Arc::new(builder.build().unwrap())
@@ -213,7 +213,7 @@ impl PathtraceCommandBuffers {
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-        let dispatch_radiance = [
+        let dispatch = [
             RADIANCE_SIZE / 4 * LM_LAYERS,
             RADIANCE_SIZE / 4 / 2, // halved for checkerboard rendering
             RADIANCE_SIZE / 4,
@@ -237,7 +237,7 @@ impl PathtraceCommandBuffers {
                     0,
                     descriptor_sets.radiance.clone(),
                 )
-                .dispatch(dispatch_radiance)
+                .dispatch(dispatch)
                 .unwrap();
 
             cmbs.push(Arc::new(builder.build().unwrap()));

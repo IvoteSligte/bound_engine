@@ -13,7 +13,7 @@ use winit::window::Window;
 
 use crate::{
     allocator::Allocators,
-    shaders::{LM_LAYERS, LM_SIZE, SH_CS, RADIANCE_SIZE},
+    shaders::{LM_LAYERS, RADIANCE_SIZE, SH_CS},
 };
 
 use self::custom::CustomImage;
@@ -21,7 +21,7 @@ use self::custom::CustomImage;
 #[derive(Clone)]
 pub struct Images {
     pub render: Arc<CustomImage>,
-    pub sdf: SdfImages,
+    pub depth: Arc<CustomImage>,
     pub radiance: RadianceImages,
     pub swapchain: Vec<Arc<SwapchainImage>>,
 }
@@ -34,17 +34,17 @@ impl Images {
         swapchain_images: Vec<Arc<SwapchainImage>>,
     ) -> Self {
         Self {
-            render: create_render(allocators.clone(), window),
-            sdf: SdfImages::new(device.clone(), allocators.clone()),
+            render: create_render(allocators.clone(), window.clone()),
+            depth: create_depth(allocators.clone(), window.clone()),
             radiance: RadianceImages::new(device, allocators),
             swapchain: swapchain_images,
         }
     }
 
-    pub fn views(&self) -> ImageViewsCollection {
-        ImageViewsCollection {
+    pub fn views(&self) -> ImageViewCollection {
+        ImageViewCollection {
             render: ImageView::new_default(self.render.clone()).unwrap(),
-            sdf: self.sdf.views(),
+            depth: ImageView::new_default(self.depth.clone()).unwrap(),
             radiance: self.radiance.views(),
         }
     }
@@ -65,44 +65,19 @@ pub fn create_render(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<Cu
     .unwrap()
 }
 
-#[derive(Clone)]
-pub struct ImageViewsCollection {
-    pub render: Arc<ImageView<CustomImage>>,
-    pub sdf: ImageViews,
-    pub radiance: ImageViews,
-}
-
-#[derive(Clone)]
-pub struct ImageViews {
-    pub storage: Vec<Arc<dyn ImageViewAbstract>>,
-    pub sampled: Vec<Arc<dyn ImageViewAbstract>>,
-}
-
-impl ImageViews {
-    fn create_views(
-        images: &[Arc<CustomImage>],
-        usage: ImageUsage,
-    ) -> Vec<Arc<dyn ImageViewAbstract>> {
-        images
-            .iter()
-            .map(|img| {
-                ImageView::new(
-                    img.clone(),
-                    ImageViewCreateInfo {
-                        usage,
-                        ..ImageViewCreateInfo::from_image(img)
-                    },
-                )
-                .unwrap() as Arc<dyn ImageViewAbstract>
-            })
-            .collect()
-    }
-
-    fn from_images(images: &[Arc<CustomImage>]) -> Self {
-        let storage = Self::create_views(images, ImageUsage::STORAGE);
-        let sampled = Self::create_views(images, ImageUsage::SAMPLED);
-        Self { storage, sampled }
-    }
+pub fn create_depth(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<CustomImage> {
+    CustomImage::with_usage(
+        &allocators.memory,
+        ImageDimensions::Dim2d {
+            width: window.inner_size().width,
+            height: window.inner_size().height,
+            array_layers: 1,
+        },
+        Format::D32_SFLOAT,
+        ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+        ImageCreateFlags::empty(),
+    )
+    .unwrap()
 }
 
 #[derive(Clone)]
@@ -146,61 +121,54 @@ impl RadianceImages {
         Self { images, sampler }
     }
 
-    pub fn sampler(&self) -> Arc<Sampler> {
-        self.sampler.clone()
+    pub fn combined_image_samplers(&self) -> Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)> {
+        self.views()
+            .sampled
+            .iter()
+            .cloned()
+            .zip(std::iter::repeat(self.sampler.clone()))
+            .collect::<Vec<_>>()
     }
 
-    pub fn views(&self) -> ImageViews {
-        ImageViews::from_images(&self.images)
+    pub fn views(&self) -> RadianceImageViews {
+        RadianceImageViews::from_images(&self.images)
     }
 }
 
 #[derive(Clone)]
-pub struct SdfImages {
-    images: Vec<Arc<CustomImage>>,
-    sampler: Arc<Sampler>,
+pub struct ImageViewCollection {
+    pub render: Arc<ImageView<CustomImage>>,
+    pub depth: Arc<ImageView<CustomImage>>,
+    pub radiance: RadianceImageViews,
 }
 
-impl SdfImages {
-    pub fn new(device: Arc<Device>, allocators: Arc<Allocators>) -> Self {
-        let dimensions = ImageDimensions::Dim3d {
-            width: LM_SIZE,
-            height: LM_SIZE,
-            depth: LM_SIZE,
-        };
+#[derive(Clone)]
+pub struct RadianceImageViews {
+    pub storage: Vec<Arc<dyn ImageViewAbstract>>,
+    pub sampled: Vec<Arc<dyn ImageViewAbstract>>,
+}
 
-        let images = (0..LM_LAYERS)
-            .map(|_| {
-                CustomImage::with_usage(
-                    &allocators.memory,
-                    dimensions,
-                    Format::R16_SFLOAT,
-                    ImageUsage::STORAGE | ImageUsage::SAMPLED,
-                    ImageCreateFlags::empty(),
+impl RadianceImageViews {
+    fn create(images: &[Arc<CustomImage>], usage: ImageUsage) -> Vec<Arc<dyn ImageViewAbstract>> {
+        images
+            .iter()
+            .map(|img| {
+                ImageView::new(
+                    img.clone(),
+                    ImageViewCreateInfo {
+                        usage,
+                        ..ImageViewCreateInfo::from_image(img)
+                    },
                 )
-                .unwrap()
+                .unwrap() as Arc<dyn ImageViewAbstract>
             })
-            .collect::<Vec<_>>();
-
-        let sampler = Sampler::new(
-            device,
-            SamplerCreateInfo {
-                address_mode: [SamplerAddressMode::ClampToBorder; 3],
-                border_color: BorderColor::FloatTransparentBlack,
-                ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
-            },
-        )
-        .unwrap();
-
-        Self { images, sampler }
+            .collect()
     }
 
-    pub fn sampler(&self) -> Arc<Sampler> {
-        self.sampler.clone()
-    }
-
-    pub fn views(&self) -> ImageViews {
-        ImageViews::from_images(&self.images)
+    fn from_images(images: &[Arc<CustomImage>]) -> Self {
+        let storage = Self::create(images, ImageUsage::STORAGE);
+        let sampled = Self::create(images, ImageUsage::SAMPLED);
+        Self { storage, sampled }
     }
 }
 
@@ -343,7 +311,7 @@ mod custom {
 
     unsafe impl<P> ImageContent<P> for CustomImage {
         fn matches_format(&self) -> bool {
-            true // FIXME: copied from [vulkano::image::StorageImage]
+            true // TODO: improve; copied from [vulkano::image::StorageImage]
         }
     }
 

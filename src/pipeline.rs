@@ -1,8 +1,9 @@
-use crate::shaders;
 use crate::shaders::Shaders;
+use crate::{scene, shaders};
 
+use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
-use vulkano::pipeline::graphics::vertex_input::VertexInputState;
+use vulkano::pipeline::graphics::vertex_input::{self};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::pipeline::{ComputePipeline, GraphicsPipeline};
 
@@ -51,10 +52,11 @@ where
     };
 
     GraphicsPipeline::start()
-        .vertex_input_state(VertexInputState::default())
+        .vertex_input_state(<scene::Vertex as vertex_input::Vertex>::per_vertex())
         .vertex_shader(vertex.entry_point("main").unwrap(), spec_consts_vertex)
         .input_assembly_state(InputAssemblyState::default())
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
+        .depth_stencil_state(DepthStencilState::simple_depth_test())
         .fragment_shader(fragment.entry_point("main").unwrap(), spec_consts_fragment)
         .render_pass(Subpass::from(render_pass, 0).unwrap())
         .build(device)
@@ -64,7 +66,6 @@ where
 #[derive(Clone)]
 pub struct Pipelines {
     pub direct: Arc<GraphicsPipeline>,
-    pub sdf: Arc<ComputePipeline>,
     pub radiance: [Arc<ComputePipeline>; 2],
     pub radiance_precalc: Arc<ComputePipeline>,
 }
@@ -88,8 +89,6 @@ impl Pipelines {
             (),
         );
 
-        let sdf = compute(device.clone(), shaders.sdf.clone(), &());
-
         let radiance = [
             compute(
                 device.clone(),
@@ -111,7 +110,6 @@ impl Pipelines {
 
         Self {
             direct,
-            sdf,
             radiance,
             radiance_precalc,
         }

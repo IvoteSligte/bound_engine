@@ -108,36 +108,19 @@ fn main() {
             eh.delta_position.z += delta_mov;
         }
 
-        let new_position =
-            Vec3::from_array(*eh.state.real_time_data.position.as_ref()) + eh.delta_position();
-
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
+
+        let position = Vec3::from_array(*eh.state.real_time_data.position) + eh.delta_position();
+
         eh.state.real_time_data.rotation = eh.rotation().to_array();
-        eh.state.real_time_data.position = new_position.to_array().into();
+        eh.state.real_time_data.position = position.to_array().into();
         eh.delta_position = Vec3::ZERO;
-
-        let old_pos = IVec3::from_array(*eh.state.real_time_data.lightmapOrigin);
-        let new_pos = new_position.as_ivec3();
-
-        const SMALLEST_UNIT: f32 = 0.5;
-        const LARGEST_UNIT: f32 = (1 << (LM_LAYERS - 1)) as f32 * SMALLEST_UNIT;
-
-        let largest_delta_pos = (new_pos - old_pos).as_vec3() / LARGEST_UNIT;
-
-        if largest_delta_pos.abs().cmpge(Vec3::splat(1.0)).any() {
-            let delta_pos = largest_delta_pos * LARGEST_UNIT;
-            eh.state.real_time_data.lightmapOrigin =
-                (old_pos + delta_pos.as_ivec3()).to_array().into();
-
-            for i in 0..(LM_LAYERS as usize) {
-                let unit_size = (i as f32).exp2() * SMALLEST_UNIT;
-                let delta_units = (delta_pos / unit_size).as_ivec3();
-                eh.state.real_time_data.deltaLightmapOrigins[i] = delta_units.extend(0).to_array();
-            }
-
-            // FIXME: do not redo the rendering of the entire lightmap every time, but only the 'moved' part
-            eh.state.command_buffers.pathtraces.restart(); // TODO: combine with move lightmap command buffer
-        }
+        eh.state.real_time_data.projection_view = state::projection_view_matrix(
+            position,
+            eh.rotation(),
+            Vec2::from_array(eh.state.real_time_data.screenSize),
+        )
+        .to_cols_array_2d();
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {

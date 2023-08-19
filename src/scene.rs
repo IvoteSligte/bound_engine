@@ -1,27 +1,13 @@
 use std::f32::consts::PI;
 
-use crate::shaders::{self, MAX_MATERIALS, MAX_OBJECTS};
+use crate::shaders::{self, MAX_MATERIALS};
 
 use glam::*;
-use vulkano::{buffer::BufferContents, padded::Padded};
+use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input};
 
-#[derive(Clone, Debug)]
-pub struct CpuMaterial {
-    reflectance: Vec3,
-    emittance: Vec3,
-}
-
-impl Into<shaders::Material> for CpuMaterial {
-    fn into(self) -> shaders::Material {
-        shaders::Material {
-            reflectance: self.reflectance.to_array().into(),
-            emittance: self.emittance.to_array(),
-        }
-    }
-}
-
-fn custom_materials() -> Vec<CpuMaterial> {
-    let materials: Vec<CpuMaterial> = vec![
+// TODO: loading from file
+pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
+    let mut materials = vec![
         CpuMaterial {
             reflectance: Vec3::splat(0.99),
             emittance: Vec3::splat(0.0),
@@ -44,20 +30,6 @@ fn custom_materials() -> Vec<CpuMaterial> {
         },
     ];
 
-    materials
-}
-
-pub fn load_materials() -> Vec<shaders::Material> {
-    let mut materials = custom_materials();
-
-    materials.insert(
-        0, // dummy material
-        CpuMaterial {
-            reflectance: Vec3::ZERO,
-            emittance: Vec3::ZERO,
-        },
-    );
-
     materials.resize(
         MAX_MATERIALS,
         CpuMaterial {
@@ -66,103 +38,124 @@ pub fn load_materials() -> Vec<shaders::Material> {
         },
     );
 
-    materials.into_iter().map(|m| m.into()).collect()
-}
-
-#[derive(Clone, Debug)]
-pub struct CpuObject {
-    position: Vec3,
-    radius: f32,
-    material: usize,
-}
-
-impl From<shaders::Object> for CpuObject {
-    fn from(value: shaders::Object) -> Self {
-        Self {
-            position: Vec3::from_array(value.position),
-            radius: value.radius,
-            material: value.material as usize - 1,
-        }
-    }
-}
-
-impl From<CpuObject> for shaders::Object {
-    fn from(value: CpuObject) -> Self {
-        Self {
-            position: value.position.to_array(),
-            radius: value.radius,
-            material: value.material as u32 + 1,
-        }
-    }
-}
-
-fn custom_objects() -> Vec<CpuObject> {
-    // TODO: triangle objects, voxel objects (?), loading from file, etc
     let mut objects: Vec<CpuObject> = vec![
-        CpuObject {
-            position: Vec3::new(0.0, 0.0, -1e5),
-            radius: 1e5 - 10.0,
-            material: 0,
-        },
-        CpuObject {
-            position: Vec3::new(0.0, 0.0, 20.0),
-            radius: 1.0,
-            material: 1,
-        },
+        CpuObject::cube(Vec3::new(0.0, 0.0, -1e5), 1e5 - 10.0, 0),
+        CpuObject::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, 1),
     ];
 
     for q in 1..10 {
         for i in 0..9 {
             let angle = 2.0 * PI * (i as f32 / 9.0);
 
-            objects.push(CpuObject {
-                position: Vec3::new(
+            objects.push(CpuObject::cube(
+                Vec3::new(
                     angle.cos() * 40.0 * q as f32,
                     angle.sin() * 40.0 * q as f32,
                     0.0,
                 ),
-                radius: 4.0,
-                material: 2 + i / 3,
-            });
+                4.0,
+                2 + i / 3,
+            ));
         }
     }
 
-    objects
+    let (vertices, vertex_idxs, material_idxs): (Vec<_>, Vec<_>, Vec<_>) =
+        objects.into_iter().fold(
+            (vec![], vec![], vec![]),
+            |(mut acc_v, mut acc_i, mut acc_mi), obj| {
+                let (v, is, mi) = obj.into_renderable();
+
+                acc_i.extend(is.into_iter().map(|i| acc_v.len() as u32 + i));
+                acc_v.extend(v);
+                acc_mi.extend(mi);
+
+                (acc_v, acc_i, acc_mi)
+            },
+        );
+    let materials = materials.into_iter().map(|mat| mat.into()).collect();
+
+    (vertices, vertex_idxs, material_idxs, materials)
 }
 
-pub fn load_objects() -> Vec<RawObject> {
-    let mut objects = custom_objects();
-
-    objects.resize(
-        MAX_OBJECTS,
-        CpuObject {
-            position: Vec3::splat(0.0),
-            radius: 0.0,
-            material: 0,
-        },
-    );
-
-    objects
-        .into_iter()
-        .map(|obj| obj.into())
-        .collect::<Vec<_>>()
+#[derive(Clone, Debug)]
+pub struct CpuMaterial {
+    reflectance: Vec3,
+    emittance: Vec3,
 }
 
-#[derive(Clone, Debug, BufferContents)]
-#[repr(C)]
-/// Required for proper alignment in the shader. shaders::Object does not work properly.
-pub struct RawObject {
-    position: [f32; 3],
-    radius: f32,
-    material: Padded<usize, 8>,
-}
-
-impl From<CpuObject> for RawObject {
-    fn from(value: CpuObject) -> Self {
+impl From<CpuMaterial> for shaders::Material {
+    fn from(value: CpuMaterial) -> Self {
         Self {
-            position: value.position.to_array(),
-            radius: value.radius,
-            material: (value.material + 1).into(),
+            reflectance: value.reflectance.to_array().into(),
+            emittance: value.emittance.to_array(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct CpuObject {
+    vertices: Vec<Vec3>,
+    indices: Vec<u32>,
+    materials: Vec<u32>,
+}
+
+impl CpuObject {
+    #[rustfmt::skip]
+    fn cube(position: Vec3, radius: f32, material: u32) -> Self {
+        let r = radius;
+        Self {
+            vertices: vec![
+                position + Vec3::new(-r, -r,  r),
+                position + Vec3::new( r, -r,  r),
+                position + Vec3::new( r,  r,  r),
+                position + Vec3::new(-r,  r,  r),
+                position + Vec3::new(-r, -r, -r),
+                position + Vec3::new( r, -r, -r),
+                position + Vec3::new( r,  r, -r),
+                position + Vec3::new(-r,  r, -r),
+            ],
+            indices: vec![
+                // Front face
+                0, 1, 2,
+                2, 3, 0,
+                // Right face
+                1, 5, 6,
+                6, 2, 1,
+                // Back face
+                7, 6, 5,
+                5, 4, 7,
+                // Left face
+                4, 0, 3,
+                3, 7, 4,
+                // Bottom face
+                4, 5, 1,
+                1, 0, 4,
+                // Top face
+                3, 2, 6,
+                6, 7, 3,
+            ],
+            materials: vec![material; 12],
+        }
+    }
+}
+
+impl CpuObject {
+    fn into_renderable(self) -> (Vec<Vertex>, Vec<u32>, Vec<u32>) {
+        let vertices = self
+            .vertices
+            .into_iter()
+            .map(|v| Vertex {
+                position: v.extend(0.0).to_array(),
+            })
+            .collect();
+        
+        (vertices, self.indices, self.materials)
+    }
+}
+
+#[derive(Debug, BufferContents, vertex_input::Vertex)]
+#[repr(C)]
+pub struct Vertex {
+    #[format(R32G32B32A32_SFLOAT)]
+    position: [f32; 4],
 }

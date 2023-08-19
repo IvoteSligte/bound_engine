@@ -85,7 +85,8 @@ pub fn recreate(eh: &mut EventHelper<Data>) -> bool {
             (),
         );
 
-        eh.state.images.render = image::create_render(eh.state.allocators.clone(), eh.window.clone());
+        eh.state.images.render =
+            image::create_render(eh.state.allocators.clone(), eh.window.clone());
 
         eh.state.descriptor_sets = DescriptorSets::new(
             eh.state.allocators.clone(),
@@ -95,7 +96,7 @@ pub fn recreate(eh: &mut EventHelper<Data>) -> bool {
         );
 
         eh.state.frame_buffer =
-            render_pass::frame_buffer(eh.state.render_pass.clone(), eh.state.images.views().render);
+            render_pass::frame_buffer(eh.state.render_pass.clone(), eh.state.images.views());
 
         eh.state.command_buffers.pathtraces.direct = PathtraceCommandBuffers::direct(
             eh.state.allocators.clone(),
@@ -103,6 +104,7 @@ pub fn recreate(eh: &mut EventHelper<Data>) -> bool {
             eh.state.frame_buffer.clone(),
             eh.state.pipelines.clone(),
             eh.state.descriptor_sets.clone(),
+            eh.state.buffers.clone(),
         );
 
         eh.state.images.swapchain = new_swapchain_images;
