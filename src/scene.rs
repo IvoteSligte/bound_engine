@@ -14,19 +14,19 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::splat(100.0),
+            emittance: Vec3::splat(10.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(10.0, 0.0, 0.0),
+            emittance: Vec3::new(1.0, 0.0, 0.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(0.0, 10.0, 0.0),
+            emittance: Vec3::new(0.0, 1.0, 0.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(0.0, 0.0, 10.0),
+            emittance: Vec3::new(0.0, 0.0, 1.0),
         },
     ];
 
@@ -58,6 +58,8 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
             ));
         }
     }
+
+    objects.push(CpuObject::rectangle(Vec3::new(50.0, 0.0, 5.0), Vec3::new(1.0, 30.0, 10.0), 0));
 
     let (vertices, vertex_idxs, material_idxs): (Vec<_>, Vec<_>, Vec<_>) =
         objects.into_iter().fold(
@@ -101,18 +103,23 @@ pub struct CpuObject {
 
 impl CpuObject {
     #[rustfmt::skip]
-    fn cube(position: Vec3, radius: f32, material: u32) -> Self {
-        let r = radius;
+    fn cube(position: Vec3, half_extent: f32, material: u32) -> Self {
+        Self::rectangle(position, Vec3::splat(half_extent), material)
+    }
+
+    #[rustfmt::skip]
+    fn rectangle(position: Vec3, half_extents: Vec3, material: u32) -> Self {
+        let Vec3 { x: xr, y: yr, z: zr } = half_extents;
         Self {
             vertices: vec![
-                position + Vec3::new(-r, -r,  r),
-                position + Vec3::new( r, -r,  r),
-                position + Vec3::new( r,  r,  r),
-                position + Vec3::new(-r,  r,  r),
-                position + Vec3::new(-r, -r, -r),
-                position + Vec3::new( r, -r, -r),
-                position + Vec3::new( r,  r, -r),
-                position + Vec3::new(-r,  r, -r),
+                position + Vec3::new(-xr, -yr,  zr),
+                position + Vec3::new( xr, -yr,  zr),
+                position + Vec3::new( xr,  yr,  zr),
+                position + Vec3::new(-xr,  yr,  zr),
+                position + Vec3::new(-xr, -yr, -zr),
+                position + Vec3::new( xr, -yr, -zr),
+                position + Vec3::new( xr,  yr, -zr),
+                position + Vec3::new(-xr,  yr, -zr),
             ],
             indices: vec![
                 // Front face
@@ -148,7 +155,7 @@ impl CpuObject {
                 position: v.extend(0.0).to_array(),
             })
             .collect();
-        
+
         (vertices, self.indices, self.materials)
     }
 }
