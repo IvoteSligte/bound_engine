@@ -83,7 +83,7 @@ void main() {
         coefs[3] = s * -cosLobe[3];
     }
 
-    // FIXME: minimal BASE_FALLOFF value where the radiance doesn't diverge is dependent on either the number of tiles in a layer or the tile size
+    // FIXME: minimal BASE_FALLOFF value where the radiance doesn't diverge is dependent on the layer
     const float BASE_FALLOFF = 0.37;
     float distFallOff = 1.0 / radUnitSizeLayer(LAYER);
     for (int i = 0; i < SH_CS; i++) {
