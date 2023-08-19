@@ -20,8 +20,8 @@ vulkano_shaders::shader! {
     custom_derives: [Copy, Clone, Debug],
     include: ["includes_general.glsl", "sh_rotation.glsl"],
     define: [
-        ("LM_LAYERS", "6"),
-        ("RADIANCE_SIZE", "32"), // image resolution
+        ("LM_LAYERS", "4"),
+        ("RADIANCE_SIZE", "128"), // image resolution
         ("RADIANCE_UNIT", "2.0"), // unit size in the world
         ("MAX_MATERIALS", "32"),
         ("SH_CS", "4")
@@ -30,9 +30,9 @@ vulkano_shaders::shader! {
     spirv_version: "1.6"
 }
 
-pub const LM_LAYERS: u32 = 6;
+pub const LM_LAYERS: u32 = 4;
 
-pub const RADIANCE_SIZE: u32 = 32;
+pub const RADIANCE_SIZE: u32 = 128;
 pub const SH_CS: u32 = 4;
 
 pub const MAX_MATERIALS: usize = 32;

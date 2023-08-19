@@ -114,6 +114,7 @@ bool intersectAABBTriangleSAT(vec3[3] tri, vec3 aabbHalfExtents, vec3 axis) {
     return !(max(-maxP, minP) > dot(aabbHalfExtents, abs(axis)));
 }
 
+// credit to https://bronsonzgeb.com/index.php/2021/05/29/gpu-mesh-voxelizer-part-2/
 bool intersectAABBTriangle(vec3[3] tri, AABB aabb, out vec3 triangleNormal) {
     tri[0] -= aabb.center;
     tri[1] -= aabb.center;
