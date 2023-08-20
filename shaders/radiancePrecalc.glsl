@@ -43,11 +43,8 @@ Voxel calculateIntersect(vec3 position, int layer) {
             Material mat = matBuffer.materials[matIdxBuffer.materials[i / 3]];
             voxel.emittance += mat.emittance;
             voxel.reflectance += mat.reflectance;
-            voxel.normal += normal;
+            voxel.normal = normal; // TODO: use a better method to determine which normal to use of all intersections
         }
-    }
-    if (voxel.normal != vec3(0.0)) {
-        voxel.normal = normalize(voxel.normal);
     }
 
     return voxel;

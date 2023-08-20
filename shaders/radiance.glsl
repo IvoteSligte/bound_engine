@@ -35,8 +35,12 @@ void madAssign(inout vec3[SH_CS] dst, float multiplier, vec3[SH_CS] additive) {
     }
 }
 
-vec3 dot_1x4(vec4 a, vec3[4] b) {
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+vec3 dot_coefs(vec4 a, vec3[SH_CS] b) {
+    vec3 result = a[0] * b[0];
+    for (int i = 1; i < SH_CS; i++) {
+        result += a[i] * b[i];
+    }
+    return result;
 }
 
 void main() {
@@ -78,9 +82,10 @@ void main() {
 
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
+    // TODO: also reflect the opposite side of the given normal to account for thin walls
     if (voxel.normal != vec3(0.0)) {
         vec4 cosLobe = dirToCosineLobe(voxel.normal);
-        vec3 s = voxel.reflectance * max(vec3(0.0), dot_1x4(cosLobe, coefs));
+        vec3 s = voxel.reflectance * max(vec3(0.0), dot_coefs(cosLobe, coefs));
         coefs[0] = s * cosLobe[0];
         coefs[1] = s * -cosLobe[1]; // opposite direction
         coefs[2] = s * -cosLobe[2];
