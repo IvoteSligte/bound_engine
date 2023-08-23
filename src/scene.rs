@@ -43,29 +43,21 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
         CpuObject::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, 1),
     ];
 
-    for z in 0..3 {
-        for q in 1..10 {
-            for i in 0..9 {
-                let angle = 2.0 * PI * (i as f32 / 9.0) + z as f32;
-    
-                objects.push(CpuObject::cube(
-                    Vec3::new(
-                        angle.cos() * 40.0 * q as f32,
-                        angle.sin() * 40.0 * q as f32,
-                        z as f32 * 40.0,
-                    ),
-                    4.0,
-                    2 + i / 3,
-                ));
-            }
+    for q in 1..10 {
+        for i in 0..9 {
+            let angle = 2.0 * PI * (i as f32 / 9.0);
+
+            objects.push(CpuObject::cube(
+                Vec3::new(
+                    angle.cos() * 40.0 * q as f32,
+                    angle.sin() * 40.0 * q as f32,
+                    0.0,
+                ),
+                4.0,
+                2 + i / 3,
+            ));
         }
     }
-
-    objects.push(CpuObject::rectangle(
-        Vec3::new(30.0, 0.0, 20.0),
-        Vec3::new(20.0, 30.0, 10.0),
-        0,
-    ));
 
     let (vertices, vertex_idxs, material_idxs): (Vec<_>, Vec<_>, Vec<_>) =
         objects.into_iter().fold(
