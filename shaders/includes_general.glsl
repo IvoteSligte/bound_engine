@@ -4,6 +4,8 @@
 #define SH_cosLobe_C1 1.02332671 // sqrt(pi/3)
 // #define SH_cosLobe_C2 0.495415912 // sqrt(5*pi)/8
 
+#define SH_norm_C0 0.28209479 // used to normalize l=0, m=0
+
 struct Material {
     vec3 reflectance;
     vec3 emittance;
@@ -29,7 +31,7 @@ struct Voxel {
 
 PackedVoxel packVoxel(Voxel v) {
     return PackedVoxel(
-        uvec2(packHalf2x16(v.emittance.xy), packHalf2x16(vec2(v.emittance.z, 0.0))),
+        uvec2(packHalf2x16(v.emittance.rg), packHalf2x16(vec2(v.emittance.b, 0.0))),
         packUnorm4x8(vec4(v.reflectance, 0.0)),
         packSnorm4x8(vec4(v.normal, 0.0))
     );

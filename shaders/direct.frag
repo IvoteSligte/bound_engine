@@ -39,7 +39,7 @@ vec3 sampleRadiance(vec3 position, vec3 dir) {
 
 void main() {
     vec3 direction = normalize(fragPosition - rt.position);
-    fragColor = sampleRadiance(fragPosition, direction);
+    fragColor = sampleRadiance(fragPosition, -direction);
 }
 
 // FIXME: looking straight down gives a black screen; sampling problem or rasterized rendering problem
