@@ -96,7 +96,7 @@ vec3 evaluateRGBSphericalHarmonics(vec3 dir, vec3[SH_CS] coefs) {
 // credit to https://ericpolman.com/2016/06/28/light-propagation-volumes/
 vec4 dirToCosineLobe(vec3 dir) {
     //dir = normalize(dir);
-    return vec4(SH_cosLobe_C0, -SH_cosLobe_C1 * dir.y, SH_cosLobe_C1 * dir.z, -SH_cosLobe_C1 * dir.x);
+    return vec4(SH_cosLobe_C0, SH_cosLobe_C1 * dir.y, SH_cosLobe_C1 * dir.z, SH_cosLobe_C1 * dir.x);
 }
 
 struct AABB {

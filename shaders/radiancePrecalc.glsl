@@ -36,6 +36,7 @@ Voxel calculateIntersect(vec3 position, int layer) {
         tri[1] = vertexBuffer.vertices[vertexIndexBuffer.indices[i + 1]].xyz;
         tri[2] = vertexBuffer.vertices[vertexIndexBuffer.indices[i + 2]].xyz;
 
+        // TODO: use the surface area of the triangle inside the voxel to determine the weight
         vec3 normal;
         bool intersects = intersectAABBTriangle(tri, aabb, normal);
         

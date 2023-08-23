@@ -14,19 +14,19 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::splat(10.0),
+            emittance: Vec3::splat(100.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(1.0, 0.0, 0.0),
+            emittance: Vec3::new(10.0, 0.0, 0.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(0.0, 1.0, 0.0),
+            emittance: Vec3::new(0.0, 10.0, 0.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(0.0, 0.0, 1.0),
+            emittance: Vec3::new(0.0, 0.0, 10.0),
         },
     ];
 
@@ -46,13 +46,13 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
     for z in 0..3 {
         for q in 1..10 {
             for i in 0..9 {
-                let angle = 2.0 * PI * (i as f32 / 9.0);
+                let angle = 2.0 * PI * (i as f32 / 9.0) + z as f32;
     
                 objects.push(CpuObject::cube(
                     Vec3::new(
                         angle.cos() * 40.0 * q as f32,
                         angle.sin() * 40.0 * q as f32,
-                        z as f32 * 50.0,
+                        z as f32 * 40.0,
                     ),
                     4.0,
                     2 + i / 3,

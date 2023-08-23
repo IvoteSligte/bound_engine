@@ -58,19 +58,19 @@ void main() {
     // -X
     tCoefs = loadSHCoefs(ivec3(IIL.x-1, IIL.yz), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[3] += SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    coefs[3] -= SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
     // +X
     tCoefs = loadSHCoefs(ivec3(IIL.x+1, IIL.yz), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[3] -= SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    coefs[3] += SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
     // -Y
     tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y-1, IIL.z), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[1] += SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    coefs[1] -= SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
     // +Y
     tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y+1, IIL.z), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[1] -= SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    coefs[1] += SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
     // -Z
     tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z-1), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
@@ -93,10 +93,9 @@ void main() {
     }
 
     // FIXME: minimal BASE_FALLOFF value where the radiance doesn't diverge is dependent on the layer
-    const float BASE_FALLOFF = 0.1;
-    float distFallOff = 1.0 / radUnitSizeLayer(LAYER);
+    const float BASE_FALLOFF = 0.0525;
     for (int i = 0; i < SH_CS; i++) {
-        coefs[i] *= BASE_FALLOFF * distFallOff;
+        coefs[i] *= BASE_FALLOFF * pow(0.9, LAYER);
     }
     coefs[0] += voxel.emittance;
 
