@@ -25,10 +25,11 @@ layout(binding = 4) buffer writeonly RadianceBuffer {
 } cache;
 
 Voxel calculateIntersect(vec3 position, int layer) {
-    Voxel voxel = Voxel(vec3(0.0), vec3(0.0), vec3(0.0));
+    Voxel voxel = Voxel(vec3(0.0), vec3(0.0), vec4(0.0));
+    float intersections = 0.0;
     
     float unit = radUnitSizeLayer(layer);
-    AABB aabb = AABB(position, vec3(unit * 0.5));
+    AABB aabb = AABB(position, vec3(unit * 0.5 + EPSILON));
 
     for (uint i = 0; i < vertexIndexBuffer.indices.length(); i += 3) {
         vec3[3] tri;
@@ -39,14 +40,19 @@ Voxel calculateIntersect(vec3 position, int layer) {
         // TODO: use the surface area of the triangle inside the voxel to determine the weight
         vec3 normal;
         bool intersects = intersectAABBTriangle(tri, aabb, normal);
-        
         if (intersects) {
             Material mat = matBuffer.materials[matIdxBuffer.materials[i / 3]];
             voxel.emittance += mat.emittance;
             voxel.reflectance += mat.reflectance;
-            // TODO: use a better method to determine which normal to use of all intersections
-            voxel.normal = normal;
+            voxel.normalSH += dirToCosineLobe(normal);
+            intersections += 1.0;
         }
+    }
+
+    if (intersections > 1.0) {
+        voxel.emittance /= intersections;
+        voxel.reflectance /= intersections;
+        voxel.normalSH /= intersections;
     }
 
     return voxel;

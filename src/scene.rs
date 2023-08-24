@@ -8,7 +8,7 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
     let mut materials = vec![
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::splat(10.0),
+            emittance: Vec3::splat(50.0),
         },
         CpuMaterial {
             reflectance: Vec3::splat(0.99),
@@ -40,7 +40,7 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
         CpuObject::rectangle(Vec3::new(0.0, 0.0, -45.0), Vec3::new(80.0, 80.0, 5.0), 1),
         CpuObject::rectangle(Vec3::new(0.0, 0.0, 45.0), Vec3::new(80.0, 80.0, 5.0), 1),
         CpuObject::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, 0),
-        CpuObject::cube(Vec3::new(-10.0, -20.0, -34.0), 6.0, 1),
+        CpuObject::cube(Vec3::new(-10.0, -20.0, -20.0), 6.0, 1),
     ];
 
     let (vertices, vertex_idxs, material_idxs) =

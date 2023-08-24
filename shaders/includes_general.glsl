@@ -1,4 +1,4 @@
-#define EPSILON 1e-5
+#define EPSILON 1e-4
 
 #define SH_cosLobe_C0 0.886226925 // sqrt(pi)/2
 #define SH_cosLobe_C1 1.02332671 // sqrt(pi/3)
@@ -11,29 +11,23 @@ struct Material {
     vec3 emittance;
 };
 
-struct Object {
-    vec3 position;
-    float radius;
-    uint material;
-};
-
 struct PackedVoxel {
     uvec2 emittance;
     uint reflectance;
-    uint normal;
+    uint normalSH;
 };
 
 struct Voxel {
     vec3 emittance;
     vec3 reflectance;
-    vec3 normal;
+    vec4 normalSH; // TODO: combine reflectance and normalSH
 };
 
 PackedVoxel packVoxel(Voxel v) {
     return PackedVoxel(
         uvec2(packHalf2x16(v.emittance.rg), packHalf2x16(vec2(v.emittance.b, 0.0))),
         packUnorm4x8(vec4(v.reflectance, 0.0)),
-        packSnorm4x8(vec4(v.normal, 0.0))
+        packSnorm4x8(vec4(v.normalSH))
     );
 }
 
@@ -41,7 +35,7 @@ Voxel unpackVoxel(PackedVoxel v) {
     return Voxel(
         vec3(unpackHalf2x16(v.emittance.x), unpackHalf2x16(v.emittance.y).x),
         unpackUnorm4x8(v.reflectance).rgb,
-        unpackSnorm4x8(v.normal).xyz
+        unpackSnorm4x8(v.normalSH)
     );
 }
 

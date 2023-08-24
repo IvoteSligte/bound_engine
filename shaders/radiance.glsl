@@ -83,16 +83,15 @@ void main() {
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
     // TODO: also reflect the opposite side of the given normal to account for thin walls
-    if (voxel.normal != vec3(0.0)) {
-        vec4 cosLobe = dirToCosineLobe(voxel.normal);
-        vec3 s = voxel.reflectance * max(vec3(0.0), dot_coefs(cosLobe, coefs));
-        coefs[0] = s * cosLobe[0];
-        coefs[1] = s * -cosLobe[1]; // opposite direction
-        coefs[2] = s * -cosLobe[2];
-        coefs[3] = s * -cosLobe[3];
+    if (voxel.normalSH[0] != 0.0) {
+        vec3 s = voxel.reflectance * max(vec3(0.0), dot_coefs(voxel.normalSH, coefs));
+        coefs[0] = s *  voxel.normalSH[0];
+        coefs[1] = s * -voxel.normalSH[1]; // opposite direction
+        coefs[2] = s * -voxel.normalSH[2];
+        coefs[3] = s * -voxel.normalSH[3];
     }
-    
-    const float BASE_FALLOFF = 0.053;
+
+    const float BASE_FALLOFF = 0.0531;
     for (int i = 0; i < SH_CS; i++) {
         coefs[i] *= BASE_FALLOFF * pow(0.95, LAYER);
     }

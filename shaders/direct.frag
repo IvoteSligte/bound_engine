@@ -34,12 +34,13 @@ vec3 sampleRadiance(vec3 position, vec3 dir) {
     int layer = radLayerAtPos(position, origin);
     if (layer >= LM_LAYERS) { return vec3(0.0); }
     vec3[SH_CS] coefs = loadSHCoefs(position, layer, origin);
-    return evaluateRGBSphericalHarmonics(dir, coefs);
+    return evaluateRGBSphericalHarmonics(-dir, coefs); // FIXME: dir shouldn't need to be negated
 }
 
 void main() {
     vec3 direction = normalize(fragPosition - rt.position);
-    fragColor = sampleRadiance(fragPosition, direction);
+    fragColor = sampleRadiance(fragPosition - EPSILON * direction, -direction);
 }
 
 // FIXME: looking straight down gives a black screen; sampling problem or rasterized rendering problem
+// FIXME: one wall is brighter than the other in the cornell box scene?
