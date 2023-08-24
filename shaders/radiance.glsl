@@ -91,7 +91,7 @@ void main() {
         coefs[2] = s * -cosLobe[2];
         coefs[3] = s * -cosLobe[3];
     }
-
+    
     const float BASE_FALLOFF = 0.053;
     for (int i = 0; i < SH_CS; i++) {
         coefs[i] *= BASE_FALLOFF * pow(0.95, LAYER);

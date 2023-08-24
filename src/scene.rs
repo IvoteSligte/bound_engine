@@ -1,5 +1,3 @@
-use std::f32::consts::PI;
-
 use crate::shaders::{self, MAX_MATERIALS};
 
 use glam::*;
@@ -9,24 +7,20 @@ use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input};
 pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
     let mut materials = vec![
         CpuMaterial {
+            reflectance: Vec3::splat(0.0),
+            emittance: Vec3::splat(10.0),
+        },
+        CpuMaterial {
             reflectance: Vec3::splat(0.99),
             emittance: Vec3::splat(0.0),
         },
         CpuMaterial {
-            reflectance: Vec3::splat(0.0),
-            emittance: Vec3::splat(100.0),
+            reflectance: Vec3::new(0.99, 0.0, 0.0),
+            emittance: Vec3::splat(0.0),
         },
         CpuMaterial {
-            reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(10.0, 0.0, 0.0),
-        },
-        CpuMaterial {
-            reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(0.0, 10.0, 0.0),
-        },
-        CpuMaterial {
-            reflectance: Vec3::splat(0.0),
-            emittance: Vec3::new(0.0, 0.0, 10.0),
+            reflectance: Vec3::new(0.0, 0.99, 0.0),
+            emittance: Vec3::splat(0.0),
         },
     ];
 
@@ -38,40 +32,19 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
         },
     );
 
-    let mut objects: Vec<CpuObject> = vec![
-        CpuObject::cube(Vec3::new(0.0, 0.0, -1e5), 1e5 - 10.0, 0),
-        CpuObject::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, 1),
+    let objects: Vec<CpuObject> = vec![
+        CpuObject::rectangle(Vec3::new(-45.0, 0.0, 0.0), Vec3::new(5.0, 80.0, 80.0), 2),
+        CpuObject::rectangle(Vec3::new(45.0, 0.0, 0.0), Vec3::new(5.0, 80.0, 80.0), 3),
+        CpuObject::rectangle(Vec3::new(0.0, -45.0, 0.0), Vec3::new(80.0, 5.0, 80.0), 1),
+        CpuObject::rectangle(Vec3::new(0.0, 45.0, 0.0), Vec3::new(80.0, 5.0, 80.0), 1),
+        CpuObject::rectangle(Vec3::new(0.0, 0.0, -45.0), Vec3::new(80.0, 80.0, 5.0), 1),
+        CpuObject::rectangle(Vec3::new(0.0, 0.0, 45.0), Vec3::new(80.0, 80.0, 5.0), 1),
+        CpuObject::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, 0),
+        CpuObject::cube(Vec3::new(-10.0, -20.0, -34.0), 6.0, 1),
     ];
 
-    for q in 1..10 {
-        for i in 0..9 {
-            let angle = 2.0 * PI * (i as f32 / 9.0);
-
-            objects.push(CpuObject::cube(
-                Vec3::new(
-                    angle.cos() * 40.0 * q as f32,
-                    angle.sin() * 40.0 * q as f32,
-                    0.0,
-                ),
-                4.0,
-                2 + i / 3,
-            ));
-        }
-    }
-
-    let (vertices, vertex_idxs, material_idxs): (Vec<_>, Vec<_>, Vec<_>) =
-        objects.into_iter().fold(
-            (vec![], vec![], vec![]),
-            |(mut acc_v, mut acc_i, mut acc_mi), obj| {
-                let (v, is, mi) = obj.into_renderable();
-
-                acc_i.extend(is.into_iter().map(|i| acc_v.len() as u32 + i));
-                acc_v.extend(v);
-                acc_mi.extend(mi);
-
-                (acc_v, acc_i, acc_mi)
-            },
-        );
+    let (vertices, vertex_idxs, material_idxs) =
+        CpuObject::flatten_parts(objects.into_iter().map(|obj| obj.into_parts()));
     let materials = materials.into_iter().map(|mat| mat.into()).collect();
 
     (vertices, vertex_idxs, material_idxs, materials)
@@ -145,7 +118,7 @@ impl CpuObject {
 }
 
 impl CpuObject {
-    fn into_renderable(self) -> (Vec<Vertex>, Vec<u32>, Vec<u32>) {
+    fn into_parts(self) -> (Vec<Vertex>, Vec<u32>, Vec<u32>) {
         let vertices = self
             .vertices
             .into_iter()
@@ -155,6 +128,22 @@ impl CpuObject {
             .collect();
 
         (vertices, self.indices, self.materials)
+    }
+
+    fn flatten_parts<I>(iter: I) -> (Vec<Vertex>, Vec<u32>, Vec<u32>)
+    where
+        I: IntoIterator<Item = (Vec<Vertex>, Vec<u32>, Vec<u32>)>,
+    {
+        iter.into_iter().fold(
+            (vec![], vec![], vec![]),
+            |(mut acc_v, mut acc_i, mut acc_mi), (v, is, mi)| {
+                acc_i.extend(is.into_iter().map(|i| acc_v.len() as u32 + i));
+                acc_v.extend(v);
+                acc_mi.extend(mi);
+
+                (acc_v, acc_i, acc_mi)
+            },
+        )
     }
 }
 

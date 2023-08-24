@@ -189,7 +189,12 @@ fn scene(
         material_indices(allocators.clone(), cmb_builder, material_idx_data);
     let material_buffer = materials(allocators.clone(), cmb_builder, material_data);
 
-    (vertex_buffer, vertex_index_buffer, material_index_buffer, material_buffer)
+    (
+        vertex_buffer,
+        vertex_index_buffer,
+        material_index_buffer,
+        material_buffer,
+    )
 }
 
 fn vertices(
@@ -226,7 +231,9 @@ fn vertex_indices(
     let buffer = Buffer::new_slice(
         &allocators.memory,
         BufferCreateInfo {
-            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::INDEX_BUFFER | BufferUsage::TRANSFER_DST,
+            usage: BufferUsage::STORAGE_BUFFER
+                | BufferUsage::INDEX_BUFFER
+                | BufferUsage::TRANSFER_DST,
             ..Default::default()
         },
         AllocationCreateInfo {
