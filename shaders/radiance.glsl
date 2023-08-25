@@ -121,3 +121,5 @@ void main() {
 
     storeSHCoefs(IIL, LAYER, coefs);
 }
+
+// TODO: load the 6x6x6 chunk surrounding the workgroup into shared memory for faster memory accesses
