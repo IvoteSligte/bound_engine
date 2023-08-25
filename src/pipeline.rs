@@ -66,7 +66,7 @@ where
 #[derive(Clone)]
 pub struct Pipelines {
     pub direct: Arc<GraphicsPipeline>,
-    pub radiance: [Arc<ComputePipeline>; 2],
+    pub radiance: Vec<Arc<ComputePipeline>>,
     pub radiance_precalc: Arc<ComputePipeline>,
 }
 
@@ -89,22 +89,22 @@ impl Pipelines {
             (),
         );
 
-        let radiance = [
-            compute(
-                device.clone(),
-                shaders.radiance.clone(),
-                &shaders::RadianceSpecializationConstants {
-                    CHECKERBOARD_OFFSET: 0,
-                },
-            ),
-            compute(
-                device.clone(),
-                shaders.radiance.clone(),
-                &shaders::RadianceSpecializationConstants {
-                    CHECKERBOARD_OFFSET: 1,
-                },
-            ),
-        ];
+        let mut radiance = vec![];
+        for x in 0..2 {
+            for y in 0..2 {
+                for z in 0..2 {
+                    radiance.push(compute(
+                        device.clone(),
+                        shaders.radiance.clone(),
+                        &shaders::RadianceSpecializationConstants {
+                            OFFSET_X: x,
+                            OFFSET_Y: y,
+                            OFFSET_Z: z,
+                        },
+                    ));
+                }
+            }
+        }
 
         let radiance_precalc = compute(device.clone(), shaders.radiance_precalc.clone(), &());
 

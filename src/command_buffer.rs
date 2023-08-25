@@ -119,7 +119,7 @@ impl PathtraceCommandBuffers {
     pub fn next(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
         match self.state.next() {
             PathTraceState::Precalc => self.precalc.clone(),
-            PathTraceState::Radiance(frame) => self.radiance[frame % 2].clone(),
+            PathTraceState::Radiance(frame) => self.radiance[frame % self.radiance.len()].clone(),
         }
     }
 
@@ -214,13 +214,13 @@ impl PathtraceCommandBuffers {
         descriptor_sets: DescriptorSets,
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
         let dispatch = [
-            RADIANCE_SIZE / 4 * LM_LAYERS,
-            RADIANCE_SIZE / 4 / 2, // halved for checkerboard rendering
-            RADIANCE_SIZE / 4,
+            RADIANCE_SIZE / 4 / 2 * LM_LAYERS,
+            RADIANCE_SIZE / 4 / 2, // halved for rendering 1/8 of the scene per frame
+            RADIANCE_SIZE / 4 / 2,
         ];
 
         let mut cmbs = Vec::new();
-        for i in 0..2 {
+        for i in 0..8 {
             let mut builder = AutoCommandBufferBuilder::primary(
                 &allocators.command_buffer,
                 queue.queue_family_index(),

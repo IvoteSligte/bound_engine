@@ -5,7 +5,9 @@
 #include "includes_general.glsl"
 #include "sh_rotation.glsl"
 
-layout(constant_id = 0) const int CHECKERBOARD_OFFSET = 0;
+layout(constant_id = 0) const int OFFSET_X = 0;
+layout(constant_id = 1) const int OFFSET_Y = 0;
+layout(constant_id = 2) const int OFFSET_Z = 0;
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
@@ -47,9 +49,9 @@ void main() {
     const int LAYER = int(gl_GlobalInvocationID.x / RADIANCE_SIZE);
     // index in layer
     const ivec3 IIL = ivec3(
-        gl_GlobalInvocationID.x % RADIANCE_SIZE,
-        gl_GlobalInvocationID.y * 2 + (gl_GlobalInvocationID.x + gl_GlobalInvocationID.z + CHECKERBOARD_OFFSET) % 2, // checkerboard transform
-        gl_GlobalInvocationID.z);
+        (gl_GlobalInvocationID.x * 2 + OFFSET_X) % RADIANCE_SIZE,
+        gl_GlobalInvocationID.y * 2 + OFFSET_Y,
+        gl_GlobalInvocationID.z * 2 + OFFSET_Z);
 
     // stores coefs as array of RGB channels
     vec3[SH_CS] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
