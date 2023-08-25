@@ -65,28 +65,28 @@ void main() {
 
     // -X
     tCoefs = loadSHCoefs(ivec3(IIL.x-1, IIL.yz), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[3] += -SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
+    coefs[3] += -SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
     // +X
     tCoefs = loadSHCoefs(ivec3(IIL.x+1, IIL.yz), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[3] += SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
+    coefs[3] += SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
     // -Y
     tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y-1, IIL.z), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[1] += -SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
+    coefs[1] += -SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
     // +Y
     tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y+1, IIL.z), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[1] += SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
+    coefs[1] += SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
     // -Z
     tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z-1), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[2] += -SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
+    coefs[2] += -SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
     // +Z
     tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z+1), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[2] += SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
+    coefs[2] += SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
 
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
@@ -98,10 +98,10 @@ void main() {
             vec3 sig = round(voxel.normal);
 
             tCoefs = loadSHCoefs(IIL + ivec3(sig), LAYER);
-            madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-            coefs[3] += cosLobe.x / SH_norm_C0 * tCoefs[0]; // X
-            coefs[1] += cosLobe.y / SH_norm_C0 * tCoefs[0]; // Y
-            coefs[2] += cosLobe.z / SH_norm_C0 * tCoefs[0]; // Z
+            madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
+            coefs[3] += cosLobe.x * SH_norm_C0 * tCoefs[0]; // X
+            coefs[1] += cosLobe.y * SH_norm_C0 * tCoefs[0]; // Y
+            coefs[2] += cosLobe.z * SH_norm_C0 * tCoefs[0]; // Z
 
             mulAssign(coefs, 6.0 / 7.0);
         }
@@ -113,7 +113,7 @@ void main() {
         coefs[3] = s * -cosLobe[3];
     }
 
-    const float BASE_FALLOFF = 0.0531;
+    const float BASE_FALLOFF = 0.667;
     for (int i = 0; i < SH_CS; i++) {
         coefs[i] *= BASE_FALLOFF * pow(0.95, LAYER);
     }
@@ -122,4 +122,4 @@ void main() {
     storeSHCoefs(IIL, LAYER, coefs);
 }
 
-// TODO: use atomics for diagonal reads
+// TODO: use atomics for diagonal reads and change the rendering pattern to checkerboard rendering
