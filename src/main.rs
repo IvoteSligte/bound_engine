@@ -114,15 +114,16 @@ fn main() {
 
         eh.state.real_time_data.position = position.to_array().into();
         eh.delta_position = Vec3::ZERO;
-        eh.state.real_time_data.projection_view =
-            state::projection_view_matrix(position, eh.rotation(), Vec2::splat(1.0))
-                .to_cols_array_2d();
+        eh.state.real_time_data.projection_view = state::projection_view_matrix(
+            position,
+            eh.rotation(),
+            Vec2::from_array(eh.window.inner_size().into()),
+        )
+        .to_cols_array_2d();
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {
-            let success = swapchain::recreate(&mut eh);
-
-            if !success {
+            if !swapchain::recreate(&mut eh) {
                 return;
             }
         }
