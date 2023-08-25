@@ -100,7 +100,6 @@ pub fn callbacks() -> Callbacks<Data> {
         if size.width < size.height {
             size.height = size.width;
             eh.window.set_inner_size(size);
-            eh.state.real_time_data.screenSize = [size.width as f32, size.height as f32];
         }
     });
 

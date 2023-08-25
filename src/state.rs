@@ -41,7 +41,7 @@ pub struct State {
     pub allocators: Arc<Allocators>,
     pub descriptor_sets: DescriptorSets,
     pub command_buffers: CommandBuffers,
-    pub real_time_data: shaders::RealTimeBuffer, // TODO: struct abstraction
+    pub real_time_data: shaders::RealTimeBuffer,
     pub fences: Fences,
     #[cfg(debug_assertions)]
     _debugger: DebugUtilsMessenger,
@@ -130,18 +130,13 @@ impl State {
             window.inner_size().height as f32,
         ];
         let real_time_data = shaders::RealTimeBuffer {
-            rotation: Default::default(),
-            position: Default::default(),
-            lightmapOrigin: Default::default(),
-            deltaLightmapOrigins: Default::default(),
-            screenSize: screen_size,
-            fov: FOV.into(),
             projection_view: projection_view_matrix(
                 Default::default(),
                 Default::default(),
                 Vec2::from_array(screen_size),
             )
             .to_cols_array_2d(),
+            position: Default::default(),
         };
 
         let fences = Fences::new(images.swapchain.len());

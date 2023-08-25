@@ -110,17 +110,13 @@ fn main() {
 
         eh.rotation.y = eh.rotation.y.clamp(-0.5 * PI, 0.5 * PI);
 
-        let position = Vec3::from_array(*eh.state.real_time_data.position) + eh.delta_position();
+        let position = Vec3::from_array(eh.state.real_time_data.position) + eh.delta_position();
 
-        eh.state.real_time_data.rotation = eh.rotation().to_array();
         eh.state.real_time_data.position = position.to_array().into();
         eh.delta_position = Vec3::ZERO;
-        eh.state.real_time_data.projection_view = state::projection_view_matrix(
-            position,
-            eh.rotation(),
-            Vec2::from_array(eh.state.real_time_data.screenSize),
-        )
-        .to_cols_array_2d();
+        eh.state.real_time_data.projection_view =
+            state::projection_view_matrix(position, eh.rotation(), Vec2::splat(1.0))
+                .to_cols_array_2d();
 
         // rendering
         if eh.recreate_swapchain || eh.window_resized {

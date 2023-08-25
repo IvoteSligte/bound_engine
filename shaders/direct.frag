@@ -8,13 +8,8 @@ layout(location = 0) out vec3 fragColor;
 
 // TODO: remove unused fields
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
-    vec4 rotation;
-    vec3 position;
-    ivec3 lightmapOrigin;
-    ivec4 deltaLightmapOrigins[LM_LAYERS];
-    vec2 screenSize;
-    float fov;
     mat4 projection_view;
+    vec3 position;
 } rt;
 
 layout(binding = 1) uniform sampler3D radianceTextures[LM_LAYERS * SH_CS];
