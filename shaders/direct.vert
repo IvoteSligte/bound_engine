@@ -4,8 +4,6 @@ layout(location = 0) in vec4 position;
 
 layout(location = 0) out vec3 worldPosition;
 
-// TODO: model space (?) / model -> world space transformation matrix
-
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec4 rotation;
     vec3 position;

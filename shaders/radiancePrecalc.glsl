@@ -25,8 +25,7 @@ layout(binding = 4) buffer writeonly RadianceBuffer {
 } cache;
 
 Voxel calculateIntersect(vec3 position, int layer) {
-    Voxel voxel = Voxel(vec3(0.0), vec3(0.0), vec4(0.0));
-    float intersections = 0.0;
+    Voxel voxel = Voxel(vec3(0.0), vec3(0.0), vec3(0.0), 0.0);
     
     float unit = radUnitSizeLayer(layer);
     AABB aabb = AABB(position, vec3(unit * 0.5 + EPSILON));
@@ -44,15 +43,15 @@ Voxel calculateIntersect(vec3 position, int layer) {
             Material mat = matBuffer.materials[matIdxBuffer.materials[i / 3]];
             voxel.emittance += mat.emittance;
             voxel.reflectance += mat.reflectance;
-            voxel.normalSH += dirToCosineLobe(normal);
-            intersections += 1.0;
+            voxel.normal += normal;
+            voxel.intersections += 1.0;
         }
     }
 
-    if (intersections > 1.0) {
-        voxel.emittance /= intersections;
-        voxel.reflectance /= intersections;
-        voxel.normalSH /= intersections;
+    if (voxel.intersections > 1.0) {
+        voxel.emittance /= voxel.intersections;
+        voxel.reflectance /= voxel.intersections;
+        voxel.normal = normalize(voxel.normal);
     }
 
     return voxel;

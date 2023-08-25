@@ -31,6 +31,12 @@ void storeSHCoefs(ivec3 index, int layer, vec3[SH_CS] coefs) {
     }
 }
 
+void mulAssign(inout vec3[SH_CS] dst, float multiplier) {
+    for (int i = 0; i < SH_CS; i++) {
+        dst[i] *= multiplier;
+    }
+}
+
 void madAssign(inout vec3[SH_CS] dst, float multiplier, vec3[SH_CS] additive) {
     for (int i = 0; i < SH_CS; i++) {
         dst[i] += additive[i] * multiplier;
@@ -60,7 +66,7 @@ void main() {
     // -X
     tCoefs = loadSHCoefs(ivec3(IIL.x-1, IIL.yz), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[3] -= SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    coefs[3] += -SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
     // +X
     tCoefs = loadSHCoefs(ivec3(IIL.x+1, IIL.yz), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
@@ -68,7 +74,7 @@ void main() {
     // -Y
     tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y-1, IIL.z), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[1] -= SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    coefs[1] += -SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
     // +Y
     tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y+1, IIL.z), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
@@ -76,7 +82,7 @@ void main() {
     // -Z
     tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z-1), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-    coefs[2] -= SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
+    coefs[2] += -SH_cosLobe_C1 / SH_norm_C0 * tCoefs[0];
     // +Z
     tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z+1), LAYER);
     madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
@@ -84,13 +90,27 @@ void main() {
 
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
-    // TODO: also reflect the opposite side of the given normal to account for thin walls
-    if (voxel.normalSH[0] != 0.0) {
-        vec3 s = voxel.reflectance * max(vec3(0.0), dot_coefs(voxel.normalSH, coefs));
-        coefs[0] = s *  voxel.normalSH[0];
-        coefs[1] = s * -voxel.normalSH[1]; // opposite direction
-        coefs[2] = s * -voxel.normalSH[2];
-        coefs[3] = s * -voxel.normalSH[3];
+    // TODO: maybe allow multiple normals per voxel
+    if (voxel.intersections > 0.0) {
+        vec4 cosLobe = dirToCosineLobe(voxel.normal);
+
+        if (voxel.intersections > 1.0 && (dot(ceil(abs(voxel.normal)), vec3(1.0)) > 1.0)) {
+            vec3 sig = round(voxel.normal);
+
+            tCoefs = loadSHCoefs(IIL + ivec3(sig), LAYER);
+            madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
+            coefs[3] += cosLobe.x * tCoefs[0]; // X
+            coefs[1] += cosLobe.y * tCoefs[0]; // Y
+            coefs[2] += cosLobe.z * tCoefs[0]; // Z
+
+            mulAssign(coefs, 6.0 / 7.0);
+        }
+
+        vec3 s = voxel.reflectance * max(vec3(0.0), dot_coefs(cosLobe, coefs));
+        coefs[0] = s *  cosLobe[0];
+        coefs[1] = s * -cosLobe[1]; // opposite direction
+        coefs[2] = s * -cosLobe[2];
+        coefs[3] = s * -cosLobe[3];
     }
 
     const float BASE_FALLOFF = 0.0531;

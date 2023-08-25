@@ -14,28 +14,32 @@ struct Material {
 struct PackedVoxel {
     uvec2 emittance;
     uint reflectance;
-    uint normalSH;
+    uint normalAndIntersections;
 };
 
 struct Voxel {
     vec3 emittance;
     vec3 reflectance;
-    vec4 normalSH; // TODO: combine reflectance and normalSH
+    vec3 normal;
+    float intersections;
 };
 
 PackedVoxel packVoxel(Voxel v) {
     return PackedVoxel(
         uvec2(packHalf2x16(v.emittance.rg), packHalf2x16(vec2(v.emittance.b, 0.0))),
         packUnorm4x8(vec4(v.reflectance, 0.0)),
-        packSnorm4x8(vec4(v.normalSH))
+        packSnorm4x8(vec4(v.normal, 1.0 / (v.intersections + 1.0)))
     );
 }
 
 Voxel unpackVoxel(PackedVoxel v) {
+    vec4 normalAndIntersections = unpackSnorm4x8(v.normalAndIntersections);
+
     return Voxel(
         vec3(unpackHalf2x16(v.emittance.x), unpackHalf2x16(v.emittance.y).x),
         unpackUnorm4x8(v.reflectance).rgb,
-        unpackSnorm4x8(v.normalSH)
+        normalAndIntersections.xyz,
+        1.0 / normalAndIntersections.w - 1.0
     );
 }
 
