@@ -33,12 +33,12 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
     );
 
     let objects: Vec<CpuObject> = vec![
-        CpuObject::rectangle(Vec3::new(-45.0, 0.0, 0.0), Vec3::new(5.0, 80.0, 80.0), 2),
-        CpuObject::rectangle(Vec3::new(45.0, 0.0, 0.0), Vec3::new(5.0, 80.0, 80.0), 3),
-        CpuObject::rectangle(Vec3::new(0.0, -45.0, 0.0), Vec3::new(80.0, 5.0, 80.0), 1),
-        CpuObject::rectangle(Vec3::new(0.0, 45.0, 0.0), Vec3::new(80.0, 5.0, 80.0), 1),
-        CpuObject::rectangle(Vec3::new(0.0, 0.0, -45.0), Vec3::new(80.0, 80.0, 5.0), 1),
-        CpuObject::rectangle(Vec3::new(0.0, 0.0, 45.0), Vec3::new(80.0, 80.0, 5.0), 1),
+        CpuObject::cuboid(Vec3::new(-45.0, 0.0, 0.0), Vec3::new(5.0, 80.0, 80.0), 2),
+        CpuObject::cuboid(Vec3::new(45.0, 0.0, 0.0), Vec3::new(5.0, 80.0, 80.0), 3),
+        CpuObject::cuboid(Vec3::new(0.0, -45.0, 0.0), Vec3::new(80.0, 5.0, 80.0), 1),
+        CpuObject::cuboid(Vec3::new(0.0, 45.0, 0.0), Vec3::new(80.0, 5.0, 80.0), 1),
+        CpuObject::cuboid(Vec3::new(0.0, 0.0, -45.0), Vec3::new(80.0, 80.0, 5.0), 1),
+        CpuObject::cuboid(Vec3::new(0.0, 0.0, 45.0), Vec3::new(80.0, 80.0, 5.0), 1),
         CpuObject::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, 0),
         CpuObject::cube(Vec3::new(-10.0, -20.0, -20.0), 6.0, 1),
     ];
@@ -75,11 +75,11 @@ pub struct CpuObject {
 impl CpuObject {
     #[rustfmt::skip]
     fn cube(position: Vec3, half_extent: f32, material: u32) -> Self {
-        Self::rectangle(position, Vec3::splat(half_extent), material)
+        Self::cuboid(position, Vec3::splat(half_extent), material)
     }
 
     #[rustfmt::skip]
-    fn rectangle(position: Vec3, half_extents: Vec3, material: u32) -> Self {
+    fn cuboid(position: Vec3, half_extents: Vec3, material: u32) -> Self {
         let Vec3 { x: xr, y: yr, z: zr } = half_extents;
         Self {
             vertices: vec![
