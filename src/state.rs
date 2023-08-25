@@ -56,7 +56,6 @@ impl State {
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
-            ext_shader_atomic_float: true,
             ..DeviceExtensions::empty()
         };
 
