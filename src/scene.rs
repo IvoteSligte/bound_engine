@@ -14,14 +14,6 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
             reflectance: Vec3::splat(0.99),
             emittance: Vec3::splat(0.0),
         },
-        CpuMaterial {
-            reflectance: Vec3::new(0.99, 0.0, 0.0),
-            emittance: Vec3::splat(0.0),
-        },
-        CpuMaterial {
-            reflectance: Vec3::new(0.0, 0.99, 0.0),
-            emittance: Vec3::splat(0.0),
-        },
     ];
 
     materials.resize(
@@ -33,14 +25,8 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
     );
 
     let objects: Vec<CpuObject> = vec![
-        CpuObject::cuboid(Vec3::new(-45.0, 0.0, 0.0), Vec3::new(5.0, 80.0, 80.0), 2),
-        CpuObject::cuboid(Vec3::new(45.0, 0.0, 0.0), Vec3::new(5.0, 80.0, 80.0), 3),
-        CpuObject::cuboid(Vec3::new(0.0, -45.0, 0.0), Vec3::new(80.0, 5.0, 80.0), 1),
-        CpuObject::cuboid(Vec3::new(0.0, 45.0, 0.0), Vec3::new(80.0, 5.0, 80.0), 1),
-        CpuObject::cuboid(Vec3::new(0.0, 0.0, -45.0), Vec3::new(80.0, 80.0, 5.0), 1),
-        CpuObject::cuboid(Vec3::new(0.0, 0.0, 45.0), Vec3::new(80.0, 80.0, 5.0), 1),
+        CpuObject::cuboid(Vec3::new(0.0, 0.0, -20.0), Vec3::new(100.0, 100.0, 10.0), 1),
         CpuObject::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, 0),
-        CpuObject::cube(Vec3::new(-10.0, -20.0, -20.0), 6.0, 1),
     ];
 
     let (vertices, vertex_idxs, material_idxs) =
