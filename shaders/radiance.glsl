@@ -99,9 +99,9 @@ void main() {
 
             tCoefs = loadSHCoefs(IIL + ivec3(sig), LAYER);
             madAssign(coefs, SH_cosLobe_C0 / SH_norm_C0, tCoefs);
-            coefs[3] += cosLobe.x * tCoefs[0]; // X
-            coefs[1] += cosLobe.y * tCoefs[0]; // Y
-            coefs[2] += cosLobe.z * tCoefs[0]; // Z
+            coefs[3] += cosLobe.x / SH_norm_C0 * tCoefs[0]; // X
+            coefs[1] += cosLobe.y / SH_norm_C0 * tCoefs[0]; // Y
+            coefs[2] += cosLobe.z / SH_norm_C0 * tCoefs[0]; // Z
 
             mulAssign(coefs, 6.0 / 7.0);
         }
