@@ -51,6 +51,48 @@ vec3 dot_coefs(vec4 a, vec3[SH_CS] b) {
     return result;
 }
 
+// sparse second order SH * second order SH multiplication cropped to a second order SH
+// Von Neumann neighborhood (direct neighbors)
+void propagateVonNeumann(inout vec3[SH_CS] coefs, ivec3 iil, int layer, float normalizer) {
+    vec3[SH_CS] tCoefs;
+    // -X
+    tCoefs = loadSHCoefs(ivec3(iil.x-1, iil.yz), layer);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[3] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // +X
+    tCoefs = loadSHCoefs(ivec3(iil.x+1, iil.yz), layer);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[3] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // -Y
+    tCoefs = loadSHCoefs(ivec3(iil.x, iil.y-1, iil.z), layer);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[1] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // +Y
+    tCoefs = loadSHCoefs(ivec3(iil.x, iil.y+1, iil.z), layer);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[1] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // -Z
+    tCoefs = loadSHCoefs(ivec3(iil.xy, iil.z-1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[2] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // +Z
+    tCoefs = loadSHCoefs(ivec3(iil.xy, iil.z+1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[2] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+}
+
+void propagateCorner(inout vec3[SH_CS] coefs, ivec3 iil, int layer, ivec3 offset, float normalizer) {
+    float len = length(vec3(offset));
+    float weight = normalizer; // TODO: divide by len (?)
+    vec4 lobe = dirToCosineLobe(offset / len);
+
+    vec3[SH_CS] tCoefs = loadSHCoefs(iil + offset, layer);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[3] += lobe.x * weight * tCoefs[0]; // X
+    coefs[1] += lobe.y * weight * tCoefs[0]; // Y
+    coefs[2] += lobe.z * weight * tCoefs[0]; // Z
+}
+
 void main() {
     const int LAYER = int(gl_GlobalInvocationID.x / RADIANCE_SIZE);
     // index in layer
@@ -61,56 +103,18 @@ void main() {
 
     // stores coefs as array of RGB channels
     vec3[SH_CS] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
-    vec3[SH_CS] tCoefs;
 
     const float BASE_FALLOFF = 2.0 / 3.0;
     float layer_falloff = pow(0.95, LAYER);
     float normalizer = SH_norm_C0 * BASE_FALLOFF * layer_falloff;
 
-    // sparse second order SH * second order SH multiplication cropped to a second order SH
-    // -X
-    tCoefs = loadSHCoefs(ivec3(IIL.x-1, IIL.yz), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[3] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
-    // +X
-    tCoefs = loadSHCoefs(ivec3(IIL.x+1, IIL.yz), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[3] += SH_cosLobe_C1 * normalizer * tCoefs[0];
-    // -Y
-    tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y-1, IIL.z), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[1] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
-    // +Y
-    tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y+1, IIL.z), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[1] += SH_cosLobe_C1 * normalizer * tCoefs[0];
-    // -Z
-    tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z-1), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[2] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
-    // +Z
-    tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z+1), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[2] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+    propagateVonNeumann(coefs, IIL, LAYER, normalizer);
 
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
     // TODO: maybe allow multiple normals per voxel
     if (voxel.intersections > 0.0) {
         vec4 cosLobe = dirToCosineLobe(voxel.normal);
-
-        if (voxel.intersections > 1.0 && (dot(ceil(abs(voxel.normal)), vec3(1.0)) > 1.0)) {
-            vec3 sig = round(voxel.normal);
-
-            tCoefs = loadSHCoefs(IIL + ivec3(sig), LAYER);
-            madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
-            coefs[3] += cosLobe.x * SH_norm_C0 * tCoefs[0]; // X
-            coefs[1] += cosLobe.y * SH_norm_C0 * tCoefs[0]; // Y
-            coefs[2] += cosLobe.z * SH_norm_C0 * tCoefs[0]; // Z
-
-            mulAssign(coefs, 6.0 / 7.0);
-        }
-
         vec3 s = voxel.reflectance * max(vec3(0.0), dot_coefs(cosLobe, coefs));
         coefs[0] = s *  cosLobe[0];
         coefs[1] = s * -cosLobe[1]; // opposite direction
@@ -123,4 +127,5 @@ void main() {
     storeSHCoefs(IIL, LAYER, coefs);
 }
 
-// TODO: use atomics for diagonal reads and change the rendering pattern to checkerboard rendering
+// TODO: render in chunks based on workgroup sizes, a 4x4x4 block can then be used instead of the current awkward pattern
+// improves memory reads
