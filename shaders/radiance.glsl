@@ -113,9 +113,10 @@ void main() {
         coefs[3] = s * -cosLobe[3];
     }
 
-    const float BASE_FALLOFF = 0.667;
+    const float BASE_FALLOFF = 2.0 / 3.0;
+    float layer_falloff = pow(0.95, LAYER);
     for (int i = 0; i < SH_CS; i++) {
-        coefs[i] *= BASE_FALLOFF * pow(0.95, LAYER);
+        coefs[i] *= BASE_FALLOFF * layer_falloff;
     }
     coefs[0] += voxel.emittance;
 
