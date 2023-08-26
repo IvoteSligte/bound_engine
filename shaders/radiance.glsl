@@ -9,6 +9,8 @@ layout(constant_id = 0) const int OFFSET_X = 0;
 layout(constant_id = 1) const int OFFSET_Y = 0;
 layout(constant_id = 2) const int OFFSET_Z = 0;
 
+const ivec3 OFFSET = ivec3(OFFSET_X, OFFSET_Y, OFFSET_Z);
+
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(binding = 0) buffer RadianceBuffer {
@@ -59,22 +61,27 @@ void propagateVonNeumann(inout vec3[SH_CS] coefs, ivec3 iil, int layer, float no
     tCoefs = loadSHCoefs(ivec3(iil.x-1, iil.yz), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
     coefs[3] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+
     // +X
     tCoefs = loadSHCoefs(ivec3(iil.x+1, iil.yz), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
     coefs[3] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+
     // -Y
     tCoefs = loadSHCoefs(ivec3(iil.x, iil.y-1, iil.z), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
     coefs[1] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+
     // +Y
     tCoefs = loadSHCoefs(ivec3(iil.x, iil.y+1, iil.z), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
     coefs[1] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+
     // -Z
     tCoefs = loadSHCoefs(ivec3(iil.xy, iil.z-1), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
     coefs[2] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+
     // +Z
     tCoefs = loadSHCoefs(ivec3(iil.xy, iil.z+1), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
@@ -162,10 +169,7 @@ void propagateEdges(inout vec3[SH_CS] coefs, ivec3 iil, int layer, float normali
 void main() {
     const int LAYER = int(gl_GlobalInvocationID.x / RADIANCE_SIZE);
     // index in layer
-    const ivec3 IIL = ivec3(
-        (gl_GlobalInvocationID.x * 2 + OFFSET_X) % RADIANCE_SIZE,
-        gl_GlobalInvocationID.y * 2 + OFFSET_Y,
-        gl_GlobalInvocationID.z * 2 + OFFSET_Z);
+    const ivec3 IIL = ivec3(gl_GlobalInvocationID % RADIANCE_SIZE + (gl_WorkGroupSize * (gl_WorkGroupID + OFFSET)));
 
     // stores coefs as array of RGB channels
     vec3[SH_CS] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
@@ -191,8 +195,7 @@ void main() {
 
     coefs[0] += voxel.emittance;
 
+    // TODO: load all radiance voxels that need be read at once at the start of the program and use the barrier there instead of here
+    barrier(); // makes writing thread-safe, other workgroup members might otherwise read this voxel's radiance while writing
     storeSHCoefs(IIL, LAYER, coefs);
 }
-
-// TODO: render in chunks based on workgroup sizes, a 4x4x4 block can then be used instead of the current awkward pattern
-// improves memory reads
