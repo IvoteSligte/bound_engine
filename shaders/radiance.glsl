@@ -63,37 +63,35 @@ void main() {
     vec3[SH_CS] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
     vec3[SH_CS] tCoefs;
 
-    // -X
-    tCoefs = loadSHCoefs(ivec3(IIL.x-1, IIL.yz), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
-    coefs[3] += -SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
-    // +X
-    tCoefs = loadSHCoefs(ivec3(IIL.x+1, IIL.yz), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
-    coefs[3] += SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
-    // -Y
-    tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y-1, IIL.z), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
-    coefs[1] += -SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
-    // +Y
-    tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y+1, IIL.z), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
-    coefs[1] += SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
-    // -Z
-    tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z-1), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
-    coefs[2] += -SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
-    // +Z
-    tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z+1), LAYER);
-    madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
-    coefs[2] += SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
-
-    // TODO: combine with SH_norm_C0
     const float BASE_FALLOFF = 2.0 / 3.0;
     float layer_falloff = pow(0.95, LAYER);
-    for (int i = 0; i < SH_CS; i++) {
-        coefs[i] *= BASE_FALLOFF * layer_falloff;
-    }
+    float normalizer = SH_norm_C0 * BASE_FALLOFF * layer_falloff;
+
+    // sparse second order SH * second order SH multiplication cropped to a second order SH
+    // -X
+    tCoefs = loadSHCoefs(ivec3(IIL.x-1, IIL.yz), LAYER);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[3] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // +X
+    tCoefs = loadSHCoefs(ivec3(IIL.x+1, IIL.yz), LAYER);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[3] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // -Y
+    tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y-1, IIL.z), LAYER);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[1] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // +Y
+    tCoefs = loadSHCoefs(ivec3(IIL.x, IIL.y+1, IIL.z), LAYER);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[1] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // -Z
+    tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z-1), LAYER);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[2] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    // +Z
+    tCoefs = loadSHCoefs(ivec3(IIL.xy, IIL.z+1), LAYER);
+    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
+    coefs[2] += SH_cosLobe_C1 * normalizer * tCoefs[0];
 
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
