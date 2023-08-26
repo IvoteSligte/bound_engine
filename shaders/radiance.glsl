@@ -60,32 +60,32 @@ void propagateVonNeumann(inout vec3[SH_CS] coefs, ivec3 iil, int layer, float no
     // -X
     tCoefs = loadSHCoefs(ivec3(iil.x-1, iil.yz), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[3] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    coefs[3] += -(SH_cosLobe_C1 * normalizer) * tCoefs[0];
 
     // +X
     tCoefs = loadSHCoefs(ivec3(iil.x+1, iil.yz), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[3] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+    coefs[3] += (SH_cosLobe_C1 * normalizer) * tCoefs[0];
 
     // -Y
     tCoefs = loadSHCoefs(ivec3(iil.x, iil.y-1, iil.z), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[1] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    coefs[1] += -(SH_cosLobe_C1 * normalizer) * tCoefs[0];
 
     // +Y
     tCoefs = loadSHCoefs(ivec3(iil.x, iil.y+1, iil.z), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[1] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+    coefs[1] += (SH_cosLobe_C1 * normalizer) * tCoefs[0];
 
     // -Z
     tCoefs = loadSHCoefs(ivec3(iil.xy, iil.z-1), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[2] += -SH_cosLobe_C1 * normalizer * tCoefs[0];
+    coefs[2] += -(SH_cosLobe_C1 * normalizer) * tCoefs[0];
 
     // +Z
     tCoefs = loadSHCoefs(ivec3(iil.xy, iil.z+1), layer);
     madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[2] += SH_cosLobe_C1 * normalizer * tCoefs[0];
+    coefs[2] += (SH_cosLobe_C1 * normalizer) * tCoefs[0];
 }
 
 void propagateEdges(inout vec3[SH_CS] coefs, ivec3 iil, int layer, float normalizer) {
@@ -96,74 +96,74 @@ void propagateEdges(inout vec3[SH_CS] coefs, ivec3 iil, int layer, float normali
     // -X, -Y
     tCoefs = loadSHCoefs(iil + ivec3(-1, -1,  0), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[3] += -SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[1] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[3] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[1] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // -X, +Y
     tCoefs = loadSHCoefs(iil + ivec3(-1,  1,  0), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[3] += -SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[1] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[3] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[1] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // +X, -Y
     tCoefs = loadSHCoefs(iil + ivec3( 1, -1,  0), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[3] +=  SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[1] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[3] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[1] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // +X, +Y
     tCoefs = loadSHCoefs(iil + ivec3( 1,  1,  0), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[3] +=  SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[1] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[3] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[1] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // -X, -Z
     tCoefs = loadSHCoefs(iil + ivec3(-1,  0, -1), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[3] += -SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[2] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[3] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[2] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // -X, +Z
     tCoefs = loadSHCoefs(iil + ivec3(-1,  0,  1), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[3] += -SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[2] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[3] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[2] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // +X, -Z
     tCoefs = loadSHCoefs(iil + ivec3( 1,  0, -1), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[3] +=  SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[2] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[3] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[2] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // +X, +Z
     tCoefs = loadSHCoefs(iil + ivec3( 1,  0,  1), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[3] +=  SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[2] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[3] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[2] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // -Y, -Z
     tCoefs = loadSHCoefs(iil + ivec3( 0, -1, -1), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[1] += -SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[2] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[1] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[2] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // -Y, +Z
     tCoefs = loadSHCoefs(iil + ivec3( 0, -1,  1), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[1] += -SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[2] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[1] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[2] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // +Y, -Z
     tCoefs = loadSHCoefs(iil + ivec3( 0,  1, -1), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[1] +=  SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[2] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[1] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[2] += -(SH_cosLobe_C1 * weight) * tCoefs[0];
 
     // +Y, +Z
     tCoefs = loadSHCoefs(iil + ivec3( 0,  1,  1), layer);
     madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
-    coefs[1] +=  SH_cosLobe_C1 * weight * tCoefs[0];
-    coefs[2] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[1] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
+    coefs[2] +=  (SH_cosLobe_C1 * weight) * tCoefs[0];
 }
 
 void main() {
