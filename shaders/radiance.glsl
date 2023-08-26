@@ -88,13 +88,14 @@ void main() {
     madAssign(coefs, SH_cosLobe_C0 * SH_norm_C0, tCoefs);
     coefs[2] += SH_cosLobe_C1 * SH_norm_C0 * tCoefs[0];
 
-    Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
-
+    // TODO: combine with SH_norm_C0
     const float BASE_FALLOFF = 2.0 / 3.0;
     float layer_falloff = pow(0.95, LAYER);
     for (int i = 0; i < SH_CS; i++) {
         coefs[i] *= BASE_FALLOFF * layer_falloff;
     }
+
+    Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
     // TODO: maybe allow multiple normals per voxel
     if (voxel.intersections > 0.0) {
