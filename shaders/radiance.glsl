@@ -81,16 +81,82 @@ void propagateVonNeumann(inout vec3[SH_CS] coefs, ivec3 iil, int layer, float no
     coefs[2] += SH_cosLobe_C1 * normalizer * tCoefs[0];
 }
 
-void propagateCorner(inout vec3[SH_CS] coefs, ivec3 iil, int layer, ivec3 offset, float normalizer) {
-    float len = length(vec3(offset));
-    float weight = normalizer; // TODO: divide by len (?)
-    vec4 lobe = dirToCosineLobe(offset / len);
+void propagateEdges(inout vec3[SH_CS] coefs, ivec3 iil, int layer, float normalizer) {
+    const float INV_LENGTH = 1.0 / 1.414213562; // 1.0 / sqrt(2.0)
+    float weight = normalizer * INV_LENGTH;
+    vec3[SH_CS] tCoefs;
 
-    vec3[SH_CS] tCoefs = loadSHCoefs(iil + offset, layer);
-    madAssign(coefs, SH_cosLobe_C0 * normalizer, tCoefs);
-    coefs[3] += lobe.x * weight * tCoefs[0]; // X
-    coefs[1] += lobe.y * weight * tCoefs[0]; // Y
-    coefs[2] += lobe.z * weight * tCoefs[0]; // Z
+    // -X, -Y
+    tCoefs = loadSHCoefs(iil + ivec3(-1, -1,  0), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[3] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[1] += -SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // -X, +Y
+    tCoefs = loadSHCoefs(iil + ivec3(-1,  1,  0), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[3] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[1] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // +X, -Y
+    tCoefs = loadSHCoefs(iil + ivec3( 1, -1,  0), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[3] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[1] += -SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // +X, +Y
+    tCoefs = loadSHCoefs(iil + ivec3( 1,  1,  0), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[3] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[1] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // -X, -Z
+    tCoefs = loadSHCoefs(iil + ivec3(-1,  0, -1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[3] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[2] += -SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // -X, +Z
+    tCoefs = loadSHCoefs(iil + ivec3(-1,  0,  1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[3] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[2] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // +X, -Z
+    tCoefs = loadSHCoefs(iil + ivec3( 1,  0, -1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[3] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[2] += -SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // +X, +Z
+    tCoefs = loadSHCoefs(iil + ivec3( 1,  0,  1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[3] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[2] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // -Y, -Z
+    tCoefs = loadSHCoefs(iil + ivec3( 0, -1, -1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[1] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[2] += -SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // -Y, +Z
+    tCoefs = loadSHCoefs(iil + ivec3( 0, -1,  1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[1] += -SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[2] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // +Y, -Z
+    tCoefs = loadSHCoefs(iil + ivec3( 0,  1, -1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[1] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[2] += -SH_cosLobe_C1 * weight * tCoefs[0];
+
+    // +Y, +Z
+    tCoefs = loadSHCoefs(iil + ivec3( 0,  1,  1), layer);
+    madAssign(coefs, SH_cosLobe_C0 * weight, tCoefs);
+    coefs[1] +=  SH_cosLobe_C1 * weight * tCoefs[0];
+    coefs[2] +=  SH_cosLobe_C1 * weight * tCoefs[0];
 }
 
 void main() {
@@ -104,15 +170,16 @@ void main() {
     // stores coefs as array of RGB channels
     vec3[SH_CS] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
 
-    const float BASE_FALLOFF = 2.0 / 3.0;
+    const float BASE_FALLOFF = 0.2765; //0.178;
     float layer_falloff = pow(0.95, LAYER);
     float normalizer = SH_norm_C0 * BASE_FALLOFF * layer_falloff;
 
     propagateVonNeumann(coefs, IIL, LAYER, normalizer);
+    propagateEdges(coefs, IIL, LAYER, normalizer);
 
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
-    // TODO: maybe allow multiple normals per voxel
+    // TODO: get a surface cache to handle diffuse reflections
     if (voxel.intersections > 0.0) {
         vec4 cosLobe = dirToCosineLobe(voxel.normal);
         vec3 s = voxel.reflectance * max(vec3(0.0), dot_coefs(cosLobe, coefs));
