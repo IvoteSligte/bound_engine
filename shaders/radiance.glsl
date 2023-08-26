@@ -90,6 +90,12 @@ void main() {
 
     Voxel voxel = unpackVoxel(cache.voxels[LAYER][IIL.x][IIL.y][IIL.z]);
 
+    const float BASE_FALLOFF = 2.0 / 3.0;
+    float layer_falloff = pow(0.95, LAYER);
+    for (int i = 0; i < SH_CS; i++) {
+        coefs[i] *= BASE_FALLOFF * layer_falloff;
+    }
+
     // TODO: maybe allow multiple normals per voxel
     if (voxel.intersections > 0.0) {
         vec4 cosLobe = dirToCosineLobe(voxel.normal);
@@ -113,11 +119,6 @@ void main() {
         coefs[3] = s * -cosLobe[3];
     }
 
-    const float BASE_FALLOFF = 2.0 / 3.0;
-    float layer_falloff = pow(0.95, LAYER);
-    for (int i = 0; i < SH_CS; i++) {
-        coefs[i] *= BASE_FALLOFF * layer_falloff;
-    }
     coefs[0] += voxel.emittance;
 
     storeSHCoefs(IIL, LAYER, coefs);
