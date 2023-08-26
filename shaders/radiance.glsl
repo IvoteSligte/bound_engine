@@ -174,7 +174,7 @@ void main() {
     // stores coefs as array of RGB channels
     vec3[SH_CS] coefs = vec3[](vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
 
-    const float BASE_FALLOFF = 0.2765; //0.178;
+    const float BASE_FALLOFF = 0.2765;
     float layer_falloff = pow(0.95, LAYER);
     float normalizer = SH_norm_C0 * BASE_FALLOFF * layer_falloff;
 
