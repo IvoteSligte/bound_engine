@@ -157,12 +157,9 @@ impl PathtraceCommandBuffers {
                 0,
                 descriptor_sets.direct.clone(),
             )
-            .bind_vertex_buffers(0, buffers.vertex)
-            .bind_index_buffer(buffers.vertex_idxs.clone())
-            .draw_indexed(
-                buffers.vertex_idxs.len() as u32, // INFO: this will break if the index/vertex count changes
+            .draw( // INFO: this will break if the index/vertex count changes
+                buffers.vertex_idxs.len() as u32,
                 1,
-                0,
                 0,
                 0,
             )

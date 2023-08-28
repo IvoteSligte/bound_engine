@@ -1,10 +1,9 @@
 use crate::shaders::{self, MAX_MATERIALS};
 
 use glam::*;
-use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input};
 
 // TODO: loading from file
-pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
+pub fn load() -> (Vec<[f32; 4]>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
     let mut materials = vec![
         CpuMaterial {
             reflectance: Vec3::splat(0.0),
@@ -41,7 +40,11 @@ pub fn load() -> (Vec<Vertex>, Vec<u32>, Vec<u32>, Vec<shaders::Material>) {
     );
 
     let objects: Vec<CpuObject> = vec![
-        CpuObject::cuboid(Vec3::new(0.0, 0.0, -20.0), Vec3::new(1000.0, 1000.0, 10.0), 1),
+        CpuObject::cuboid(
+            Vec3::new(0.0, 0.0, -20.0),
+            Vec3::new(1000.0, 1000.0, 10.0),
+            1,
+        ),
         CpuObject::cube(Vec3::new(-10.0, 30.0, -5.0), 5.0, 2),
         CpuObject::cube(Vec3::new(35.0, 20.0, -3.0), 7.0, 3),
         CpuObject::cube(Vec3::new(20.0, -30.0, -7.0), 3.0, 4),
@@ -124,21 +127,20 @@ impl CpuObject {
 }
 
 impl CpuObject {
-    fn into_parts(self) -> (Vec<Vertex>, Vec<u32>, Vec<u32>) {
-        let vertices = self
-            .vertices
-            .into_iter()
-            .map(|v| Vertex {
-                position: v.extend(0.0).to_array(),
-            })
-            .collect();
-
-        (vertices, self.indices, self.materials)
+    fn into_parts(self) -> (Vec<[f32; 4]>, Vec<u32>, Vec<u32>) {
+        (
+            self.vertices
+                .into_iter()
+                .map(|v| v.extend(0.0).to_array())
+                .collect(),
+            self.indices,
+            self.materials,
+        )
     }
 
-    fn flatten_parts<I>(iter: I) -> (Vec<Vertex>, Vec<u32>, Vec<u32>)
+    fn flatten_parts<I>(iter: I) -> (Vec<[f32; 4]>, Vec<u32>, Vec<u32>)
     where
-        I: IntoIterator<Item = (Vec<Vertex>, Vec<u32>, Vec<u32>)>,
+        I: IntoIterator<Item = (Vec<[f32; 4]>, Vec<u32>, Vec<u32>)>,
     {
         iter.into_iter().fold(
             (vec![], vec![], vec![]),
@@ -151,11 +153,4 @@ impl CpuObject {
             },
         )
     }
-}
-
-#[derive(Debug, BufferContents, vertex_input::Vertex)]
-#[repr(C)]
-pub struct Vertex {
-    #[format(R32G32B32A32_SFLOAT)]
-    position: [f32; 4],
 }

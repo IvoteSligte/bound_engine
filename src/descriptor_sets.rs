@@ -46,8 +46,10 @@ impl DescriptorSets {
             pipelines.direct.layout().set_layouts()[0].clone(),
             [
                 WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
+                WriteDescriptorSet::buffer(1, buffers.vertex.clone()),
+                WriteDescriptorSet::buffer(2, buffers.vertex_idxs.clone()),
                 WriteDescriptorSet::image_view_sampler_array(
-                    1,
+                    3,
                     0,
                     images.radiance.combined_image_samplers(),
                 ),

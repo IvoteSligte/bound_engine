@@ -21,7 +21,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Buffers {
     pub real_time: Subbuffer<shaders::RealTimeBuffer>,
-    pub vertex: Subbuffer<[scene::Vertex]>,
+    pub vertex: Subbuffer<[[f32; 4]]>,
     pub vertex_idxs: Subbuffer<[u32]>,
     pub material_idxs: Subbuffer<[u32]>,
     pub material: Subbuffer<shaders::MaterialBuffer>,
@@ -172,7 +172,7 @@ fn scene(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> (
-    Subbuffer<[scene::Vertex]>,
+    Subbuffer<[[f32; 4]]>,
     Subbuffer<[u32]>,
     Subbuffer<[u32]>,
     Subbuffer<shaders::MaterialBuffer>,
@@ -195,8 +195,8 @@ fn scene(
 fn vertices(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    vertices: Vec<scene::Vertex>,
-) -> Subbuffer<[scene::Vertex]> {
+    vertices: Vec<[f32; 4]>,
+) -> Subbuffer<[[f32; 4]]> {
     let buffer = Buffer::new_slice(
         &allocators.memory,
         BufferCreateInfo {

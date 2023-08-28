@@ -1,9 +1,8 @@
+use crate::shaders;
 use crate::shaders::Shaders;
-use crate::{scene, shaders};
 
 use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
-use vulkano::pipeline::graphics::vertex_input::{self};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::pipeline::{ComputePipeline, GraphicsPipeline};
 
@@ -52,7 +51,6 @@ where
     };
 
     GraphicsPipeline::start()
-        .vertex_input_state(<scene::Vertex as vertex_input::Vertex>::per_vertex())
         .vertex_shader(vertex.entry_point("main").unwrap(), spec_consts_vertex)
         .input_assembly_state(InputAssemblyState::default())
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
