@@ -7,7 +7,6 @@ layout(location = 1) in vec3 fragNormal;
 
 layout(location = 0) out vec3 fragColor;
 
-// TODO: remove unused fields
 layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     mat4 projection_view;
     vec3 position;
