@@ -7,7 +7,7 @@ use vulkano::{
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass},
 };
 
-use crate::image::ImageViewCollection;
+use crate::image::ImageViews;
 
 pub fn create(device: Arc<Device>) -> Arc<RenderPass> {
     vulkano::single_pass_renderpass!(
@@ -34,10 +34,7 @@ pub fn create(device: Arc<Device>) -> Arc<RenderPass> {
     .unwrap()
 }
 
-pub fn frame_buffer(
-    render_pass: Arc<RenderPass>,
-    image_views: ImageViewCollection,
-) -> Arc<Framebuffer> {
+pub fn frame_buffer(render_pass: Arc<RenderPass>, image_views: ImageViews) -> Arc<Framebuffer> {
     let dimensions = image_views.render.image().dimensions();
 
     Framebuffer::new(

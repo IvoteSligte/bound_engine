@@ -92,7 +92,6 @@ pub fn recreate(eh: &mut EventHelper<Data>) -> bool {
             eh.state.allocators.clone(),
             eh.state.pipelines.clone(),
             eh.state.buffers.clone(),
-            eh.state.images.clone(),
         );
 
         eh.state.frame_buffer =

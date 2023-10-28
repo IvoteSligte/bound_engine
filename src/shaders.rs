@@ -8,54 +8,86 @@ vulkano_shaders::shader! {
             ty: "fragment",
             path: "shaders/direct.frag",
         },
-        RadiancePrecalc: {
+        DynamicParticles: {
             ty: "compute",
-            path: "shaders/radiancePrecalc.glsl",
+            path: "shaders/dyn_particles.glsl",
         },
-        Radiance: {
+        DynamicParticles2: {
             ty: "compute",
-            path: "shaders/radiance.glsl",
+            path: "shaders/dyn_particles2.glsl",
+        },
+        StaticParticles: {
+            ty: "compute",
+            path: "shaders/static_particles.glsl",
+        },
+        StaticParticles2: {
+            ty: "compute",
+            path: "shaders/static_particles2.glsl",
         },
     },
     custom_derives: [Copy, Clone, Debug],
-    include: ["includes_general.glsl", "sh_rotation.glsl"],
+    include: ["includes_general.glsl"],
     define: [
-        ("LM_LAYERS", "4"),
-        ("RADIANCE_SIZE", "128"), // image resolution
-        ("RADIANCE_UNIT", "2.0"), // unit size in the world
-        ("MAX_MATERIALS", "32"),
-        ("SH_CS", "4")
+        ("DYN_PARTICLES", "1_048_576"),
+        ("DYN_MOVEMENT", "0.5"),
+        ("CELLS", "256"),
+        ("ENERGY_DISPERSION", "0.5")
     ], // TODO: sync defines with consts
     vulkan_version: "1.2", // TODO: vulkan 1.3
     spirv_version: "1.6"
 }
 
-pub const LM_LAYERS: u32 = 4;
+// 2^20 dynamic particles
+// must be a multiple of 2^8 = 64 (workgroup size)
+pub const DYN_PARTICLES: u32 = 1_048_576;
+// movement per update, 1.0 = 1 cell per update
+pub const DYN_MOVEMENT: f32 = 0.5;
+// 2^8 cells in a row (CELLS^3 total)
+pub const CELLS: u32 = 256;
+// how much of a particle's energy is dispersed
+// to other particles
+pub const ENERGY_DISPERSION: f32 = 0.5;
 
-pub const RADIANCE_SIZE: u32 = 128;
-pub const SH_CS: u32 = 4;
+// non-shader variables
+// static particles / cell (1D)
+pub const STATIC_PARTICLE_DENSITY: f32 = 2.0;
 
-pub const MAX_MATERIALS: usize = 32;
+pub type ParticleUnit = [u8; 16];
 
 use vulkano::device::Device;
 
 use vulkano::shader::ShaderModule;
 
+use glam::UVec3;
+
 use std::sync::Arc;
+
+impl Default for DynamicParticle {
+    fn default() -> Self {
+        DynamicParticle {
+            data: UVec3::ZERO,
+            energy: 0.0,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Shaders {
     pub direct: DirectShaders,
-    pub radiance: Arc<ShaderModule>,
-    pub radiance_precalc: Arc<ShaderModule>,
+    pub dynamic_particles: Arc<ShaderModule>,
+    pub dynamic_particles2: Arc<ShaderModule>,
+    pub static_particles: Arc<ShaderModule>,
+    pub static_particles2: Arc<ShaderModule>,
 }
 
 impl Shaders {
     pub fn load(device: Arc<Device>) -> Self {
         Self {
             direct: DirectShaders::load(device.clone()),
-            radiance: load_radiance(device.clone()).unwrap(),
-            radiance_precalc: load_radiance_precalc(device.clone()).unwrap(),
+            dynamic_particles: load_dynamic_particles(device.clone()).unwrap(),
+            dynamic_particles2: load_dynamic_particles2(device.clone()).unwrap(),
+            static_particles: load_static_particles(device.clone()).unwrap(),
+            static_particles2: load_static_particles2(device.clone()).unwrap(),
         }
     }
 }

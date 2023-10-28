@@ -3,18 +3,11 @@ use std::sync::Arc;
 use vulkano::{
     device::Device,
     format::Format,
-    image::{
-        view::{ImageView, ImageViewCreateInfo},
-        ImageCreateFlags, ImageDimensions, ImageUsage, ImageViewAbstract, SwapchainImage,
-    },
-    sampler::{BorderColor, Sampler, SamplerAddressMode, SamplerCreateInfo},
+    image::{view::ImageView, ImageCreateFlags, ImageDimensions, ImageUsage, SwapchainImage},
 };
 use winit::window::Window;
 
-use crate::{
-    allocator::Allocators,
-    shaders::{LM_LAYERS, RADIANCE_SIZE, SH_CS},
-};
+use crate::allocator::Allocators;
 
 use self::custom::CustomImage;
 
@@ -22,7 +15,6 @@ use self::custom::CustomImage;
 pub struct Images {
     pub render: Arc<CustomImage>,
     pub depth: Arc<CustomImage>,
-    pub radiance: RadianceImages,
     pub swapchain: Vec<Arc<SwapchainImage>>,
 }
 
@@ -36,16 +28,14 @@ impl Images {
         Self {
             render: create_render(allocators.clone(), window.clone()),
             depth: create_depth(allocators.clone(), window.clone()),
-            radiance: RadianceImages::new(device, allocators),
             swapchain: swapchain_images,
         }
     }
 
-    pub fn views(&self) -> ImageViewCollection {
-        ImageViewCollection {
+    pub fn views(&self) -> ImageViews {
+        ImageViews {
             render: ImageView::new_default(self.render.clone()).unwrap(),
             depth: ImageView::new_default(self.depth.clone()).unwrap(),
-            radiance: self.radiance.views(),
         }
     }
 }
@@ -81,95 +71,9 @@ pub fn create_depth(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<Cus
 }
 
 #[derive(Clone)]
-pub struct RadianceImages {
-    images: Vec<Arc<CustomImage>>,
-    sampler: Arc<Sampler>,
-}
-
-impl RadianceImages {
-    pub fn new(device: Arc<Device>, allocators: Arc<Allocators>) -> Self {
-        let dimensions = ImageDimensions::Dim3d {
-            width: RADIANCE_SIZE,
-            height: RADIANCE_SIZE,
-            depth: RADIANCE_SIZE,
-        };
-
-        // image for every layer and every spherical harmonic coefficient
-        let images = (0..(SH_CS * LM_LAYERS))
-            .map(|_| {
-                CustomImage::with_usage(
-                    &allocators.memory,
-                    dimensions,
-                    Format::R16G16B16A16_SFLOAT,
-                    ImageUsage::STORAGE | ImageUsage::SAMPLED,
-                    ImageCreateFlags::empty(),
-                )
-                .unwrap()
-            })
-            .collect::<Vec<_>>();
-
-        let sampler = Sampler::new(
-            device.clone(),
-            SamplerCreateInfo {
-                address_mode: [SamplerAddressMode::ClampToEdge; 3],
-                border_color: BorderColor::FloatTransparentBlack,
-                ..SamplerCreateInfo::simple_repeat_linear_no_mipmap()
-            },
-        )
-        .unwrap();
-
-        Self { images, sampler }
-    }
-
-    pub fn combined_image_samplers(&self) -> Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)> {
-        self.views()
-            .sampled
-            .iter()
-            .cloned()
-            .zip(std::iter::repeat(self.sampler.clone()))
-            .collect::<Vec<_>>()
-    }
-
-    pub fn views(&self) -> RadianceImageViews {
-        RadianceImageViews::from_images(&self.images)
-    }
-}
-
-#[derive(Clone)]
-pub struct ImageViewCollection {
+pub struct ImageViews {
     pub render: Arc<ImageView<CustomImage>>,
     pub depth: Arc<ImageView<CustomImage>>,
-    pub radiance: RadianceImageViews,
-}
-
-#[derive(Clone)]
-pub struct RadianceImageViews {
-    pub storage: Vec<Arc<dyn ImageViewAbstract>>,
-    pub sampled: Vec<Arc<dyn ImageViewAbstract>>,
-}
-
-impl RadianceImageViews {
-    fn create(images: &[Arc<CustomImage>], usage: ImageUsage) -> Vec<Arc<dyn ImageViewAbstract>> {
-        images
-            .iter()
-            .map(|img| {
-                ImageView::new(
-                    img.clone(),
-                    ImageViewCreateInfo {
-                        usage,
-                        ..ImageViewCreateInfo::from_image(img)
-                    },
-                )
-                .unwrap() as Arc<dyn ImageViewAbstract>
-            })
-            .collect()
-    }
-
-    fn from_images(images: &[Arc<CustomImage>]) -> Self {
-        let storage = Self::create(images, ImageUsage::STORAGE);
-        let sampled = Self::create(images, ImageUsage::SAMPLED);
-        Self { storage, sampled }
-    }
 }
 
 mod custom {

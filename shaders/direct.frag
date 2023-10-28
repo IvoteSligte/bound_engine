@@ -2,8 +2,9 @@
 
 #include "includes_general.glsl"
 
+// position of the fragment in world space
 layout(location = 0) in vec3 fragPosition;
-layout(location = 1) in vec3 fragNormal;
+// layout(location = 1) in vec3 fragNormal;
 
 layout(location = 0) out vec3 fragColor;
 
@@ -12,30 +13,27 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
 } rt;
 
-layout(binding = 3) uniform sampler3D radianceTextures[LM_LAYERS * SH_CS];
-
-vec3[SH_CS] loadSHCoefs(vec3 position, int layer, vec3 origin) {   
-    vec3 texIndex = radTextureIndexAtPos(position, layer, origin);
-    vec3[SH_CS] coefs;
-    for (int i = 0; i < SH_CS; i++) {
-        coefs[i] = texture(radianceTextures[layer * LM_LAYERS + i], texIndex).rgb;
-    }
-    return coefs;
-}
-
-vec3 sampleRadiance(vec3 position, vec3 dir) {
-    vec3 origin = vec3(0.0); // TODO: movable origin
-    
-    int layer = radLayerAtPos(position, origin);
-    if (layer >= LM_LAYERS) { return vec3(0.0); }
-    vec3[SH_CS] coefs = loadSHCoefs(position, layer, origin);
-    return evaluateRGBSphericalHarmonics(dir, coefs);
-}
+layout(binding = 2) buffer Grid {
+    GridCell cells[CELLS][CELLS][CELLS];
+} grid;
 
 void main() {
-    vec3 direction = normalize(fragPosition - rt.position);
-    // normal direction is the most accurate (for diffuse lighting)
-    fragColor = sampleRadiance(fragPosition - EPSILON * direction, -fragNormal);
-}
+    // vec3 direction = normalize(fragPosition - rt.position);
+    // TODO: changeable cell size (fixed at 1.0 currently)
+    ivec3 index = ivec3(fragPosition) + (CELLS / 2);
+    
+    // out of bounds
+    if (any(greaterThanEqual(abs(index), ivec3(CELLS)))) {
+        fragColor = vec3(0.0);
+        return;
+    }
+    GridCell cell = grid.cells[index.x][index.y][index.z];
 
-// FIXME: looking straight down gives a black screen; sampling problem or rasterized rendering problem
+    // length(vec3(0.0)) = undefined
+    if (cell.vector == vec3(0.0)) {
+        fragColor = vec3(0.0);
+        return;
+    }
+    float red = length(cell.vector) / float(cell.counter);
+    fragColor = vec3(red); // DEBUG:
+}

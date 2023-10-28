@@ -1,7 +1,6 @@
 use glam::*;
 use std::{f32::consts::PI, sync::Arc};
 
-use shaders::LM_LAYERS;
 use vulkano::{
     swapchain::{AcquireError, SwapchainPresentInfo},
     sync::{self, FlushError, GpuFuture},
@@ -150,12 +149,41 @@ fn main() {
             image_fence.wait(None).unwrap();
         }
 
-        let future = sync::now(eh.state.device.clone())
-            .then_execute(
-                eh.state.queue.clone(),
-                eh.state.command_buffers.pathtraces.next(),
-            )
-            .unwrap()
+        let mut future = sync::now(eh.state.device.clone()).boxed();
+
+        for i in 0..3 {
+            let new_future = sync::now(eh.state.device.clone())
+                .then_execute(
+                    eh.state.queue.clone(),
+                    eh.state.command_buffers.pathtraces.clear_grid[i].clone(),
+                )
+                .unwrap()
+                // TODO: do dynamic_particles and static_particles at the same time
+                .then_execute(
+                    eh.state.queue.clone(),
+                    eh.state.command_buffers.pathtraces.dynamic_particles[i].clone(),
+                )
+                .unwrap()
+                .then_execute(
+                    eh.state.queue.clone(),
+                    eh.state.command_buffers.pathtraces.static_particles[i].clone(),
+                )
+                .unwrap()
+                // TODO: do dynamic_particles2 and static_particles2 at the same time
+                .then_execute(
+                    eh.state.queue.clone(),
+                    eh.state.command_buffers.pathtraces.dynamic_particles2[i].clone(),
+                )
+                .unwrap()
+                .then_execute(
+                    eh.state.queue.clone(),
+                    eh.state.command_buffers.pathtraces.static_particles2[i].clone(),
+                )
+                .unwrap();
+            future = new_future.join(future).boxed();
+        }
+        // render
+        let future = future
             .then_execute(
                 eh.state.queue.clone(),
                 eh.state.command_buffers.pathtraces.direct.clone(),

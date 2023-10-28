@@ -8,7 +8,6 @@ use vulkano::{
     },
     device::Queue,
     memory::allocator::{AllocationCreateInfo, MemoryUsage},
-    padded::Padded,
     sync::GpuFuture,
 };
 
@@ -23,9 +22,8 @@ pub struct Buffers {
     pub real_time: Subbuffer<shaders::RealTimeBuffer>,
     pub vertex: Subbuffer<[[f32; 4]]>,
     pub vertex_idxs: Subbuffer<[u32]>,
-    pub material_idxs: Subbuffer<[u32]>,
-    pub material: Subbuffer<shaders::MaterialBuffer>,
-    pub radiance: Subbuffer<[u8]>,
+    pub grid: Vec<Subbuffer<[shaders::GridCell]>>,
+    pub particles: Vec<Subbuffer<[shaders::ParticleUnit]>>,
 }
 
 impl Buffers {
@@ -37,21 +35,14 @@ impl Buffers {
         )
         .unwrap();
 
-        let (vertex, vertex_idxs, material_idxs, material) =
-            scene(allocators.clone(), &mut builder);
+        let (vertex, vertex_idxs, grid, particles) = scene(allocators.clone(), &mut builder);
 
         let buffers = Self {
             real_time: real_time_buffer(allocators.clone()),
             vertex,
             vertex_idxs,
-            material_idxs,
-            material,
-            radiance: zeroed(
-                allocators.clone(),
-                &mut builder,
-                size_of::<shaders::RadianceBuffer>() as u64,
-                BufferUsage::STORAGE_BUFFER,
-            ),
+            grid,
+            particles,
         };
 
         builder
@@ -174,21 +165,20 @@ fn scene(
 ) -> (
     Subbuffer<[[f32; 4]]>,
     Subbuffer<[u32]>,
-    Subbuffer<[u32]>,
-    Subbuffer<shaders::MaterialBuffer>,
+    Vec<Subbuffer<[shaders::GridCell]>>,
+    Vec<Subbuffer<[shaders::ParticleUnit]>>,
 ) {
-    let (vertex_data, vertex_idx_data, material_idx_data, material_data) = scene::load();
-    let vertex_buffer = vertices(allocators.clone(), cmb_builder, vertex_data);
-    let vertex_index_buffer = vertex_indices(allocators.clone(), cmb_builder, vertex_idx_data);
-    let material_index_buffer =
-        material_indices(allocators.clone(), cmb_builder, material_idx_data);
-    let material_buffer = materials(allocators.clone(), cmb_builder, material_data);
+    let (vertexes, vertex_indexes, static_particles) = scene::load();
+    let vertex_buffer = vertices(allocators.clone(), cmb_builder, vertexes);
+    let vertex_index_buffer = vertex_indices(allocators.clone(), cmb_builder, vertex_indexes);
+    let grid_buffer = grid(allocators.clone(), cmb_builder);
+    let particle_buffers = particles(allocators.clone(), cmb_builder, static_particles);
 
     (
         vertex_buffer,
         vertex_index_buffer,
-        material_index_buffer,
-        material_buffer,
+        grid_buffer,
+        particle_buffers,
     )
 }
 
@@ -244,58 +234,53 @@ fn vertex_indices(
     buffer
 }
 
-fn material_indices(
+fn grid(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    material_indices: Vec<u32>,
-) -> Subbuffer<[u32]> {
-    let buffer = Buffer::new_slice(
-        &allocators.memory,
-        BufferCreateInfo {
-            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::DeviceOnly,
-            ..Default::default()
-        },
-        material_indices.len() as u64,
-    )
-    .unwrap();
+) -> Vec<Subbuffer<[shaders::GridCell]>> {
+    let mut buffers = vec![];
 
-    stage_with_iter(allocators, cmb_builder, buffer.clone(), material_indices);
-
-    buffer
+    for i in 0..3 {
+        let buffer = zeroed(
+            allocators,
+            cmb_builder,
+            size_of::<shaders::GridCell>() as u64 * (shaders::CELLS as u64).pow(3),
+            BufferUsage::STORAGE_BUFFER,
+        );
+        buffers.push(buffer);
+    }
 }
 
-fn materials(
+fn particles(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    materials: Vec<shaders::Material>,
-) -> Subbuffer<shaders::MaterialBuffer> {
-    let material_data = shaders::MaterialBuffer {
-        materials: materials
-            .into_iter()
-            .map(<Padded<shaders::Material, 4> as From<shaders::Material>>::from)
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap(),
-    };
+    static_particles: [Vec<shaders::StaticParticle>; 3],
+) -> Vec<Subbuffer<[shaders::ParticleUnit]>> {
+    let mut buffers = vec![];
 
-    let buffer = Buffer::new_sized(
-        &allocators.memory,
-        BufferCreateInfo {
-            usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::DeviceOnly,
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    for static_particles in static_particles {
+        let particles = (0..shaders::DYN_PARTICLES)
+            .map(|_| shaders::DynamicParticle::default().cast::<shaders::ParticleUnit>())
+            .collect::<Vec<_>>();
+        particles.extend(static_particles.map(|particle| particle.cast::<shaders::ParticleUnit>()));
 
-    stage_with_data(allocators, cmb_builder, buffer.clone(), material_data);
+        let buffer = Buffer::new_slice(
+            &allocators.memory,
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::DeviceOnly,
+                ..Default::default()
+            },
+            shaders::DYN_PARTICLES as u64 + static_particles.len() as u64,
+        )
+        .unwrap();
 
-    buffer
+        stage_with_iter(allocators, cmb_builder, buffer.clone(), particles); // FIXME: combine dynamic and static particles
+
+        buffers.push(buffer);
+    }
+    buffers
 }

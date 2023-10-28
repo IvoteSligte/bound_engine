@@ -1,4 +1,3 @@
-use crate::shaders;
 use crate::shaders::Shaders;
 
 use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
@@ -64,8 +63,10 @@ where
 #[derive(Clone)]
 pub struct Pipelines {
     pub direct: Arc<GraphicsPipeline>,
-    pub radiance: Vec<Arc<ComputePipeline>>,
-    pub radiance_precalc: Arc<ComputePipeline>,
+    pub dynamic_particles: Arc<ComputePipeline>,
+    pub dynamic_particles2: Arc<ComputePipeline>,
+    pub static_particles: Arc<ComputePipeline>,
+    pub static_particles2: Arc<ComputePipeline>,
 }
 
 impl Pipelines {
@@ -87,29 +88,17 @@ impl Pipelines {
             (),
         );
 
-        let mut radiance = vec![];
-        for x in 0..2 {
-            for y in 0..2 {
-                for z in 0..2 {
-                    radiance.push(compute(
-                        device.clone(),
-                        shaders.radiance.clone(),
-                        &shaders::RadianceSpecializationConstants {
-                            OFFSET_X: x,
-                            OFFSET_Y: y,
-                            OFFSET_Z: z,
-                        },
-                    ));
-                }
-            }
-        }
-
-        let radiance_precalc = compute(device.clone(), shaders.radiance_precalc.clone(), &());
+        let dynamic_particles = compute(device.clone(), shaders.dynamic_particles.clone(), &());
+        let dynamic_particles2 = compute(device.clone(), shaders.dynamic_particles2.clone(), &());
+        let static_particles = compute(device.clone(), shaders.static_particles.clone(), &());
+        let static_particles2 = compute(device.clone(), shaders.static_particles2.clone(), &());
 
         Self {
             direct,
-            radiance,
-            radiance_precalc,
+            dynamic_particles,
+            dynamic_particles2,
+            static_particles,
+            static_particles2,
         }
     }
 }

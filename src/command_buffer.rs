@@ -14,7 +14,7 @@ use vulkano::{
 
 use crate::{
     allocator::Allocators, buffer::Buffers, descriptor_sets::DescriptorSets, image::Images,
-    pipeline::Pipelines, shaders::RADIANCE_SIZE, LM_LAYERS,
+    pipeline::Pipelines, shaders,
 };
 
 #[derive(Clone)]
@@ -51,29 +51,14 @@ impl CommandBuffers {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum PathTraceState {
-    Precalc,
-    Radiance(usize),
-}
-
-impl PathTraceState {
-    fn next(&mut self) -> Self {
-        let old = self.clone();
-        match old {
-            Self::Precalc => *self = Self::Radiance(0),
-            Self::Radiance(frame) => *self = Self::Radiance(frame + 1),
-        }
-        old
-    }
-}
-
 #[derive(Clone)]
 pub struct PathtraceCommandBuffers {
-    pub precalc: Arc<PrimaryAutoCommandBuffer>,
-    pub radiance: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    pub dynamic_particles: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    pub dynamic_particles2: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    pub static_particles: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    pub static_particles2: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    pub clear_grid: Vec<Arc<PrimaryAutoCommandBuffer>>,
     pub direct: Arc<PrimaryAutoCommandBuffer>,
-    state: PathTraceState,
 }
 
 impl PathtraceCommandBuffers {
@@ -85,41 +70,48 @@ impl PathtraceCommandBuffers {
         descriptor_sets: DescriptorSets,
         buffers: Buffers,
     ) -> PathtraceCommandBuffers {
-        let precalc = Self::radiance_precalc(
+        let dynamic_particles = Self::dynamic_particles(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
             descriptor_sets.clone(),
         );
-
-        let radiance = Self::radiance(
+        let dynamic_particles2 = Self::dynamic_particles2(
             allocators.clone(),
             queue.clone(),
             pipelines.clone(),
             descriptor_sets.clone(),
         );
-
+        let static_particles = Self::static_particles(
+            allocators.clone(),
+            queue.clone(),
+            pipelines.clone(),
+            descriptor_sets.clone(),
+            buffers.clone(),
+        );
+        let static_particles2 = Self::static_particles2(
+            allocators.clone(),
+            queue.clone(),
+            pipelines.clone(),
+            descriptor_sets.clone(),
+            buffers.clone(),
+        );
+        let clear_grid = Self::clear_grid(allocators.clone(), queue.clone(), buffers.clone());
         let direct = Self::direct(
             allocators,
             queue,
-            frame_buffer.clone(),
+            frame_buffer,
             pipelines,
             descriptor_sets,
             buffers,
         );
-
         PathtraceCommandBuffers {
-            precalc,
-            radiance,
+            dynamic_particles,
+            dynamic_particles2,
+            static_particles,
+            static_particles2,
+            clear_grid,
             direct,
-            state: PathTraceState::Precalc,
-        }
-    }
-
-    pub fn next(&mut self) -> Arc<PrimaryAutoCommandBuffer> {
-        match self.state.next() {
-            PathTraceState::Precalc => self.precalc.clone(),
-            PathTraceState::Radiance(frame) => self.radiance[frame % self.radiance.len()].clone(),
         }
     }
 
@@ -157,7 +149,8 @@ impl PathtraceCommandBuffers {
                 0,
                 descriptor_sets.direct.clone(),
             )
-            .draw( // INFO: this will break if the index/vertex count changes
+            .draw(
+                // FIXME: this will break if the index/vertex count changes
                 buffers.vertex_idxs.len() as u32,
                 1,
                 0,
@@ -170,76 +163,162 @@ impl PathtraceCommandBuffers {
         Arc::new(builder.build().unwrap())
     }
 
-    fn radiance_precalc(
+    pub fn clear_grid(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
-        pipelines: Pipelines,
-        descriptor_sets: DescriptorSets,
-    ) -> Arc<PrimaryAutoCommandBuffer> {
-        let dispatch = [
-            RADIANCE_SIZE / 4 * LM_LAYERS,
-            RADIANCE_SIZE / 4,
-            RADIANCE_SIZE / 4,
-        ];
+        buffers: Buffers,
+    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+        let mut builders = vec![];
 
-        let mut builder = AutoCommandBufferBuilder::primary(
-            &allocators.command_buffer,
-            queue.queue_family_index(),
-            CommandBufferUsage::MultipleSubmit,
-        )
-        .unwrap();
-
-        // radiance precalc
-        builder
-            .bind_pipeline_compute(pipelines.radiance_precalc.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.radiance_precalc.layout().clone(),
-                0,
-                descriptor_sets.radiance_precalc.clone(),
+        for i in 0..3 {
+            let builder = AutoCommandBufferBuilder::primary(
+                &allocators.command_buffer,
+                queue.queue_family_index(),
+                CommandBufferUsage::MultipleSubmit,
             )
-            .dispatch(dispatch)
+            .unwrap()
+            .fill_buffer(buffers.grid[i].clone().try_cast().unwrap(), 0)
             .unwrap();
 
-        Arc::new(builder.build().unwrap())
+            builders.push(Arc::new(builder.build().unwrap()));
+        }
+        builders
     }
 
-    pub fn radiance(
+    pub fn dynamic_particles(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
         pipelines: Pipelines,
         descriptor_sets: DescriptorSets,
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-        let dispatch = [
-            RADIANCE_SIZE / 4 / 2 * LM_LAYERS,
-            RADIANCE_SIZE / 4 / 2, // halved for rendering 1/8 of the scene per frame
-            RADIANCE_SIZE / 4 / 2,
-        ];
+        const DISPATCH: [u32; 3] = [shaders::DYN_PARTICLES / 64, 1, 1];
 
-        let mut cmbs = Vec::new();
-        for i in 0..8 {
-            let mut builder = AutoCommandBufferBuilder::primary(
+        let builders = vec![];
+
+        for i in 0..3 {
+            let builder = AutoCommandBufferBuilder::primary(
                 &allocators.command_buffer,
                 queue.queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
+            .unwrap()
+            .bind_pipeline_compute(pipelines.dynamic_particles.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.dynamic_particles.layout().clone(),
+                0,
+                descriptor_sets.particles.clone(),
+            )
+            .dispatch(DISPATCH)
             .unwrap();
 
-            // radiance
-            builder
-                .bind_pipeline_compute(pipelines.radiance[i].clone())
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Compute,
-                    pipelines.radiance[i].layout().clone(),
-                    0,
-                    descriptor_sets.radiance.clone(),
-                )
-                .dispatch(dispatch)
-                .unwrap();
-
-            cmbs.push(Arc::new(builder.build().unwrap()));
+            builders.push(Arc::new(builder.build().unwrap()));
         }
-        cmbs
+        builders
+    }
+
+    pub fn dynamic_particles2(
+        allocators: Arc<Allocators>,
+        queue: Arc<Queue>,
+        pipelines: Pipelines,
+        descriptor_sets: DescriptorSets,
+    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+        const DISPATCH: [u32; 3] = [shaders::DYN_PARTICLES / 64, 1, 1];
+
+        let builders = vec![];
+
+        for i in 0..3 {
+            let builder = AutoCommandBufferBuilder::primary(
+                &allocators.command_buffer,
+                queue.queue_family_index(),
+                CommandBufferUsage::MultipleSubmit,
+            )
+            .unwrap()
+            .bind_pipeline_compute(pipelines.dynamic_particles2.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.dynamic_particles2.layout().clone(),
+                0,
+                descriptor_sets.particles.clone(),
+            )
+            .dispatch(DISPATCH)
+            .unwrap();
+
+            builders.push(Arc::new(builder.build().unwrap()));
+        }
+        builders
+    }
+
+    pub fn static_particles(
+        allocators: Arc<Allocators>,
+        queue: Arc<Queue>,
+        pipelines: Pipelines,
+        descriptor_sets: DescriptorSets,
+        buffers: Buffers,
+    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+        let dispatch = [
+            (buffers.particles.len() as u32 - shaders::DYN_PARTICLES) / 64,
+            1,
+            1,
+        ];
+        let mut builders = vec![];
+
+        for i in 0..3 {
+            let builder = AutoCommandBufferBuilder::primary(
+                &allocators.command_buffer,
+                queue.queue_family_index(),
+                CommandBufferUsage::MultipleSubmit,
+            )
+            .unwrap()
+            .bind_pipeline_compute(pipelines.static_particles.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.static_particles.layout().clone(),
+                0,
+                descriptor_sets.particles.clone(),
+            )
+            .dispatch(dispatch)
+            .unwrap();
+
+            builders.push(Arc::new(builder.build().unwrap()));
+        }
+        builders
+    }
+
+    pub fn static_particles2(
+        allocators: Arc<Allocators>,
+        queue: Arc<Queue>,
+        pipelines: Pipelines,
+        descriptor_sets: DescriptorSets,
+        buffers: Buffers,
+    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+        let dispatch = [
+            (buffers.particles.len() as u32 - shaders::DYN_PARTICLES) / 64,
+            1,
+            1,
+        ];
+        let mut builders = vec![];
+
+        for i in 0..3 {
+            let builder = AutoCommandBufferBuilder::primary(
+                &allocators.command_buffer,
+                queue.queue_family_index(),
+                CommandBufferUsage::MultipleSubmit,
+            )
+            .unwrap()
+            .bind_pipeline_compute(pipelines.static_particles2.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                pipelines.static_particles2.layout().clone(),
+                0,
+                descriptor_sets.particles[i].clone(),
+            )
+            .dispatch(dispatch)
+            .unwrap();
+
+            builders.push(Arc::new(builder.build().unwrap()));
+        }
+        builders
     }
 }
 
