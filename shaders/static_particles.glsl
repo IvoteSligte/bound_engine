@@ -16,11 +16,11 @@ layout(binding = 1) writeonly buffer Grid {
 
 layout(binding = 2) readonly buffer Particles {
     DynamicParticle dynamic[DYN_PARTICLES];
-    StaticParticle static[];
+    StaticParticle static_[];
 } particles;
 
 void main() {
-    StaticParticle particle = particles.static[gl_GlobalInvocationID.x];
+    StaticParticle particle = particles.static_[gl_GlobalInvocationID.x];
     uvec3 position;
     float reflectance;
     float energy;

@@ -177,6 +177,7 @@ impl PathtraceCommandBuffers {
                 CommandBufferUsage::MultipleSubmit,
             )
             .unwrap()
+            // FIXME: replace this with a shader that does the same thing
             .fill_buffer(buffers.grid[i].clone().try_cast().unwrap(), 0)
             .unwrap();
 

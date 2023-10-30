@@ -16,7 +16,7 @@ layout(binding = 1) readonly buffer Grid {
 
 layout(binding = 2) buffer Particles {
     DynamicParticle dynamic[DYN_PARTICLES];
-    StaticParticle static[];
+    StaticParticle static_[];
 } particles;
 
 void main() {
@@ -27,15 +27,17 @@ void main() {
 
     unpackDynamicParticle(particle, position, direction, energy);
 
-    position += uvec3(direction * DYN_MOVEMENT * float(CELLS));
+    position += ivec3(direction * DYN_MOVEMENT * float(CELLS));
     // energy that was dispersed previously
     energy *= 1.0 - ENERGY_DISPERSION;
 
     // out of bounds
     if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(CELLS)))) {
         // TODO: new random position
-        particles.dynamic[gl_GlobalInvocationID.x].position = ivec3(0);
+        position = ivec3(0);
         energy = 0.0;
+        particle = packDynamicParticle(position, direction, energy);
+        particles.dynamic[gl_GlobalInvocationID.x] = particle;
         return;
     }
 
@@ -52,8 +54,8 @@ void main() {
     // the core of the cell is the average position of all particles
     // in the cell, weighted by their energy
     // (normalized)
-    vec3 coreEnergy = length(cell.vector) / float(cell.counter);
-    vec3 corePosition = vector / (float(cell.counter) * length(cell.vector));
+    float coreEnergy = length(cell.vector) / float(cell.counter);
+    vec3 corePosition = cell.vector / (float(cell.counter) * length(cell.vector));
     vec3 coreDifference = cellPosition - corePosition;
 
     if (coreDifference != vec3(0.0)) {

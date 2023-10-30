@@ -16,11 +16,11 @@ layout(binding = 1) readonly buffer Grid {
 
 layout(binding = 2) buffer Particles {
     DynamicParticle dynamic[DYN_PARTICLES];
-    StaticParticle static[];
+    StaticParticle static_[];
 } particles;
 
 void main() {
-    StaticParticle particle = particles.static[gl_GlobalInvocationID.x];
+    StaticParticle particle = particles.static_[gl_GlobalInvocationID.x];
     uvec3 position;
     float reflectance;
     float energy;
@@ -44,9 +44,9 @@ void main() {
     // the core of the cell is the average position of all particles
     // in the cell, weighted by their energy
     // (normalized)
-    vec3 coreEnergy = length(cell.vector) / float(cell.counter);
+    float coreEnergy = length(cell.vector) / float(cell.counter);
 
     energy += coreEnergy;
     energy += emittance;
-    particles.static[gl_GlobalInvocationID.x].energy = energy;
+    particles.static_[gl_GlobalInvocationID.x].energy = energy;
 }

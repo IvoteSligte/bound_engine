@@ -28,7 +28,7 @@ vulkano_shaders::shader! {
     custom_derives: [Copy, Clone, Debug],
     include: ["includes_general.glsl"],
     define: [
-        ("DYN_PARTICLES", "1_048_576"),
+        ("DYN_PARTICLES", "1048576"),
         ("DYN_MOVEMENT", "0.5"),
         ("CELLS", "256"),
         ("ENERGY_DISPERSION", "0.5")

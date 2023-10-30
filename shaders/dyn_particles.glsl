@@ -16,7 +16,7 @@ layout(binding = 1) writeonly buffer Grid {
 
 layout(binding = 2) readonly buffer Particles {
     DynamicParticle dynamic[DYN_PARTICLES];
-    StaticParticle static[];
+    StaticParticle static_[];
 } particles;
 
 void main() {
