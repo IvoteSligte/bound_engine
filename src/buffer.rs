@@ -23,7 +23,8 @@ pub struct Buffers {
     pub vertex: Subbuffer<[[f32; 4]]>,
     pub vertex_idxs: Subbuffer<[u32]>,
     pub grid: Vec<Subbuffer<[shaders::GridCell]>>,
-    pub particles: Vec<Subbuffer<[shaders::ParticleUnit]>>,
+    pub dynamic_particles: Vec<Subbuffer<[shaders::DynamicParticle]>>,
+    pub static_particles: Vec<Subbuffer<[shaders::StaticParticle]>>,
 }
 
 impl Buffers {
@@ -35,14 +36,16 @@ impl Buffers {
         )
         .unwrap();
 
-        let (vertex, vertex_idxs, grid, particles) = scene(allocators.clone(), &mut builder);
+        let (vertex, vertex_idxs, grid, dynamic_particles, static_particles) =
+            scene(allocators.clone(), &mut builder);
 
         let buffers = Self {
             real_time: real_time_buffer(allocators.clone()),
             vertex,
             vertex_idxs,
             grid,
-            particles,
+            dynamic_particles,
+            static_particles,
         };
 
         builder
@@ -59,6 +62,7 @@ impl Buffers {
     }
 }
 
+#[allow(dead_code)]
 fn stage_with_data<T: BufferContents>(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
@@ -166,19 +170,23 @@ fn scene(
     Subbuffer<[[f32; 4]]>,
     Subbuffer<[u32]>,
     Vec<Subbuffer<[shaders::GridCell]>>,
-    Vec<Subbuffer<[shaders::ParticleUnit]>>,
+    Vec<Subbuffer<[shaders::DynamicParticle]>>,
+    Vec<Subbuffer<[shaders::StaticParticle]>>,
 ) {
     let (vertexes, vertex_indexes, static_particles) = scene::load();
     let vertex_buffer = vertices(allocators.clone(), cmb_builder, vertexes);
     let vertex_index_buffer = vertex_indices(allocators.clone(), cmb_builder, vertex_indexes);
     let grid_buffer = grid(allocators.clone(), cmb_builder);
-    let particle_buffers = particles(allocators.clone(), cmb_builder, static_particles);
+    let dynamic_particle_buffers = dynamic_particles(allocators.clone(), cmb_builder);
+    let static_particle_buffers =
+        self::static_particles(allocators.clone(), cmb_builder, static_particles);
 
     (
         vertex_buffer,
         vertex_index_buffer,
         grid_buffer,
-        particle_buffers,
+        dynamic_particle_buffers,
+        static_particle_buffers,
     )
 }
 
@@ -238,32 +246,10 @@ fn grid(
     allocators: Arc<Allocators>,
     cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Vec<Subbuffer<[shaders::GridCell]>> {
+    let iter = (0..shaders::TOTAL_CELLS).map(|_| shaders::GridCell::default());
     let mut buffers = vec![];
 
-    for i in 0..3 {
-        let buffer = zeroed(
-            allocators,
-            cmb_builder,
-            size_of::<shaders::GridCell>() as u64 * (shaders::CELLS as u64).pow(3),
-            BufferUsage::STORAGE_BUFFER,
-        );
-        buffers.push(buffer);
-    }
-}
-
-fn particles(
-    allocators: Arc<Allocators>,
-    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    static_particles: [Vec<shaders::StaticParticle>; 3],
-) -> Vec<Subbuffer<[shaders::ParticleUnit]>> {
-    let mut buffers = vec![];
-
-    for static_particles in static_particles {
-        let particles = (0..shaders::DYN_PARTICLES)
-            .map(|_| shaders::DynamicParticle::default().cast::<shaders::ParticleUnit>())
-            .collect::<Vec<_>>();
-        particles.extend(static_particles.map(|particle| particle.cast::<shaders::ParticleUnit>()));
-
+    for _ in 0..3 {
         let buffer = Buffer::new_slice(
             &allocators.memory,
             BufferCreateInfo {
@@ -274,11 +260,66 @@ fn particles(
                 usage: MemoryUsage::DeviceOnly,
                 ..Default::default()
             },
-            shaders::DYN_PARTICLES as u64 + static_particles.len() as u64,
+            size_of::<shaders::GridCell>() as u64 * shaders::TOTAL_CELLS as u64,
         )
         .unwrap();
 
-        stage_with_iter(allocators, cmb_builder, buffer.clone(), particles); // FIXME: combine dynamic and static particles
+        stage_with_iter(allocators.clone(), cmb_builder, buffer.clone(), iter.clone());
+
+        buffers.push(buffer);
+    }
+    buffers
+}
+
+// FIXME: initialization shader
+fn dynamic_particles(
+    allocators: Arc<Allocators>,
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> Vec<Subbuffer<[shaders::DynamicParticle]>> {
+    let mut buffers = vec![];
+
+    for _ in 0..3 {
+        let buffer = zeroed(
+            allocators.clone(),
+            cmb_builder,
+            shaders::DYN_PARTICLES as u64 * size_of::<shaders::DynamicParticle>() as u64,
+            BufferUsage::STORAGE_BUFFER,
+        )
+        .cast_aligned();
+
+        buffers.push(buffer);
+    }
+    buffers
+}
+
+fn static_particles(
+    allocators: Arc<Allocators>,
+    cmb_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    static_particles: Vec<Vec<shaders::StaticParticle>>,
+) -> Vec<Subbuffer<[shaders::StaticParticle]>> {
+    let mut buffers = vec![];
+
+    for static_particles in static_particles {
+        let buffer = Buffer::new_slice(
+            &allocators.memory,
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::DeviceOnly,
+                ..Default::default()
+            },
+            static_particles.len() as u64,
+        )
+        .unwrap();
+
+        stage_with_iter(
+            allocators.clone(),
+            cmb_builder,
+            buffer.clone(),
+            static_particles,
+        );
 
         buffers.push(buffer);
     }

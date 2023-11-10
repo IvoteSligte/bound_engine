@@ -8,6 +8,10 @@ vulkano_shaders::shader! {
             ty: "fragment",
             path: "shaders/direct.frag",
         },
+        ClearGrid: {
+            ty: "compute",
+            path: "shaders/clear_grid.glsl",
+        },
         DynamicParticles: {
             ty: "compute",
             path: "shaders/dyn_particles.glsl",
@@ -41,32 +45,30 @@ vulkano_shaders::shader! {
 // must be a multiple of 2^8 = 64 (workgroup size)
 pub const DYN_PARTICLES: u32 = 1_048_576;
 // movement per update, 1.0 = 1 cell per update
-pub const DYN_MOVEMENT: f32 = 0.5;
+// pub const DYN_MOVEMENT: f32 = 0.5;
 // 2^8 cells in a row (CELLS^3 total)
 pub const CELLS: u32 = 256;
 // how much of a particle's energy is dispersed
 // to other particles
-pub const ENERGY_DISPERSION: f32 = 0.5;
+// pub const ENERGY_DISPERSION: f32 = 0.5;
 
 // non-shader variables
 // static particles / cell (1D)
 pub const STATIC_PARTICLE_DENSITY: f32 = 2.0;
 
-pub type ParticleUnit = [u8; 16];
+pub const TOTAL_CELLS: u32 = CELLS * CELLS * CELLS;
 
 use vulkano::device::Device;
 
 use vulkano::shader::ShaderModule;
 
-use glam::UVec3;
-
 use std::sync::Arc;
 
-impl Default for DynamicParticle {
+impl Default for GridCell {
     fn default() -> Self {
-        DynamicParticle {
-            data: UVec3::ZERO,
-            energy: 0.0,
+        Self {
+            vector: [0.0; 3],
+            counter: 0,
         }
     }
 }
@@ -74,6 +76,7 @@ impl Default for DynamicParticle {
 #[derive(Clone)]
 pub struct Shaders {
     pub direct: DirectShaders,
+    pub clear_grid: Arc<ShaderModule>,
     pub dynamic_particles: Arc<ShaderModule>,
     pub dynamic_particles2: Arc<ShaderModule>,
     pub static_particles: Arc<ShaderModule>,
@@ -84,6 +87,7 @@ impl Shaders {
     pub fn load(device: Arc<Device>) -> Self {
         Self {
             direct: DirectShaders::load(device.clone()),
+            clear_grid: load_clear_grid(device.clone()).unwrap(),
             dynamic_particles: load_dynamic_particles(device.clone()).unwrap(),
             dynamic_particles2: load_dynamic_particles2(device.clone()).unwrap(),
             static_particles: load_static_particles(device.clone()).unwrap(),

@@ -14,13 +14,12 @@ layout(binding = 1) readonly buffer Grid {
     GridCell cells[CELLS][CELLS][CELLS];
 } grid;
 
-layout(binding = 2) buffer Particles {
-    DynamicParticle dynamic[DYN_PARTICLES];
-    StaticParticle static_[];
-} particles;
+layout(binding = 2) buffer DynamicParticles {
+    DynamicParticle particles[DYN_PARTICLES];
+} dynamicParticles;
 
 void main() {
-    DynamicParticle particle = particles.dynamic[gl_GlobalInvocationID.x];
+    DynamicParticle particle = dynamicParticles.particles[gl_GlobalInvocationID.x];
     ivec3 position;
     vec3 direction;
     float energy;
@@ -37,7 +36,7 @@ void main() {
         position = ivec3(0);
         energy = 0.0;
         particle = packDynamicParticle(position, direction, energy);
-        particles.dynamic[gl_GlobalInvocationID.x] = particle;
+        dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
         return;
     }
 
@@ -69,5 +68,5 @@ void main() {
     energy += coreEnergy;
 
     DynamicParticle newParticle = packDynamicParticle(position, direction, energy);
-    particles.dynamic[gl_GlobalInvocationID.x] = newParticle;
+    dynamicParticles.particles[gl_GlobalInvocationID.x] = newParticle;
 }

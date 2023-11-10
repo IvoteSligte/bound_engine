@@ -1,5 +1,7 @@
 #version 460
 
+#extension GL_EXT_shader_atomic_float: enable
+
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 #include "includes_general.glsl"
@@ -14,13 +16,12 @@ layout(binding = 1) writeonly buffer Grid {
     GridCell cells[CELLS][CELLS][CELLS];
 } grid;
 
-layout(binding = 2) readonly buffer Particles {
-    DynamicParticle dynamic[DYN_PARTICLES];
-    StaticParticle static_[];
-} particles;
+layout(binding = 2) readonly buffer StaticParticles {
+    StaticParticle particles[];
+} staticParticles;
 
 void main() {
-    StaticParticle particle = particles.static_[gl_GlobalInvocationID.x];
+    StaticParticle particle = staticParticles.particles[gl_GlobalInvocationID.x];
     uvec3 position;
     float reflectance;
     float energy;

@@ -14,7 +14,8 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct DescriptorSets {
     pub direct: Arc<PersistentDescriptorSet>,
-    pub particles: Vec<Arc<PersistentDescriptorSet>>, // FIXME: one descriptor set per RGB channel
+    pub dynamic_particles: Vec<Arc<PersistentDescriptorSet>>,
+    pub static_particles: Vec<Arc<PersistentDescriptorSet>>,
 }
 
 impl DescriptorSets {
@@ -34,7 +35,7 @@ impl DescriptorSets {
         )
         .unwrap();
 
-        let mut particles = vec![];
+        let mut dynamic_particles = vec![];
 
         for i in 0..3 {
             let set = PersistentDescriptorSet::new(
@@ -43,13 +44,29 @@ impl DescriptorSets {
                 [
                     WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
                     WriteDescriptorSet::buffer(1, buffers.grid[i].clone()),
-                    WriteDescriptorSet::buffer(2, buffers.particles[i].clone()),
+                    WriteDescriptorSet::buffer(2, buffers.dynamic_particles[i].clone()),
                 ],
             )
             .unwrap();
-            particles.push(set);
+        dynamic_particles.push(set);
         }
 
-        DescriptorSets { direct, particles }
+        let mut static_particles = vec![];
+
+        for i in 0..3 {
+            let set = PersistentDescriptorSet::new(
+                &allocators.descriptor_set,
+                pipelines.dynamic_particles.layout().set_layouts()[0].clone(),
+                [
+                    WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
+                    WriteDescriptorSet::buffer(1, buffers.grid[i].clone()),
+                    WriteDescriptorSet::buffer(2, buffers.static_particles[i].clone()),
+                ],
+            )
+            .unwrap();
+            static_particles.push(set);
+        }
+
+        DescriptorSets { direct, dynamic_particles, static_particles }
     }
 }

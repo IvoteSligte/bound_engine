@@ -2,11 +2,9 @@ use crate::shaders;
 
 use glam::*;
 
-// TODO: static particle generation
-
 // TODO: loading from file
-pub fn load() -> (Vec<[f32; 4]>, Vec<u32>, [Vec<shaders::StaticParticle>; 3]) {
-    let materials = vec![
+pub fn load() -> (Vec<[f32; 4]>, Vec<u32>, Vec<Vec<shaders::StaticParticle>>) {
+    const MATERIALS: &[Material] = &[
         Material {
             reflectance: Vec3::splat(0.0),
             emittance: Vec3::splat(100.0),
@@ -34,25 +32,25 @@ pub fn load() -> (Vec<[f32; 4]>, Vec<u32>, [Vec<shaders::StaticParticle>; 3]) {
     ];
 
     let objects: Vec<Object> = vec![
-        Object::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, materials[0]),
+        Object::cube(Vec3::new(0.0, 0.0, 20.0), 1.0, MATERIALS[0]),
         Object::cuboid(
             Vec3::new(0.0, 0.0, -20.0),
             Vec3::new(100.0, 100.0, 10.0),
-            materials[1],
+            MATERIALS[1],
         ),
-        Object::cube(Vec3::new(-10.0, 30.0, -5.0), 5.0, materials[2]),
-        Object::cube(Vec3::new(35.0, 20.0, -3.0), 7.0, materials[3]),
-        Object::cube(Vec3::new(20.0, -30.0, -7.0), 3.0, materials[4]),
-        Object::cube(Vec3::new(20.0, 40.0, -4.0), 6.0, materials[5]),
+        Object::cube(Vec3::new(-10.0, 30.0, -5.0), 5.0, MATERIALS[2]),
+        Object::cube(Vec3::new(35.0, 20.0, -3.0), 7.0, MATERIALS[3]),
+        Object::cube(Vec3::new(20.0, -30.0, -7.0), 3.0, MATERIALS[4]),
+        Object::cube(Vec3::new(20.0, 40.0, -4.0), 6.0, MATERIALS[5]),
     ];
 
-    let (vertices, vertex_idxs, particles) =
+    let (vertices, vertex_idxs, static_particles) =
         Object::flatten_parts(objects.into_iter().map(|obj| obj.into_parts()));
 
-    (vertices, vertex_idxs, particles)
+    (vertices, vertex_idxs, static_particles)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Material {
     reflectance: Vec3,
     emittance: Vec3,
@@ -62,7 +60,7 @@ pub struct Material {
 pub struct Object {
     vertices: Vec<Vec3>,
     indices: Vec<u32>,
-    particles: [Vec<shaders::StaticParticle>; 3],
+    particles: Vec<Vec<shaders::StaticParticle>>,
 }
 
 impl Object {
@@ -83,19 +81,19 @@ impl Object {
         for x in 0..count.x {
             for y in 0..count.y {
                 for z in 0..count.z {
-                    let position = UVec3::new(x, y, z).as_vec3() / shaders::STATIC_PARTICLE_DENSITY;
+                    let position = min_position + UVec3::new(x, y, z).as_vec3() / shaders::STATIC_PARTICLE_DENSITY;
                     particle_positions.push(position);
                 }
             }
         }
-        let mut particles = [Vec::with_capacity(capacity), Vec::with_capacity(capacity), Vec::with_capacity(capacity)];
+        let mut particles = vec![Vec::with_capacity(capacity), Vec::with_capacity(capacity), Vec::with_capacity(capacity)];
 
         for i in 0..3 {
             // packed reflectance into the second 16 bits of a u32
             let reflectance = (material.reflectance[i] * 65535.0).clamp(0.0, 65535.0) as u32 >> 16;
             let emittance = material.emittance[i];
 
-            for pos in particle_positions {
+            for pos in particle_positions.clone() {
                 let pos = pos * ((65536 / shaders::CELLS) as f32) + (65536.0 / 2.0);
 
                 if pos.cmplt(Vec3::ZERO).any() || pos.cmpge(Vec3::splat(65536.0)).any() {
@@ -150,7 +148,7 @@ impl Object {
 }
 
 impl Object {
-    fn into_parts(self) -> (Vec<[f32; 4]>, Vec<u32>, [Vec<shaders::StaticParticle>; 3]) {
+    fn into_parts(self) -> (Vec<[f32; 4]>, Vec<u32>, Vec<Vec<shaders::StaticParticle>>) {
         (
             self.vertices
                 .into_iter()
@@ -161,18 +159,18 @@ impl Object {
         )
     }
 
-    fn flatten_parts<I>(iter: I) -> (Vec<[f32; 4]>, Vec<u32>, [Vec<shaders::StaticParticle>; 3])
+    fn flatten_parts<I>(iter: I) -> (Vec<[f32; 4]>, Vec<u32>, Vec<Vec<shaders::StaticParticle>>)
     where
-        I: IntoIterator<Item = (Vec<[f32; 4]>, Vec<u32>, [Vec<shaders::StaticParticle>; 3])>,
+        I: IntoIterator<Item = (Vec<[f32; 4]>, Vec<u32>, Vec<Vec<shaders::StaticParticle>>)>,
     {
         iter.into_iter().fold(
-            (vec![], vec![], vec![]),
+            (vec![], vec![], vec![vec![], vec![], vec![]]),
             |(mut acc_v, mut acc_i, mut acc_p), (v, is, p)| {
                 acc_i.extend(is.into_iter().map(|i| acc_v.len() as u32 + i));
                 acc_v.extend(v);
-                acc_p[0].extend(p[0]);
-                acc_p[1].extend(p[1]);
-                acc_p[2].extend(p[2]);
+                acc_p[0].extend(p[0].clone());
+                acc_p[1].extend(p[1].clone());
+                acc_p[2].extend(p[2].clone());
 
                 (acc_v, acc_i, acc_p)
             },

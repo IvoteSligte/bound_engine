@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use vulkano::{
-    device::Device,
     format::Format,
     image::{view::ImageView, ImageCreateFlags, ImageDimensions, ImageUsage, SwapchainImage},
 };
@@ -20,7 +19,6 @@ pub struct Images {
 
 impl Images {
     pub fn new(
-        device: Arc<Device>,
         allocators: Arc<Allocators>,
         window: Arc<Window>,
         swapchain_images: Vec<Arc<SwapchainImage>>,

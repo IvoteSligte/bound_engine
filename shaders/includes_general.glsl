@@ -1,11 +1,11 @@
 #define EPSILON 1e-4
 
 struct GridCell {
-    uint counter;
     // combination of position and strength
     // position = vector / (float(counter) * length(vector))
     // energy = length(vector) / float(counter)
     vec3 vector;
+    uint counter;
 };
 
 struct DynamicParticle {

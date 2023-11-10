@@ -96,7 +96,12 @@ impl PathtraceCommandBuffers {
             descriptor_sets.clone(),
             buffers.clone(),
         );
-        let clear_grid = Self::clear_grid(allocators.clone(), queue.clone(), buffers.clone());
+        let clear_grid = Self::clear_grid(
+            allocators.clone(),
+            queue.clone(),
+            pipelines.clone(),
+            descriptor_sets.clone(),
+        );
         let direct = Self::direct(
             allocators,
             queue,
@@ -166,20 +171,31 @@ impl PathtraceCommandBuffers {
     pub fn clear_grid(
         allocators: Arc<Allocators>,
         queue: Arc<Queue>,
-        buffers: Buffers,
+        pipelines: Pipelines,
+        descriptor_sets: DescriptorSets,
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+        const DISPATCH: [u32; 3] = [shaders::CELLS / 4; 3];
+
         let mut builders = vec![];
 
-        for i in 0..3 {
-            let builder = AutoCommandBufferBuilder::primary(
+        for _ in 0..3 {
+            let mut builder = AutoCommandBufferBuilder::primary(
                 &allocators.command_buffer,
                 queue.queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
-            .unwrap()
-            // FIXME: replace this with a shader that does the same thing
-            .fill_buffer(buffers.grid[i].clone().try_cast().unwrap(), 0)
             .unwrap();
+
+            builder
+                .bind_pipeline_compute(pipelines.clear_grid.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.clear_grid.layout().clone(),
+                    1,
+                    descriptor_sets.dynamic_particles.clone(),
+                )
+                .dispatch(DISPATCH)
+                .unwrap();
 
             builders.push(Arc::new(builder.build().unwrap()));
         }
@@ -194,24 +210,26 @@ impl PathtraceCommandBuffers {
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
         const DISPATCH: [u32; 3] = [shaders::DYN_PARTICLES / 64, 1, 1];
 
-        let builders = vec![];
+        let mut builders = vec![];
 
-        for i in 0..3 {
-            let builder = AutoCommandBufferBuilder::primary(
+        for _ in 0..3 {
+            let mut builder = AutoCommandBufferBuilder::primary(
                 &allocators.command_buffer,
                 queue.queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
-            .unwrap()
-            .bind_pipeline_compute(pipelines.dynamic_particles.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.dynamic_particles.layout().clone(),
-                0,
-                descriptor_sets.particles.clone(),
-            )
-            .dispatch(DISPATCH)
             .unwrap();
+
+            builder
+                .bind_pipeline_compute(pipelines.dynamic_particles.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.dynamic_particles.layout().clone(),
+                    0,
+                    descriptor_sets.dynamic_particles.clone(),
+                )
+                .dispatch(DISPATCH)
+                .unwrap();
 
             builders.push(Arc::new(builder.build().unwrap()));
         }
@@ -226,24 +244,26 @@ impl PathtraceCommandBuffers {
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
         const DISPATCH: [u32; 3] = [shaders::DYN_PARTICLES / 64, 1, 1];
 
-        let builders = vec![];
+        let mut builders = vec![];
 
-        for i in 0..3 {
-            let builder = AutoCommandBufferBuilder::primary(
+        for _ in 0..3 {
+            let mut builder = AutoCommandBufferBuilder::primary(
                 &allocators.command_buffer,
                 queue.queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
-            .unwrap()
-            .bind_pipeline_compute(pipelines.dynamic_particles2.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.dynamic_particles2.layout().clone(),
-                0,
-                descriptor_sets.particles.clone(),
-            )
-            .dispatch(DISPATCH)
             .unwrap();
+
+            builder
+                .bind_pipeline_compute(pipelines.dynamic_particles2.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.dynamic_particles2.layout().clone(),
+                    0,
+                    descriptor_sets.dynamic_particles.clone(),
+                )
+                .dispatch(DISPATCH)
+                .unwrap();
 
             builders.push(Arc::new(builder.build().unwrap()));
         }
@@ -258,28 +278,31 @@ impl PathtraceCommandBuffers {
         buffers: Buffers,
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
         let dispatch = [
-            (buffers.particles.len() as u32 - shaders::DYN_PARTICLES) / 64,
+            // FIXME: make sure the number of static particles is always a multiple of 64
+            (buffers.static_particles.len() as u32) / 64,
             1,
             1,
         ];
         let mut builders = vec![];
 
-        for i in 0..3 {
-            let builder = AutoCommandBufferBuilder::primary(
+        for _ in 0..3 {
+            let mut builder = AutoCommandBufferBuilder::primary(
                 &allocators.command_buffer,
                 queue.queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
-            .unwrap()
-            .bind_pipeline_compute(pipelines.static_particles.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.static_particles.layout().clone(),
-                0,
-                descriptor_sets.particles.clone(),
-            )
-            .dispatch(dispatch)
             .unwrap();
+
+            builder
+                .bind_pipeline_compute(pipelines.static_particles.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.static_particles.layout().clone(),
+                    0,
+                    descriptor_sets.static_particles.clone(),
+                )
+                .dispatch(dispatch)
+                .unwrap();
 
             builders.push(Arc::new(builder.build().unwrap()));
         }
@@ -294,28 +317,31 @@ impl PathtraceCommandBuffers {
         buffers: Buffers,
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
         let dispatch = [
-            (buffers.particles.len() as u32 - shaders::DYN_PARTICLES) / 64,
+            // FIXME: make sure the number of static particles is always a multiple of 64
+            (buffers.static_particles.len() as u32) / 64,
             1,
             1,
         ];
         let mut builders = vec![];
 
         for i in 0..3 {
-            let builder = AutoCommandBufferBuilder::primary(
+            let mut builder = AutoCommandBufferBuilder::primary(
                 &allocators.command_buffer,
                 queue.queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
-            .unwrap()
-            .bind_pipeline_compute(pipelines.static_particles2.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                pipelines.static_particles2.layout().clone(),
-                0,
-                descriptor_sets.particles[i].clone(),
-            )
-            .dispatch(dispatch)
             .unwrap();
+
+            builder
+                .bind_pipeline_compute(pipelines.static_particles2.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    pipelines.static_particles2.layout().clone(),
+                    0,
+                    descriptor_sets.static_particles[i].clone(),
+                )
+                .dispatch(dispatch)
+                .unwrap();
 
             builders.push(Arc::new(builder.build().unwrap()));
         }

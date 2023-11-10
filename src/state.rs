@@ -90,7 +90,6 @@ impl State {
         let buffers = Buffers::new(allocators.clone(), queue.clone());
 
         let images = Images::new(
-            device.clone(),
             allocators.clone(),
             window.clone(),
             swapchain_images.clone(),
