@@ -86,7 +86,7 @@ impl Object {
                 }
             }
         }
-        let mut particles = vec![Vec::with_capacity(capacity), Vec::with_capacity(capacity), Vec::with_capacity(capacity)];
+        let mut static_particles = vec![Vec::with_capacity(capacity), Vec::with_capacity(capacity), Vec::with_capacity(capacity)];
 
         for i in 0..3 {
             // packed reflectance into the second 16 bits of a u32
@@ -102,7 +102,7 @@ impl Object {
                 let upos = pos.as_uvec3();
                 let data = [upos.x | (upos.y << 16), upos.z | reflectance];
 
-                particles[i].push(shaders::StaticParticle {
+                static_particles[i].push(shaders::StaticParticle {
                     data,
                     emittance,
                     energy: 0.0,
@@ -142,7 +142,7 @@ impl Object {
                 3, 2, 6,
                 6, 7, 3,
             ],
-            particles,
+            particles: static_particles,
         }
     }
 }

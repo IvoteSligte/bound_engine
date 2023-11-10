@@ -4,17 +4,12 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 #include "includes_general.glsl"
 
-layout(binding = 0) uniform restrict readonly RealTimeBuffer {
-    mat4 projection_view;
-    vec3 position;
-} rt;
-
 // cleared every frame
-layout(binding = 1) readonly buffer Grid {
+layout(binding = 0) readonly buffer Grid {
     GridCell cells[CELLS][CELLS][CELLS];
 } grid;
 
-layout(binding = 2) buffer StaticParticles {
+layout(binding = 1) buffer StaticParticles {
     StaticParticle particles[];
 } staticParticles;
 

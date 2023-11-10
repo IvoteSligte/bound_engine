@@ -191,7 +191,7 @@ impl PathtraceCommandBuffers {
                 .bind_descriptor_sets(
                     PipelineBindPoint::Compute,
                     pipelines.clear_grid.layout().clone(),
-                    1,
+                    0,
                     descriptor_sets.dynamic_particles.clone(),
                 )
                 .dispatch(DISPATCH)

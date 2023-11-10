@@ -56,6 +56,7 @@ impl State {
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
+            ext_shader_atomic_float: true,
             ..DeviceExtensions::empty()
         };
 
@@ -89,11 +90,7 @@ impl State {
 
         let buffers = Buffers::new(allocators.clone(), queue.clone());
 
-        let images = Images::new(
-            allocators.clone(),
-            window.clone(),
-            swapchain_images.clone(),
-        );
+        let images = Images::new(allocators.clone(), window.clone(), swapchain_images.clone());
 
         let shaders = Shaders::load(device.clone());
 

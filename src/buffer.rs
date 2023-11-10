@@ -260,11 +260,16 @@ fn grid(
                 usage: MemoryUsage::DeviceOnly,
                 ..Default::default()
             },
-            size_of::<shaders::GridCell>() as u64 * shaders::TOTAL_CELLS as u64,
+            shaders::TOTAL_CELLS as u64,
         )
         .unwrap();
 
-        stage_with_iter(allocators.clone(), cmb_builder, buffer.clone(), iter.clone());
+        stage_with_iter(
+            allocators.clone(),
+            cmb_builder,
+            buffer.clone(),
+            iter.clone(),
+        );
 
         buffers.push(buffer);
     }

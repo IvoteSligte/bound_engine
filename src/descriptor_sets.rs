@@ -42,13 +42,12 @@ impl DescriptorSets {
                 &allocators.descriptor_set,
                 pipelines.dynamic_particles.layout().set_layouts()[0].clone(),
                 [
-                    WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                    WriteDescriptorSet::buffer(1, buffers.grid[i].clone()),
-                    WriteDescriptorSet::buffer(2, buffers.dynamic_particles[i].clone()),
+                    WriteDescriptorSet::buffer(0, buffers.grid[i].clone()),
+                    WriteDescriptorSet::buffer(1, buffers.dynamic_particles[i].clone()),
                 ],
             )
             .unwrap();
-        dynamic_particles.push(set);
+            dynamic_particles.push(set);
         }
 
         let mut static_particles = vec![];
@@ -58,15 +57,18 @@ impl DescriptorSets {
                 &allocators.descriptor_set,
                 pipelines.dynamic_particles.layout().set_layouts()[0].clone(),
                 [
-                    WriteDescriptorSet::buffer(0, buffers.real_time.clone()),
-                    WriteDescriptorSet::buffer(1, buffers.grid[i].clone()),
-                    WriteDescriptorSet::buffer(2, buffers.static_particles[i].clone()),
+                    WriteDescriptorSet::buffer(0, buffers.grid[i].clone()),
+                    WriteDescriptorSet::buffer(1, buffers.static_particles[i].clone()),
                 ],
             )
             .unwrap();
             static_particles.push(set);
         }
 
-        DescriptorSets { direct, dynamic_particles, static_particles }
+        DescriptorSets {
+            direct,
+            dynamic_particles,
+            static_particles,
+        }
     }
 }
