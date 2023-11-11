@@ -63,6 +63,7 @@ where
 #[derive(Clone)]
 pub struct Pipelines {
     pub direct: Arc<GraphicsPipeline>,
+    pub init_dynamic_particles: Arc<ComputePipeline>,
     pub clear_grid: Arc<ComputePipeline>,
     pub dynamic_particles: Arc<ComputePipeline>,
     pub dynamic_particles2: Arc<ComputePipeline>,
@@ -89,6 +90,7 @@ impl Pipelines {
             (),
         );
 
+        let init_dynamic_particles = compute(device.clone(), shaders.init_dynamic_particles.clone(), &());
         let clear_grid = compute(device.clone(), shaders.clear_grid.clone(), &());
         let dynamic_particles = compute(device.clone(), shaders.dynamic_particles.clone(), &());
         let dynamic_particles2 = compute(device.clone(), shaders.dynamic_particles2.clone(), &());
@@ -97,6 +99,7 @@ impl Pipelines {
 
         Self {
             direct,
+            init_dynamic_particles,
             clear_grid,
             dynamic_particles,
             dynamic_particles2,

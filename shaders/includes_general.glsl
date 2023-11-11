@@ -87,3 +87,8 @@ void unpackStaticParticle(
     energy = particle.energy;
     emittance = particle.emittance;
 }
+
+// Params: Knuth and H. W. Lewis
+uint rand(uint s) {
+    return s * 1664525 + 1013904223;
+}

@@ -21,12 +21,12 @@ void main() {
 
     unpackDynamicParticle(particle, position, direction, energy);
 
-    position += ivec3(direction * DYN_MOVEMENT * float(CELLS));
+    position += ivec3(direction * DYN_MOVEMENT * float(65536 / CELLS));
     // energy that was dispersed previously
     energy *= 1.0 - ENERGY_DISPERSION;
 
     // out of bounds
-    if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(CELLS)))) {
+    if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(65536)))) {
         // TODO: new random position
         position = ivec3(0);
         energy = 0.0;
@@ -35,7 +35,7 @@ void main() {
         return;
     }
 
-    vec3 cellPosition = vec3(position / CELLS);
+    vec3 cellPosition = vec3(position) / float(CELLS);
     // position within cells = position / (65536 / CELLS)
     // 65536 is the amount of bits used for position
     // 65536 / CELLS gives the precision within the cell
@@ -52,13 +52,14 @@ void main() {
     vec3 corePosition = cell.vector / (float(cell.counter) * length(cell.vector));
     vec3 coreDifference = cellPosition - corePosition;
 
-    if (coreDifference != vec3(0.0)) {
-        float alpha = coreEnergy / (coreEnergy + energy);
-        vec3 newDirection = mix(normalize(coreDifference), direction, alpha);
+    if (coreDifference == vec3(0.0)) {
+        coreDifference = direction;
+    }
+    float alpha = coreEnergy / (coreEnergy + energy);
+    vec3 newDirection = mix(normalize(coreDifference), direction, alpha);
 
-        if (newDirection != vec3(0.0)) {
-            direction = normalize(newDirection);
-        }
+    if (newDirection != vec3(0.0)) {
+        direction = normalize(newDirection);
     }
     energy += coreEnergy;
 

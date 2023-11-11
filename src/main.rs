@@ -47,8 +47,21 @@ fn main() {
     window.set_cursor_visible(false);
 
     let mut eh = event_helper::create(window);
-
     let callbacks = event_helper::callbacks();
+
+    // TODO: parallelize
+    for i in 0..3 {
+        sync::now(eh.state.device.clone())
+            .then_execute(
+                eh.state.queue.clone(),
+                eh.state.command_buffers.pathtraces.init_dynamic_particles[i].clone(),
+            )
+            .unwrap()
+            .then_signal_fence_and_flush()
+            .unwrap()
+            .wait(None)
+            .unwrap();
+    }
 
     event_loop.run(move |event, _, control_flow| {
         if eh.quit {

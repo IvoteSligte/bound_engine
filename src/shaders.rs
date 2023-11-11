@@ -8,6 +8,10 @@ vulkano_shaders::shader! {
             ty: "fragment",
             path: "shaders/direct.frag",
         },
+        InitDynamicParticles: {
+            ty: "compute",
+            path: "shaders/init_dyn_particles.glsl",
+        },
         ClearGrid: {
             ty: "compute",
             path: "shaders/clear_grid.glsl",
@@ -76,6 +80,7 @@ impl Default for GridCell {
 #[derive(Clone)]
 pub struct Shaders {
     pub direct: DirectShaders,
+    pub init_dynamic_particles: Arc<ShaderModule>,
     pub clear_grid: Arc<ShaderModule>,
     pub dynamic_particles: Arc<ShaderModule>,
     pub dynamic_particles2: Arc<ShaderModule>,
@@ -87,6 +92,7 @@ impl Shaders {
     pub fn load(device: Arc<Device>) -> Self {
         Self {
             direct: DirectShaders::load(device.clone()),
+            init_dynamic_particles: load_init_dynamic_particles(device.clone()).unwrap(),
             clear_grid: load_clear_grid(device.clone()).unwrap(),
             dynamic_particles: load_dynamic_particles(device.clone()).unwrap(),
             dynamic_particles2: load_dynamic_particles2(device.clone()).unwrap(),

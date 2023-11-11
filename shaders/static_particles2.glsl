@@ -24,8 +24,7 @@ void main() {
 
     // energy that was dispersed previously
     energy *= 1.0 - (reflectance * ENERGY_DISPERSION);
-
-    vec3 cellPosition = vec3(position / CELLS);
+    
     // position within cells = position / (65536 / CELLS)
     // 65536 is the amount of bits used for position
     // 65536 / CELLS gives the precision within the cell
