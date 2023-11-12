@@ -21,10 +21,18 @@ void main() {
 
     unpackDynamicParticle(particle, position, direction, energy);
 
-    position += ivec3(direction * DYN_MOVEMENT * float(65536 / CELLS));
     // energy that was dispersed previously
     energy *= 1.0 - ENERGY_DISPERSION;
-
+    
+    vec3 cellPosition = vec3(position) / float(CELLS);
+    // position within cells = position / (65536 / CELLS)
+    // 65536 is the amount of bits used for position
+    // 65536 / CELLS gives the precision within the cell
+    ivec3 index = ivec3(vec3(position) * (1.0 / float(65536 / CELLS)));
+    GridCell cell = grid.cells[index.x][index.y][index.z];
+    
+    position += ivec3(direction * DYN_MOVEMENT * float(65536 / CELLS));
+    
     // out of bounds
     if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(65536)))) {
         position = randomParticlePosition(gl_GlobalInvocationID.x);
@@ -33,14 +41,6 @@ void main() {
         dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
         return;
     }
-
-    vec3 cellPosition = vec3(position) / float(CELLS);
-    // position within cells = position / (65536 / CELLS)
-    // 65536 is the amount of bits used for position
-    // 65536 / CELLS gives the precision within the cell
-    ivec3 index = ivec3(vec3(position) * (1.0 / float(65536 / CELLS)));
-    GridCell cell = grid.cells[index.x][index.y][index.z];
-    
     if (cell.vector != vec3(0.0)) {
         // the core of the cell is the average position of all particles
         // in the cell relative to the cell, weighted by their energy
