@@ -10,18 +10,8 @@ layout(binding = 0) buffer DynamicParticles {
     DynamicParticle particles[DYN_PARTICLES];
 } dynamicParticles;
 
-ivec3 randomPosition() {
-    ivec3 p = ivec3(
-        rand(gl_GlobalInvocationID.x),
-        rand(gl_GlobalInvocationID.x + 111),
-        rand(gl_GlobalInvocationID.x + 7547)
-    );
-    p %= 65536; // 16 bits storage
-    return p;
-}
-
 void main() {
-    ivec3 position = randomPosition();
+    ivec3 position = randomParticlePosition(gl_GlobalInvocationID.x);
     vec3 direction = vec3(1.0, 0.0, 0.0);
     float energy = 0.0;
     DynamicParticle particle = packDynamicParticle(position, direction, energy);

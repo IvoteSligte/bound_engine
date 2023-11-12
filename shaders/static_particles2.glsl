@@ -31,15 +31,13 @@ void main() {
     ivec3 index = ivec3(vec3(position) * (1.0 / float(65536 / CELLS)));
     GridCell cell = grid.cells[index.x][index.y][index.z];
 
-    if (cell.vector == vec3(0.0)) {
-        return;
+    if (cell.vector != vec3(0.0)) {
+        // the core of the cell is the average position of all particles
+        // in the cell, weighted by their energy
+        // (normalized)
+        float coreEnergy = length(cell.vector) / float(cell.counter);
+        energy += coreEnergy;
     }
-    // the core of the cell is the average position of all particles
-    // in the cell, weighted by their energy
-    // (normalized)
-    float coreEnergy = length(cell.vector) / float(cell.counter);
-
-    energy += coreEnergy;
     energy += emittance;
     staticParticles.particles[gl_GlobalInvocationID.x].energy = energy;
 }

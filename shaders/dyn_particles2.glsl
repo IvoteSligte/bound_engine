@@ -27,8 +27,7 @@ void main() {
 
     // out of bounds
     if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(65536)))) {
-        // TODO: new random position
-        position = ivec3(0);
+        position = randomParticlePosition(gl_GlobalInvocationID.x);
         energy = 0.0;
         particle = packDynamicParticle(position, direction, energy);
         dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
@@ -42,27 +41,24 @@ void main() {
     ivec3 index = ivec3(vec3(position) * (1.0 / float(65536 / CELLS)));
     GridCell cell = grid.cells[index.x][index.y][index.z];
     
-    if (cell.vector == vec3(0.0)) {
-        return;
-    }
-    // the core of the cell is the average position of all particles
-    // in the cell, weighted by their energy
-    // (normalized)
-    float coreEnergy = length(cell.vector) / float(cell.counter);
-    vec3 corePosition = cell.vector / (float(cell.counter) * length(cell.vector));
-    vec3 coreDifference = cellPosition - corePosition;
+    if (cell.vector != vec3(0.0)) {
+        // the core of the cell is the average position of all particles
+        // in the cell relative to the cell, weighted by their energy
+        float coreEnergy = length(cell.vector) / float(cell.counter);
+        vec3 corePosition = cell.vector / (float(cell.counter) * length(cell.vector));
+        vec3 coreDifference = cellPosition - corePosition;
 
-    if (coreDifference == vec3(0.0)) {
-        coreDifference = direction;
-    }
-    float alpha = coreEnergy / (coreEnergy + energy);
-    vec3 newDirection = mix(normalize(coreDifference), direction, alpha);
+        if (coreDifference == vec3(0.0)) {
+            coreDifference = direction;
+        }
+        float alpha = coreEnergy / (coreEnergy + energy);
+        vec3 newDirection = mix(normalize(coreDifference), direction, alpha);
 
-    if (newDirection != vec3(0.0)) {
-        direction = normalize(newDirection);
+        if (newDirection != vec3(0.0)) {
+            direction = normalize(newDirection);
+        }
+        energy += coreEnergy;
     }
-    energy += coreEnergy;
-
     DynamicParticle newParticle = packDynamicParticle(position, direction, energy);
     dynamicParticles.particles[gl_GlobalInvocationID.x] = newParticle;
 }

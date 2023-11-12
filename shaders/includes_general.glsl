@@ -92,3 +92,13 @@ void unpackStaticParticle(
 uint rand(uint s) {
     return s * 1664525 + 1013904223;
 }
+
+ivec3 randomParticlePosition(uint seed) {
+    uvec3 p = uvec3(
+        rand(seed),
+        rand(seed + 111),
+        rand(seed + 7547)
+    );
+    p %= 65536; // 16 bits storage
+    return ivec3(p);
+}

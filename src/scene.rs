@@ -90,7 +90,7 @@ impl Object {
 
         for i in 0..3 {
             // packed reflectance into the second 16 bits of a u32
-            let reflectance = (material.reflectance[i] * 65535.0).clamp(0.0, 65535.0) as u32 >> 16;
+            let reflectance = ((material.reflectance[i] * 65535.0).clamp(0.0, 65535.0) as u32) << 16;
             let emittance = material.emittance[i];
 
             for pos in particle_positions.clone() {
