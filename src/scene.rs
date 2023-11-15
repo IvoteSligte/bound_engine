@@ -73,9 +73,12 @@ impl Object {
     fn cuboid(position: Vec3, half_extents: Vec3, material: Material) -> Self {
         // TODO: determine the amount of particles based on an upper limit
 
-        let count = (2.0 * half_extents * shaders::STATIC_PARTICLE_DENSITY).as_uvec3();
+        // TODO: update the cropping every time the grid moves
+        let min_position = (position - half_extents).max(-0.5 * Vec3::splat(shaders::CELLS as f32));
+        let max_position = (position + half_extents).min(0.5 * Vec3::splat(shaders::CELLS as f32));
+        let extents = max_position - min_position;
+        let count = (extents * shaders::STATIC_PARTICLE_DENSITY).as_uvec3();
         let capacity = (count.x * count.y * count.z) as usize;
-        let min_position = position - half_extents;
         let mut particle_positions = Vec::with_capacity(capacity);
 
         for x in 0..count.x {

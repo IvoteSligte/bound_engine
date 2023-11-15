@@ -36,22 +36,25 @@ vulkano_shaders::shader! {
     custom_derives: [Copy, Clone, Debug],
     include: ["includes_general.glsl"],
     define: [
-        ("DYN_PARTICLES", "1048576"),
+        ("DYN_PARTICLES_AXIS", "128"),
+        ("DYN_PARTICLES", "2097152"),
         ("DYN_MOVEMENT", "0.5"),
-        ("CELLS", "256"),
+        ("CELLS", "64"),
         ("ENERGY_DISPERSION", "0.5")
     ], // TODO: sync defines with consts
     vulkan_version: "1.2", // TODO: vulkan 1.3
     spirv_version: "1.6"
 }
 
-// 2^20 dynamic particles
+// 2^7 dynamic particles per axis
+pub const DYN_PARTICLES_AXIS: u32 = 128;
+// 2^21 dynamic particles
 // must be a multiple of 2^8 = 64 (workgroup size)
-pub const DYN_PARTICLES: u32 = 1_048_576;
+pub const DYN_PARTICLES: u32 = DYN_PARTICLES_AXIS * DYN_PARTICLES_AXIS * DYN_PARTICLES_AXIS;
 // movement per update, 1.0 = 1 cell per update
 // pub const DYN_MOVEMENT: f32 = 0.5;
 // 2^8 cells in a row (CELLS^3 total)
-pub const CELLS: u32 = 256;
+pub const CELLS: u32 = 64;
 // how much of a particle's energy is dispersed
 // to other particles
 // pub const ENERGY_DISPERSION: f32 = 0.5;

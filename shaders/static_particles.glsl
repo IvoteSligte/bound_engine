@@ -24,10 +24,11 @@ void main() {
 
     unpackStaticParticle(particle, position, reflectance, energy, emittance);
 
-    vec3 cellPosition = vec3(position / CELLS);
+    vec3 cellPosition = vec3(position % CELLS) * (1.0 / float(65536 / CELLS));
     // energy is the weight
-    vec3 vector = cellPosition * energy * reflectance * ENERGY_DISPERSION;
-    // position within cells = position / (65536 / CELLS)
+    // TODO: consider if ENERGY_DISPERSION should be removed here
+    vec3 vector = cellPosition * (emittance + energy * reflectance * ENERGY_DISPERSION);
+    // position within cells = (position % CELLS) / (65536 / CELLS)
     // 65536 is the amount of bits used for position
     // 65536 / CELLS gives the precision within the cell
     ivec3 index = ivec3(vec3(position) * (1.0 / float(65536 / CELLS)));

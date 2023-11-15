@@ -38,6 +38,5 @@ void main() {
         float coreEnergy = length(cell.vector) / float(cell.counter);
         energy += coreEnergy;
     }
-    energy += emittance;
     staticParticles.particles[gl_GlobalInvocationID.x].energy = energy;
 }

@@ -88,17 +88,13 @@ void unpackStaticParticle(
     emittance = particle.emittance;
 }
 
-// Params: Knuth and H. W. Lewis
-uint rand(uint s) {
-    return s * 1664525 + 1013904223;
-}
-
-ivec3 randomParticlePosition(uint seed) {
-    uvec3 p = uvec3(
-        rand(seed),
-        rand(seed + 111),
-        rand(seed + 7547)
-    );
-    p %= 65536; // 16 bits storage
+// INFO: seems to have severe performance implications
+ivec3 newParticlePosition(uint i) {
+    uvec3 p;
+    p[0] = (65536 / DYN_PARTICLES_AXIS) * (i % DYN_PARTICLES_AXIS);
+    i /= DYN_PARTICLES_AXIS;
+    p[1] = (65536 / DYN_PARTICLES_AXIS) * (i % DYN_PARTICLES_AXIS);
+    i /= DYN_PARTICLES_AXIS;
+    p[2] = (65536 / DYN_PARTICLES_AXIS) * (i % DYN_PARTICLES_AXIS);
     return ivec3(p);
 }

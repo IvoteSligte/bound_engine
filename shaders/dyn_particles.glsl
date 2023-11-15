@@ -23,7 +23,7 @@ void main() {
 
     unpackDynamicParticle(particle, position, direction, energy);
 
-    vec3 cellPosition = vec3(position / CELLS);
+    vec3 cellPosition = vec3(position % CELLS) * (1.0 / float(65536 / CELLS));
     // energy is the weight
     vec3 vector = cellPosition * energy * ENERGY_DISPERSION;
     // position within cells = position / (65536 / CELLS)

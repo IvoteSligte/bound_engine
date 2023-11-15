@@ -35,7 +35,6 @@ void main() {
         fragColor = vec3(0.0);
         return;
     }
-
     for (int i = 0; i < 3; i++) {
         GridCell cell = grid[i].cells[index.x][index.y][index.z];
         fragColor[i] = getCellColor(cell);
