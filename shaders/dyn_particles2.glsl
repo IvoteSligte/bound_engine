@@ -47,6 +47,13 @@ void main() {
     float coreEnergy = imageLoad(energyGrid, index).x / float(cell.counter);
     vec3 corePosition = cell.position / (float(cell.counter) * coreEnergy + EPSILON2);
     vec3 coreDirection = cellPosition - corePosition;
+
+    if (length(coreDirection) == 0.0) {
+        coreDirection = direction;
+    } else {
+        coreDirection /= length(coreDirection);
+    }
+
     vec3 newDirection = direction * energy + coreDirection * coreEnergy;
 
     energy = length(newDirection);
