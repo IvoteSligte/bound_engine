@@ -27,6 +27,5 @@ void main() {
     }
     for (int i = 0; i < 3; i++) {
         fragColor[i] = imageLoad(energyGrid[i], index).x;
-        // fragColor[i] = float(0.0 < imageLoad(energyGrid[i], index).x); // DEBUG:
     }
 }
