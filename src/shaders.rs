@@ -40,8 +40,8 @@ vulkano_shaders::shader! {
         ("DYN_PARTICLES", "2097152"),
         ("DYN_MOVEMENT", "0.5"),
         ("CELLS", "64"),
-        ("DYN_ENERGY_DISPERSION", "0.2"),
-        ("STATIC_ENERGY_DISPERSION", "0.2"),
+        ("DYN_ENERGY_DISPERSION", "0.25"),
+        ("STATIC_ENERGY_DISPERSION", "0.02"),
         ("DYN_PARTICLE_WEIGHT", "1"),
         ("STATIC_PARTICLE_WEIGHT", "2")
     ], // TODO: sync defines with consts
@@ -60,8 +60,8 @@ pub const DYN_PARTICLES: u32 = DYN_PARTICLES_AXIS * DYN_PARTICLES_AXIS * DYN_PAR
 pub const CELLS: u32 = 64;
 // how much of a dynamic/static particle's energy is dispersed
 // to other particles
-// pub const DYN_ENERGY_DISPERSION: f32 = 0.2;
-// pub const STATIC_ENERGY_DISPERSION: f32 = 0.2;
+// pub const DYN_ENERGY_DISPERSION: f32 = 0.25;
+// pub const STATIC_ENERGY_DISPERSION: f32 = 0.02;
 // the weight each dynamic/static particle has in the grid
 // if DYN_PARTICLE_WEIGHT == STATIC_PARTICLE_WEIGHT then
 // dynamic particles absorb equally much energy as static particles
