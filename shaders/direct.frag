@@ -13,30 +13,20 @@ layout(binding = 0) uniform restrict readonly RealTimeBuffer {
     vec3 position;
 } rt;
 
-layout(binding = 3) buffer Grid {
-    GridCell cells[CELLS][CELLS][CELLS];
-} grid[3];
-
-float getCellColor(GridCell cell) {
-    // length(vec3(0.0)) = undefined
-    if (cell.vector == vec3(0.0)) {
-        return 0.0;
-    }
-    return length(cell.vector) / float(cell.counter);
-}
+layout(binding = 3, r32f) uniform readonly image3D energyGrid[3];
 
 void main() {
     vec3 direction = normalize(fragPosition - rt.position);
     // TODO: changeable cell size (fixed at 1.0 currently)
-    ivec3 index = ivec3(fragPosition + direction * EPSILON) + (CELLS / 2);
+    ivec3 index = ivec3(fragPosition + direction * EPSILON + float(CELLS / 2));
     
     // out of bounds
-    if (any(greaterThanEqual(abs(index), ivec3(CELLS)))) {
+    if (any(lessThan(index, ivec3(0))) || any(greaterThanEqual(index, ivec3(CELLS)))) {
         fragColor = vec3(0.0);
         return;
     }
     for (int i = 0; i < 3; i++) {
-        GridCell cell = grid[i].cells[index.x][index.y][index.z];
-        fragColor[i] = getCellColor(cell);
+        fragColor[i] = imageLoad(energyGrid[i], index).x;
+        // fragColor[i] = float(0.0 < imageLoad(energyGrid[i], index).x); // DEBUG:
     }
 }

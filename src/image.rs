@@ -6,7 +6,7 @@ use vulkano::{
 };
 use winit::window::Window;
 
-use crate::allocator::Allocators;
+use crate::{allocator::Allocators, shaders};
 
 use self::custom::CustomImage;
 
@@ -15,6 +15,7 @@ pub struct Images {
     pub render: Arc<CustomImage>,
     pub depth: Arc<CustomImage>,
     pub swapchain: Vec<Arc<SwapchainImage>>,
+    pub energy: Vec<Arc<CustomImage>>,
 }
 
 impl Images {
@@ -27,6 +28,7 @@ impl Images {
             render: create_render(allocators.clone(), window.clone()),
             depth: create_depth(allocators.clone(), window.clone()),
             swapchain: swapchain_images,
+            energy: create_energy(allocators.clone()),
         }
     }
 
@@ -66,6 +68,25 @@ pub fn create_depth(allocators: Arc<Allocators>, window: Arc<Window>) -> Arc<Cus
         ImageCreateFlags::empty(),
     )
     .unwrap()
+}
+
+pub fn create_energy(allocators: Arc<Allocators>) -> Vec<Arc<CustomImage>> {
+    (0..3)
+        .map(|_| {
+            CustomImage::with_usage(
+                &allocators.memory,
+                ImageDimensions::Dim3d {
+                    width: shaders::CELLS,
+                    height: shaders::CELLS,
+                    depth: shaders::CELLS,
+                },
+                Format::R32_SFLOAT,
+                ImageUsage::STORAGE,
+                ImageCreateFlags::empty(),
+            )
+            .unwrap()
+        })
+        .collect()
 }
 
 #[derive(Clone)]

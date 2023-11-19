@@ -9,8 +9,11 @@ layout(binding = 0) writeonly buffer Grid {
     GridCell cells[CELLS][CELLS][CELLS];
 } grid;
 
+layout(binding = 1, r32f) uniform writeonly image3D energyGrid;
+
 void main() {
-    const uvec3 index = gl_GlobalInvocationID;
+    const ivec3 index = ivec3(gl_GlobalInvocationID);
     GridCell empty = GridCell(vec3(0.0), 0);
     grid.cells[index.x][index.y][index.z] = empty;
+    imageStore(energyGrid, index, vec4(0.0));
 }

@@ -104,8 +104,12 @@ impl State {
             window.clone(),
         );
 
-        let descriptor_sets =
-            DescriptorSets::new(allocators.clone(), pipelines.clone(), buffers.clone());
+        let descriptor_sets = DescriptorSets::new(
+            allocators.clone(),
+            pipelines.clone(),
+            buffers.clone(),
+            images.clone(),
+        );
 
         let command_buffers = CommandBuffers::new(
             allocators.clone(),

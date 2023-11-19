@@ -5,13 +5,15 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 #include "includes_general.glsl"
 
 // cleared every frame
-layout(binding = 0) readonly buffer Grid {
+layout(binding = 0) buffer Grid {
     GridCell cells[CELLS][CELLS][CELLS];
 } grid;
 
 layout(binding = 1) buffer StaticParticles {
     StaticParticle particles[];
 } staticParticles;
+
+layout(binding = 2, r32f) uniform readonly image3D energyGrid;
 
 void main() {
     StaticParticle particle = staticParticles.particles[gl_GlobalInvocationID.x];
@@ -23,20 +25,11 @@ void main() {
     unpackStaticParticle(particle, position, reflectance, energy, emittance);
 
     // energy that was dispersed previously
-    energy *= 1.0 - (reflectance * ENERGY_DISPERSION);
+    energy -= energy * reflectance * ENERGY_DISPERSION;
     
-    // position within cells = position / (65536 / CELLS)
-    // 65536 is the amount of bits used for position
-    // 65536 / CELLS gives the precision within the cell
-    ivec3 index = ivec3(vec3(position) * (1.0 / float(65536 / CELLS)));
-    GridCell cell = grid.cells[index.x][index.y][index.z];
+    ivec3 index = ivec3(position / (65536 / CELLS));
+    uint cellCounter = grid.cells[index.x][index.y][index.z].counter;
 
-    if (cell.vector != vec3(0.0)) {
-        // the core of the cell is the average position of all particles
-        // in the cell, weighted by their energy
-        // (normalized)
-        float coreEnergy = length(cell.vector) / float(cell.counter);
-        energy += coreEnergy;
-    }
+    energy += imageLoad(energyGrid, index).x / float(cellCounter);
     staticParticles.particles[gl_GlobalInvocationID.x].energy = energy;
 }

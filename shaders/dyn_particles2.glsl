@@ -13,6 +13,8 @@ layout(binding = 1) buffer DynamicParticles {
     DynamicParticle particles[DYN_PARTICLES];
 } dynamicParticles;
 
+layout(binding = 2, r32f) uniform readonly image3D energyGrid;
+
 void main() {
     DynamicParticle particle = dynamicParticles.particles[gl_GlobalInvocationID.x];
     ivec3 position;
@@ -22,13 +24,11 @@ void main() {
     unpackDynamicParticle(particle, position, direction, energy);
 
     // energy that was dispersed previously
-    energy *= 1.0 - ENERGY_DISPERSION;
+    energy -= energy * ENERGY_DISPERSION;
     
-    vec3 cellPosition = vec3(position / CELLS);
-    // position within cells = position / (65536 / CELLS)
-    // 65536 is the amount of bits used for position
-    // 65536 / CELLS gives the precision within the cell
-    ivec3 index = ivec3(vec3(position) * (1.0 / float(65536 / CELLS)));
+    // position within the cell
+    vec3 cellPosition = vec3(position % (65536 / CELLS)) * (1.0 / float(65536 / CELLS));
+    ivec3 index = ivec3(position / (65536 / CELLS));
     GridCell cell = grid.cells[index.x][index.y][index.z];
     
     position += ivec3(direction * DYN_MOVEMENT * float(65536 / CELLS));
@@ -41,24 +41,20 @@ void main() {
         dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
         return;
     }
-    if (cell.vector != vec3(0.0)) {
-        // the core of the cell is the average position of all particles
-        // in the cell relative to the cell, weighted by their energy
-        float coreEnergy = length(cell.vector) / float(cell.counter); // FIXME: length(cell.vector) is not accurate as the position within the cell is not a normalized vector
-        vec3 corePosition = cell.vector / (float(cell.counter) * length(cell.vector));
-        vec3 coreDifference = cellPosition - corePosition;
 
-        if (coreDifference == vec3(0.0)) {
-            coreDifference = direction;
-        }
-        float alpha = coreEnergy / (coreEnergy + energy);
-        vec3 newDirection = mix(normalize(coreDifference), direction, alpha);
+    // the core of the cell is the average position of all particles
+    // in the cell relative to the cell, weighted by their energy
+    float coreEnergy = imageLoad(energyGrid, index).x / float(cell.counter);
+    vec3 corePosition = cell.position / (float(cell.counter) * coreEnergy + EPSILON2);
+    vec3 coreDirection = cellPosition - corePosition;
+    vec3 newDirection = direction * energy + coreDirection * coreEnergy;
 
-        if (newDirection != vec3(0.0)) {
-            direction = normalize(newDirection);
-        }
-        energy += coreEnergy;
+    energy = length(newDirection);
+    
+    if (length(newDirection) != 0.0) {
+        direction = newDirection / length(newDirection);
     }
+    
     particle = packDynamicParticle(position, direction, energy);
     dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
 }

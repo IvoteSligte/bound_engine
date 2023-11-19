@@ -7,7 +7,7 @@ pub fn load() -> (Vec<[f32; 4]>, Vec<u32>, Vec<Vec<shaders::StaticParticle>>) {
     const MATERIALS: &[Material] = &[
         Material {
             reflectance: Vec3::splat(0.0),
-            emittance: Vec3::splat(100.0),
+            emittance: Vec3::splat(1e9),
         },
         Material {
             reflectance: Vec3::splat(0.99),

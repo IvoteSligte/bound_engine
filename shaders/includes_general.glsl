@@ -1,10 +1,9 @@
 #define EPSILON 1e-4
+#define EPSILON2 1e-6
+#define SQRT_3 = 1.7320508
 
 struct GridCell {
-    // combination of position and strength
-    // position = vector / (float(counter) * length(vector))
-    // energy = length(vector) / float(counter)
-    vec3 vector;
+    vec3 position;
     uint counter;
 };
 

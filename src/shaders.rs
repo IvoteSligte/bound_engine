@@ -40,7 +40,7 @@ vulkano_shaders::shader! {
         ("DYN_PARTICLES", "2097152"),
         ("DYN_MOVEMENT", "0.5"),
         ("CELLS", "64"),
-        ("ENERGY_DISPERSION", "0.5")
+        ("ENERGY_DISPERSION", "0.2")
     ], // TODO: sync defines with consts
     vulkan_version: "1.2", // TODO: vulkan 1.3
     spirv_version: "1.6"
@@ -57,7 +57,7 @@ pub const DYN_PARTICLES: u32 = DYN_PARTICLES_AXIS * DYN_PARTICLES_AXIS * DYN_PAR
 pub const CELLS: u32 = 64;
 // how much of a particle's energy is dispersed
 // to other particles
-// pub const ENERGY_DISPERSION: f32 = 0.5;
+// pub const ENERGY_DISPERSION: f32 = 0.2;
 
 // non-shader variables
 // static particles / cell (1D)
@@ -74,7 +74,7 @@ use std::sync::Arc;
 impl Default for GridCell {
     fn default() -> Self {
         Self {
-            vector: [0.0; 3],
+            position: [0.0; 3],
             counter: 0,
         }
     }
