@@ -41,7 +41,6 @@ void main() {
         dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
         return;
     }
-
     // the core of the cell is the average position of all particles
     // in the cell relative to the cell, weighted by their energy
     float coreEnergy = imageLoad(energyGrid, index).x / float(cell.counter);
@@ -53,15 +52,13 @@ void main() {
     } else {
         coreDirection /= length(coreDirection);
     }
-
     vec3 newDirection = direction * energy + coreDirection * coreEnergy;
-
+    
     energy = length(newDirection);
     
     if (length(newDirection) != 0.0) {
         direction = newDirection / length(newDirection);
     }
-    
     particle = packDynamicParticle(position, direction, energy);
     dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
 }
