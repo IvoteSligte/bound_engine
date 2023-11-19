@@ -25,7 +25,7 @@ void main() {
     unpackStaticParticle(particle, position, reflectance, energy, emittance);
 
     // energy that was dispersed previously
-    energy -= energy * reflectance * ENERGY_DISPERSION;
+    energy -= energy * reflectance * STATIC_ENERGY_DISPERSION;
     
     ivec3 index = ivec3(position / (65536 / CELLS));
     uint cellCounter = grid.cells[index.x][index.y][index.z].counter;

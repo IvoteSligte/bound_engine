@@ -24,7 +24,7 @@ void main() {
     unpackDynamicParticle(particle, position, direction, energy);
 
     // energy that was dispersed previously
-    energy -= energy * ENERGY_DISPERSION;
+    energy -= energy * DYN_ENERGY_DISPERSION;
     
     // position within the cell
     vec3 cellPosition = vec3(position % (65536 / CELLS)) * (1.0 / float(65536 / CELLS));
@@ -37,7 +37,7 @@ void main() {
     if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(65536)))) {
         position = newParticlePosition(gl_GlobalInvocationID.x);
         energy = 0.0;
-        particle = packDynamicParticle(position, direction, energy);
+        particle = packDynamicParticle(position, -direction, energy);
         dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
         return;
     }

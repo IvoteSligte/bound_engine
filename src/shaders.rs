@@ -40,7 +40,10 @@ vulkano_shaders::shader! {
         ("DYN_PARTICLES", "2097152"),
         ("DYN_MOVEMENT", "0.5"),
         ("CELLS", "64"),
-        ("ENERGY_DISPERSION", "0.2")
+        ("DYN_ENERGY_DISPERSION", "0.2"),
+        ("STATIC_ENERGY_DISPERSION", "0.2"),
+        ("DYN_PARTICLE_WEIGHT", "1"),
+        ("STATIC_PARTICLE_WEIGHT", "2")
     ], // TODO: sync defines with consts
     vulkan_version: "1.2", // TODO: vulkan 1.3
     spirv_version: "1.6"
@@ -55,9 +58,15 @@ pub const DYN_PARTICLES: u32 = DYN_PARTICLES_AXIS * DYN_PARTICLES_AXIS * DYN_PAR
 // pub const DYN_MOVEMENT: f32 = 0.5;
 // 2^8 cells in a row (CELLS^3 total)
 pub const CELLS: u32 = 64;
-// how much of a particle's energy is dispersed
+// how much of a dynamic/static particle's energy is dispersed
 // to other particles
-// pub const ENERGY_DISPERSION: f32 = 0.2;
+// pub const DYN_ENERGY_DISPERSION: f32 = 0.2;
+// pub const STATIC_ENERGY_DISPERSION: f32 = 0.2;
+// the weight each dynamic/static particle has in the grid
+// if DYN_PARTICLE_WEIGHT == STATIC_PARTICLE_WEIGHT then
+// dynamic particles absorb equally much energy as static particles
+// pub const DYN_PARTICLE_WEIGHT: u32 = 1;
+// pub const STATIC_PARTICLE_WEIGHT: u32 = 2;
 
 // non-shader variables
 // static particles / cell (1D)

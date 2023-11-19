@@ -26,12 +26,12 @@ void main() {
     unpackDynamicParticle(particle, position, direction, energy);
 
     vec3 cellPosition = vec3(position % (65536 / CELLS)) * (1.0 / float(65536 / CELLS));
-    float energyWeight = energy * ENERGY_DISPERSION;
+    float energyWeight = energy * DYN_ENERGY_DISPERSION;
     vec3 corePosition = cellPosition * energyWeight;
     ivec3 index = ivec3(position / (65536 / CELLS));
 
     imageAtomicAdd(energyGrid, index, energyWeight);
-    atomicAdd(grid.cells[index.x][index.y][index.z].counter, 1);
+    atomicAdd(grid.cells[index.x][index.y][index.z].counter, DYN_PARTICLE_WEIGHT);
     atomicAdd(grid.cells[index.x][index.y][index.z].position.x, corePosition.x);
     atomicAdd(grid.cells[index.x][index.y][index.z].position.y, corePosition.y);
     atomicAdd(grid.cells[index.x][index.y][index.z].position.z, corePosition.z);
