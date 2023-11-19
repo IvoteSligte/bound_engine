@@ -54,7 +54,7 @@ void main() {
     }
     vec3 newDirection = direction * energy + coreDirection * coreEnergy;
     
-    energy = length(newDirection);
+    energy += coreEnergy;
     
     if (length(newDirection) != 0.0) {
         direction = newDirection / length(newDirection);
