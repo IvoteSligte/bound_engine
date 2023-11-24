@@ -30,6 +30,6 @@ void main() {
     ivec3 index = ivec3(position / (65536 / CELLS));
     uint cellCounter = grid.cells[index.x][index.y][index.z].counter;
 
-    energy += imageLoad(energyGrid, index).x / float(cellCounter);
+    energy += imageLoad(energyGrid, index).x * (float(STATIC_PARTICLE_WEIGHT) / float(cellCounter));
     staticParticles.particles[gl_GlobalInvocationID.x].energy = energy;
 }

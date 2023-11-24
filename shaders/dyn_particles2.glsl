@@ -43,7 +43,7 @@ void main() {
     }
     // the core of the cell is the average position of all particles
     // in the cell relative to the cell, weighted by their energy
-    float coreEnergy = imageLoad(energyGrid, index).x / float(cell.counter);
+    float coreEnergy = imageLoad(energyGrid, index).x * (float(DYN_PARTICLE_WEIGHT) / float(cell.counter));
     vec3 corePosition = cell.position / (float(cell.counter) * coreEnergy + EPSILON2);
     vec3 coreDirection = cellPosition - corePosition;
 
