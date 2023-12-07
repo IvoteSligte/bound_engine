@@ -31,17 +31,6 @@ void main() {
     ivec3 index = ivec3(position / (65536 / CELLS));
     GridCell cell = grid.cells[index.x][index.y][index.z];
     
-    position += ivec3(direction * DYN_MOVEMENT * float(65536 / CELLS));
-
-    // out of bounds
-    if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(65536)))) {
-        position = newParticlePosition(gl_GlobalInvocationID.x);
-        direction = newParticleDirection(position);
-        energy = 0.0;
-        particle = packDynamicParticle(position, direction, energy);
-        dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
-        return;
-    }
     // the core of the cell is the average position of all particles
     // in the cell relative to the cell, weighted by their energy
     float coreEnergy = imageLoad(energyGrid, index).x * (float(DYN_PARTICLE_WEIGHT) / float(cell.counter));
@@ -54,11 +43,18 @@ void main() {
         coreDirection /= length(coreDirection);
     }
     vec3 newDirection = direction * energy + coreDirection * coreEnergy;
-    
     energy += coreEnergy;
     
     if (length(newDirection) != 0.0) {
         direction = newDirection / length(newDirection);
+    }
+    position += ivec3(direction * DYN_MOVEMENT * float(65536 / CELLS));
+
+    // out of bounds
+    if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(65536)))) {
+        position = newParticlePosition(gl_GlobalInvocationID.x);
+        direction = newParticleDirection(position);
+        energy = 0.0;
     }
     particle = packDynamicParticle(position, direction, energy);
     dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;
