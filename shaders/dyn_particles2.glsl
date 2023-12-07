@@ -52,9 +52,7 @@ void main() {
 
     // out of bounds
     if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, ivec3(65536)))) {
-        position = newParticlePosition(gl_GlobalInvocationID.x);
-        direction = newParticleDirection(position);
-        energy = 0.0;
+        newParticle(gl_GlobalInvocationID.x, position, direction, energy);
     }
     particle = packDynamicParticle(position, direction, energy);
     dynamicParticles.particles[gl_GlobalInvocationID.x] = particle;

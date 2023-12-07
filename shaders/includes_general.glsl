@@ -106,3 +106,9 @@ vec3 newParticleDirection(ivec3 position) {
     }
     return normalize(direction);
 }
+
+void newParticle(uint i, out ivec3 position, out vec3 direction, out float energy) {
+    position = newParticlePosition(i);
+    direction = newParticleDirection(position);
+    energy = 0.0;
+}
