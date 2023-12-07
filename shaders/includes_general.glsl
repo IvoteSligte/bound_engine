@@ -97,3 +97,12 @@ ivec3 newParticlePosition(uint i) {
     p[2] = (65536 / DYN_PARTICLES_AXIS) * (i % DYN_PARTICLES_AXIS);
     return ivec3(p);
 }
+
+vec3 newParticleDirection(ivec3 position) {
+    vec3 direction = vec3(position - (65536 / 2));
+
+    if (direction == vec3(0.0)) {
+        direction = vec3(1.0, 0.0, 0.0);
+    }
+    return normalize(direction);
+}
